@@ -326,188 +326,217 @@ class _RideDashboardState extends State<RideDashboard> {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                child: Column(
-                  children: [
-                    _ConnectionBar(
-                      devices: _devices,
-                      selected: _selected,
-                      busy: _busy,
-                      connected: connected,
-                      snap: _snap,
-                      canScan: _canScan || _snap.isDemo,
-                      onSelect: (d) => setState(() => _selected = d),
-                      onScan: _scan,
-                      onConnect: _connect,
-                      onReconnect: () => _run(() => api.reconnectTrainer()),
-                      onDisconnect: () => _run(() => api.disconnectTrainer()),
-                    ),
-                    if (_permissionDenied && !connected) ...[
-                      const SizedBox(height: 12),
-                      _PermissionDeniedPanel(
-                        onRetry: _checkBluetooth,
-                        onUseDemo: () {
-                          api.setDemoMode(enabled: true);
-                          _refresh();
-                          _checkBluetooth();
-                        },
-                      ),
-                    ] else if (!_permissionDenied &&
-                        !_btRadioBad &&
-                        _didScan &&
-                        _devices.isEmpty &&
-                        !connected &&
-                        !_busy) ...[
-                      const SizedBox(height: 12),
-                      _EmptyScanPanel(onScanAgain: _scan),
-                    ],
-                    const SizedBox(height: 12),
-                    _MetricsRow(metrics: _metrics, snap: _snap),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: Opacity(
-                              opacity:
-                                  activeMode == ControlMode.erg ||
-                                      activeMode == ControlMode.idle
-                                  ? 1
-                                  : 0.45,
-                              child: _ErgPanel(
-                                targetWatts: _targetWatts,
-                                liveTargetW: _metrics.targetPowerW,
-                                step: _ergStep,
-                                enabled: connected && !_busy,
-                                onStep: (s) => setState(() => _ergStep = s),
-                                onNudge: (d) => setState(
-                                  () => _targetWatts =
-                                      (_targetWatts + d * _ergStep).clamp(
-                                        0,
-                                        2000,
-                                      ),
-                                ),
-                                onApply: () => _run(
-                                  () => api.setTargetPower(watts: _targetWatts),
-                                  success:
-                                      'ERG target ${_targetWatts.round()} W sent',
-                                  successIcon: Icons.bolt,
-                                ),
-                                onSetExact: (w) {
-                                  setState(() => _targetWatts = w);
-                                  _run(
-                                    () => api.setTargetPower(watts: w),
-                                    success: 'ERG target ${w.round()} W sent',
-                                    successIcon: Icons.bolt,
-                                  );
-                                },
-                              ),
-                            ),
+                child: LayoutBuilder(
+                  builder: (context, box) {
+                    // Small windows (e.g. 1024x768 / 1280x720) cannot fit the
+                    // control row once Simulation is open: switch to a
+                    // scrolling column with a fixed-height control row.
+                    final simOpen =
+                        _simExpanded || activeMode == ControlMode.simulation;
+                    final needed = simOpen
+                        ? (_simAdvanced ? 900.0 : 780.0)
+                        : 520.0;
+                    final compact = box.maxHeight < needed;
+                    final body = Column(
+                      children: [
+                        _ConnectionBar(
+                          devices: _devices,
+                          selected: _selected,
+                          busy: _busy,
+                          connected: connected,
+                          snap: _snap,
+                          canScan: _canScan || _snap.isDemo,
+                          onSelect: (d) => setState(() => _selected = d),
+                          onScan: _scan,
+                          onConnect: _connect,
+                          onReconnect: () => _run(() => api.reconnectTrainer()),
+                          onDisconnect: () =>
+                              _run(() => api.disconnectTrainer()),
+                        ),
+                        if (_permissionDenied && !connected) ...[
+                          const SizedBox(height: 12),
+                          _PermissionDeniedPanel(
+                            onRetry: _checkBluetooth,
+                            onUseDemo: () {
+                              api.setDemoMode(enabled: true);
+                              _refresh();
+                              _checkBluetooth();
+                            },
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Opacity(
-                              opacity:
-                                  activeMode == ControlMode.resistance ||
-                                      activeMode == ControlMode.idle
-                                  ? 1
-                                  : 0.45,
-                              child: _ResistancePanel(
-                                percent: _resistancePct,
-                                range: _resRange,
-                                enabled: connected && !_busy,
-                                onChanged: (v) =>
-                                    setState(() => _resistancePct = v),
-                                onApply: _applyResistance,
-                                autoApply: _resAutoApply,
-                                onAutoApplyChanged: (v) =>
-                                    setState(() => _resAutoApply = v),
-                                onChangeEnd: (v) {
-                                  _resistancePct = v;
-                                  if (_resAutoApply) _applyResistance();
-                                },
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _IntervalPanel(
-                              presets: _presets,
-                              status: _interval,
-                              enabled: connected && !_busy,
-                              onStart: (key) => _run(
-                                () => api.startInterval(key: key),
-                                success: 'Interval started',
-                                successIcon: Icons.timer_outlined,
-                              ),
-                              onStop: () {
-                                api.stopInterval();
-                                _refresh();
-                              },
-                            ),
-                          ),
+                        ] else if (!_permissionDenied &&
+                            !_btRadioBad &&
+                            _didScan &&
+                            _devices.isEmpty &&
+                            !connected &&
+                            !_busy) ...[
+                          const SizedBox(height: 12),
+                          _EmptyScanPanel(onScanAgain: _scan),
                         ],
+                        const SizedBox(height: 12),
+                        _MetricsRow(metrics: _metrics, snap: _snap),
+                        const SizedBox(height: 12),
+                        _FlexOrFixed(
+                          key: const ValueKey('controls-row'),
+                          fixed: compact,
+                          height: 320,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: Opacity(
+                                  opacity:
+                                      activeMode == ControlMode.erg ||
+                                          activeMode == ControlMode.idle
+                                      ? 1
+                                      : 0.45,
+                                  child: _ErgPanel(
+                                    targetWatts: _targetWatts,
+                                    liveTargetW: _metrics.targetPowerW,
+                                    step: _ergStep,
+                                    enabled: connected && !_busy,
+                                    onStep: (s) => setState(() => _ergStep = s),
+                                    onNudge: (d) => setState(
+                                      () => _targetWatts =
+                                          (_targetWatts + d * _ergStep).clamp(
+                                            0,
+                                            2000,
+                                          ),
+                                    ),
+                                    onApply: () => _run(
+                                      () => api.setTargetPower(
+                                        watts: _targetWatts,
+                                      ),
+                                      success:
+                                          'ERG target ${_targetWatts.round()} W sent',
+                                      successIcon: Icons.bolt,
+                                    ),
+                                    onSetExact: (w) {
+                                      setState(() => _targetWatts = w);
+                                      _run(
+                                        () => api.setTargetPower(watts: w),
+                                        success:
+                                            'ERG target ${w.round()} W sent',
+                                        successIcon: Icons.bolt,
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Opacity(
+                                  opacity:
+                                      activeMode == ControlMode.resistance ||
+                                          activeMode == ControlMode.idle
+                                      ? 1
+                                      : 0.45,
+                                  child: _ResistancePanel(
+                                    percent: _resistancePct,
+                                    range: _resRange,
+                                    enabled: connected && !_busy,
+                                    onChanged: (v) =>
+                                        setState(() => _resistancePct = v),
+                                    onApply: _applyResistance,
+                                    autoApply: _resAutoApply,
+                                    onAutoApplyChanged: (v) =>
+                                        setState(() => _resAutoApply = v),
+                                    onChangeEnd: (v) {
+                                      _resistancePct = v;
+                                      if (_resAutoApply) _applyResistance();
+                                    },
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _IntervalPanel(
+                                  presets: _presets,
+                                  status: _interval,
+                                  enabled: connected && !_busy,
+                                  onStart: (key) => _run(
+                                    () => api.startInterval(key: key),
+                                    success: 'Interval started',
+                                    successIcon: Icons.timer_outlined,
+                                  ),
+                                  onStop: () {
+                                    api.stopInterval();
+                                    _refresh();
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _SimulationPanel(
+                          expanded:
+                              _simExpanded ||
+                              activeMode == ControlMode.simulation,
+                          advanced: _simAdvanced,
+                          gradePct: _gradePct,
+                          windKmh: _windKmh,
+                          crr: _crr,
+                          cw: _cw,
+                          userWeightKg: _userWeightKg,
+                          enabled: connected && simSupported && !_busy,
+                          supportsSimulation: simSupported,
+                          onToggleExpanded: () =>
+                              setState(() => _simExpanded = !_simExpanded),
+                          onToggleAdvanced: () =>
+                              setState(() => _simAdvanced = !_simAdvanced),
+                          onGrade: (v) => setState(() => _gradePct = v),
+                          onWind: (v) => setState(() => _windKmh = v),
+                          onCrr: (v) => setState(() => _crr = v),
+                          onCw: (v) => setState(() => _cw = v),
+                          onWeight: (v) => setState(() => _userWeightKg = v),
+                          onApplySim: () => _run(
+                            () async {
+                              await api.setIndoorBikeSimulation(
+                                windSpeedMps: _windKmh / 3.6,
+                                gradePct: _gradePct,
+                                crr: _crr,
+                                cw: _cw,
+                              );
+                            },
+                            success:
+                                'Simulation sent · grade ${_gradePct.toStringAsFixed(1)} % · wind ${_windKmh.toStringAsFixed(0)} km/h',
+                            successIcon: Icons.terrain,
+                          ),
+                          onApplyUser: () => _run(
+                            () async {
+                              await api.setUserConfiguration(
+                                userWeightKg: _userWeightKg,
+                                bicycleWeightKg: _bikeWeightKg,
+                                wheelDiameterM: _wheelDiameterM,
+                                gearRatio: 3.0,
+                              );
+                            },
+                            success:
+                                'Rider ${_userWeightKg.toStringAsFixed(0)} kg sent',
+                            successIcon: Icons.person_outline,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Only one BLE client can control the trainer. Close Zwift / Tacx Training / '
+                          'MyWhoosh / TrainerRoad before connecting. Windows: leave the trainer unpaired '
+                          'in OS Bluetooth settings.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: RideColors.textMuted,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    );
+                    if (!compact) return body;
+                    return Scrollbar(
+                      child: SingleChildScrollView(
+                        key: const ValueKey('dashboard-scroll'),
+                        padding: const EdgeInsets.only(right: 8),
+                        child: body,
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    _SimulationPanel(
-                      expanded:
-                          _simExpanded || activeMode == ControlMode.simulation,
-                      advanced: _simAdvanced,
-                      gradePct: _gradePct,
-                      windKmh: _windKmh,
-                      crr: _crr,
-                      cw: _cw,
-                      userWeightKg: _userWeightKg,
-                      enabled: connected && simSupported && !_busy,
-                      supportsSimulation: simSupported,
-                      onToggleExpanded: () =>
-                          setState(() => _simExpanded = !_simExpanded),
-                      onToggleAdvanced: () =>
-                          setState(() => _simAdvanced = !_simAdvanced),
-                      onGrade: (v) => setState(() => _gradePct = v),
-                      onWind: (v) => setState(() => _windKmh = v),
-                      onCrr: (v) => setState(() => _crr = v),
-                      onCw: (v) => setState(() => _cw = v),
-                      onWeight: (v) => setState(() => _userWeightKg = v),
-                      onApplySim: () => _run(
-                        () async {
-                          await api.setIndoorBikeSimulation(
-                            windSpeedMps: _windKmh / 3.6,
-                            gradePct: _gradePct,
-                            crr: _crr,
-                            cw: _cw,
-                          );
-                        },
-                        success:
-                            'Simulation sent · grade ${_gradePct.toStringAsFixed(1)} % · wind ${_windKmh.toStringAsFixed(0)} km/h',
-                        successIcon: Icons.terrain,
-                      ),
-                      onApplyUser: () => _run(
-                        () async {
-                          await api.setUserConfiguration(
-                            userWeightKg: _userWeightKg,
-                            bicycleWeightKg: _bikeWeightKg,
-                            wheelDiameterM: _wheelDiameterM,
-                            gearRatio: 3.0,
-                          );
-                        },
-                        success:
-                            'Rider ${_userWeightKg.toStringAsFixed(0)} kg sent',
-                        successIcon: Icons.person_outline,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Only one BLE client can control the trainer. Close Zwift / Tacx Training / '
-                      'MyWhoosh / TrainerRoad before connecting. Windows: leave the trainer unpaired '
-                      'in OS Bluetooth settings.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: RideColors.textMuted,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -516,6 +545,24 @@ class _RideDashboardState extends State<RideDashboard> {
       ),
     );
   }
+}
+
+/// Expanded in a roomy window, fixed height when the dashboard scrolls.
+class _FlexOrFixed extends StatelessWidget {
+  const _FlexOrFixed({
+    super.key,
+    required this.fixed,
+    required this.height,
+    required this.child,
+  });
+
+  final bool fixed;
+  final double height;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      fixed ? SizedBox(height: height, child: child) : Expanded(child: child);
 }
 
 class _StatusStrip extends StatelessWidget {

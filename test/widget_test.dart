@@ -24,5 +24,8 @@ void main() {
     expect(find.text('Intervals'), findsOneWidget);
     expect(find.text('Simulation'), findsOneWidget);
     expect(find.text('Reconnect'), findsOneWidget);
+    for (final w in [100, 150, 200, 250]) {
+      expect(find.byKey(ValueKey('erg-preset-$w')), findsOneWidget);
+    }
   });
 }

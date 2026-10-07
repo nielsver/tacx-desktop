@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
@@ -68,7 +69,10 @@ class _RideDashboardState extends State<RideDashboard> {
     api.setDemoMode(enabled: true);
     _refresh();
     _checkBluetooth();
-    _poll = Timer.periodic(const Duration(milliseconds: 250), (_) => _refresh());
+    _poll = Timer.periodic(
+      const Duration(milliseconds: 250),
+      (_) => _refresh(),
+    );
   }
 
   @override
@@ -107,7 +111,8 @@ class _RideDashboardState extends State<RideDashboard> {
     // (distinct from BT-off / noAdapter).
     final hint = (_bt?.hint ?? '').toLowerCase();
     final err = (_error ?? '').toLowerCase();
-    final looksDenied = hint.contains('permission') ||
+    final looksDenied =
+        hint.contains('permission') ||
         hint.contains('not authorized') ||
         hint.contains('denied') ||
         hint.contains('tcc') ||
@@ -173,8 +178,10 @@ class _RideDashboardState extends State<RideDashboard> {
       await api.connectTrainer(deviceId: _selected?.id);
       setState(() {
         _resRange = api.getResistanceRange();
-        _resistancePct =
-            _resistancePct.clamp(_resRange.minPct, _resRange.maxPct);
+        _resistancePct = _resistancePct.clamp(
+          _resRange.minPct,
+          _resRange.maxPct,
+        );
       });
     });
   }
@@ -213,8 +220,10 @@ class _RideDashboardState extends State<RideDashboard> {
                 actions: [
                   TextButton(
                     onPressed: _checkBluetooth,
-                    child: const Text('Check again',
-                        style: TextStyle(color: Colors.white)),
+                    child: const Text(
+                      'Check again',
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
                   TextButton(
                     onPressed: () {
@@ -222,8 +231,10 @@ class _RideDashboardState extends State<RideDashboard> {
                       _refresh();
                       _checkBluetooth();
                     },
-                    child: const Text('Use demo',
-                        style: TextStyle(color: Colors.white)),
+                    child: const Text(
+                      'Use demo',
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
                 ],
               ),
@@ -235,8 +246,10 @@ class _RideDashboardState extends State<RideDashboard> {
                 actions: [
                   TextButton(
                     onPressed: () => setState(() => _error = null),
-                    child: const Text('Dismiss',
-                        style: TextStyle(color: Colors.white)),
+                    child: const Text(
+                      'Dismiss',
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
                 ],
               ),
@@ -250,10 +263,13 @@ class _RideDashboardState extends State<RideDashboard> {
                 message: _snap.detail,
                 actions: [
                   TextButton(
-                    onPressed:
-                        _busy ? null : () => _run(() => api.reconnectTrainer()),
-                    child: const Text('Reconnect',
-                        style: TextStyle(color: Colors.white)),
+                    onPressed: _busy
+                        ? null
+                        : () => _run(() => api.reconnectTrainer()),
+                    child: const Text(
+                      'Reconnect',
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
                 ],
               ),
@@ -272,10 +288,8 @@ class _RideDashboardState extends State<RideDashboard> {
                       onSelect: (d) => setState(() => _selected = d),
                       onScan: _scan,
                       onConnect: _connect,
-                      onReconnect: () =>
-                          _run(() => api.reconnectTrainer()),
-                      onDisconnect: () =>
-                          _run(() => api.disconnectTrainer()),
+                      onReconnect: () => _run(() => api.reconnectTrainer()),
+                      onDisconnect: () => _run(() => api.disconnectTrainer()),
                     ),
                     if (_permissionDenied && !connected) ...[
                       const SizedBox(height: 12),
@@ -305,7 +319,8 @@ class _RideDashboardState extends State<RideDashboard> {
                         children: [
                           Expanded(
                             child: Opacity(
-                              opacity: activeMode == ControlMode.erg ||
+                              opacity:
+                                  activeMode == ControlMode.erg ||
                                       activeMode == ControlMode.idle
                                   ? 1
                                   : 0.45,
@@ -314,21 +329,20 @@ class _RideDashboardState extends State<RideDashboard> {
                                 liveTargetW: _metrics.targetPowerW,
                                 step: _ergStep,
                                 enabled: connected && !_busy,
-                                onStep: (s) =>
-                                    setState(() => _ergStep = s),
+                                onStep: (s) => setState(() => _ergStep = s),
                                 onNudge: (d) => setState(
                                   () => _targetWatts =
-                                      (_targetWatts + d * _ergStep)
-                                          .clamp(0, 2000),
+                                      (_targetWatts + d * _ergStep).clamp(
+                                        0,
+                                        2000,
+                                      ),
                                 ),
                                 onApply: () => _run(
-                                  () => api.setTargetPower(
-                                      watts: _targetWatts),
+                                  () => api.setTargetPower(watts: _targetWatts),
                                 ),
                                 onSetExact: (w) {
                                   setState(() => _targetWatts = w);
-                                  _run(() =>
-                                      api.setTargetPower(watts: w));
+                                  _run(() => api.setTargetPower(watts: w));
                                 },
                               ),
                             ),
@@ -338,9 +352,9 @@ class _RideDashboardState extends State<RideDashboard> {
                             child: Opacity(
                               opacity:
                                   activeMode == ControlMode.resistance ||
-                                          activeMode == ControlMode.idle
-                                      ? 1
-                                      : 0.45,
+                                      activeMode == ControlMode.idle
+                                  ? 1
+                                  : 0.45,
                               child: _ResistancePanel(
                                 percent: _resistancePct,
                                 range: _resRange,
@@ -349,7 +363,8 @@ class _RideDashboardState extends State<RideDashboard> {
                                     setState(() => _resistancePct = v),
                                 onApply: () => _run(
                                   () => api.setResistancePercent(
-                                      percent: _resistancePct),
+                                    percent: _resistancePct,
+                                  ),
                                 ),
                               ),
                             ),
@@ -373,8 +388,8 @@ class _RideDashboardState extends State<RideDashboard> {
                     ),
                     const SizedBox(height: 12),
                     _SimulationPanel(
-                      expanded: _simExpanded ||
-                          activeMode == ControlMode.simulation,
+                      expanded:
+                          _simExpanded || activeMode == ControlMode.simulation,
                       advanced: _simAdvanced,
                       gradePct: _gradePct,
                       windKmh: _windKmh,
@@ -509,8 +524,7 @@ class _Header extends StatelessWidget {
           const SizedBox(width: 12),
           if (demo)
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: RideColors.demo,
                 borderRadius: BorderRadius.circular(8),
@@ -626,9 +640,7 @@ class _ConnectionBar extends StatelessWidget {
     final stateColor = switch (snap.state) {
       ConnectionState.connected => RideColors.ok,
       ConnectionState.error => RideColors.warn,
-      ConnectionState.scanning ||
-      ConnectionState.connecting =>
-        RideColors.warn,
+      ConnectionState.scanning || ConnectionState.connecting => RideColors.warn,
       _ => RideColors.textSecondary,
     };
     final scanning = snap.state == ConnectionState.scanning || busy;
@@ -650,8 +662,10 @@ class _ConnectionBar extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 ConstrainedBox(
-                  constraints:
-                      const BoxConstraints(minWidth: 140, maxWidth: 320),
+                  constraints: const BoxConstraints(
+                    minWidth: 140,
+                    maxWidth: 320,
+                  ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -673,9 +687,10 @@ class _ConnectionBar extends StatelessWidget {
                   ),
                 ),
                 SizedBox(
-                  width: 240,
+                  width: 300,
                   child: DropdownButtonFormField<DiscoveredDevice>(
-                    initialValue: selected != null &&
+                    initialValue:
+                        selected != null &&
                             devices.any((d) => d.id == selected!.id)
                         ? devices.firstWhere((d) => d.id == selected!.id)
                         : null,
@@ -685,10 +700,7 @@ class _ConnectionBar extends StatelessWidget {
                         .map(
                           (d) => DropdownMenuItem(
                             value: d,
-                            child: Text(
-                              '${d.name} · ${d.protocolHint}',
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            child: _DeviceRow(device: d),
                           ),
                         )
                         .toList(),
@@ -737,6 +749,103 @@ class _ConnectionBar extends StatelessWidget {
   }
 }
 
+/// Scan-list row: name, protocol chip and RSSI signal bars.
+class _DeviceRow extends StatelessWidget {
+  const _DeviceRow({required this.device});
+
+  final DiscoveredDevice device;
+
+  static String protocolLabel(String hint) => switch (hint) {
+    'ftms' => 'FTMS',
+    'tacx_fec' => 'FE-C',
+    _ => '?',
+  };
+
+  /// 0–4 bars from RSSI (dBm). Null RSSI → 0.
+  static int bars(int? rssi) {
+    if (rssi == null) return 0;
+    if (rssi >= -55) return 4;
+    if (rssi >= -67) return 3;
+    if (rssi >= -78) return 2;
+    if (rssi >= -90) return 1;
+    return 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hint = device.protocolHint;
+    final chipColor = switch (hint) {
+      'ftms' => RideColors.accent,
+      'tacx_fec' => RideColors.accentAlt,
+      _ => RideColors.textMuted,
+    };
+    final n = bars(device.rssi);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            device.name.isEmpty ? 'Unnamed trainer' : device.name,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: chipColor.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: chipColor.withValues(alpha: 0.6)),
+          ),
+          child: Text(
+            protocolLabel(hint),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: chipColor,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Tooltip(
+          message: device.rssi == null
+              ? 'Signal unknown'
+              : 'Signal ${device.rssi} dBm',
+          child: _SignalBars(bars: n),
+        ),
+      ],
+    );
+  }
+}
+
+class _SignalBars extends StatelessWidget {
+  const _SignalBars({required this.bars});
+
+  final int bars;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 18,
+      height: 14,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          for (var i = 0; i < 4; i++)
+            Container(
+              width: 3,
+              height: 4.0 + i * 3.0,
+              decoration: BoxDecoration(
+                color: i < bars ? RideColors.ok : RideColors.border,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _EmptyScanPanel extends StatelessWidget {
   const _EmptyScanPanel({required this.onScanAgain});
   final VoidCallback onScanAgain;
@@ -756,8 +865,11 @@ class _EmptyScanPanel extends StatelessWidget {
                 color: RideColors.surfaceHigh,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.search_off,
-                  color: RideColors.textSecondary, size: 28),
+              child: const Icon(
+                Icons.search_off,
+                color: RideColors.textSecondary,
+                size: 28,
+              ),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -834,8 +946,11 @@ class _PermissionDeniedPanel extends StatelessWidget {
                 color: RideColors.danger.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.lock_outline,
-                  color: RideColors.danger, size: 28),
+              child: const Icon(
+                Icons.lock_outline,
+                color: RideColors.danger,
+                size: 28,
+              ),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -909,41 +1024,41 @@ class _MetricsRow extends StatelessWidget {
             child: _MetricCard(
               label: 'Power',
               value: metrics.powerW.toStringAsFixed(0),
-            unit: 'W',
-            accent: RideColors.power,
-            valueSize: 48,
+              unit: 'W',
+              accent: RideColors.power,
+              valueSize: 48,
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _MetricCard(
-            label: 'Cadence',
-            value: metrics.cadenceRpm.toStringAsFixed(0),
-            unit: 'rpm',
-            accent: RideColors.cadence,
-            valueSize: 18,
+          const SizedBox(width: 12),
+          Expanded(
+            child: _MetricCard(
+              label: 'Cadence',
+              value: metrics.cadenceRpm.toStringAsFixed(0),
+              unit: 'rpm',
+              accent: RideColors.cadence,
+              valueSize: 18,
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _MetricCard(
-            label: 'Speed',
-            value: metrics.speedKmh.toStringAsFixed(1),
-            unit: 'km/h',
-            accent: RideColors.speed,
-            valueSize: 18,
+          const SizedBox(width: 12),
+          Expanded(
+            child: _MetricCard(
+              label: 'Speed',
+              value: metrics.speedKmh.toStringAsFixed(1),
+              unit: 'km/h',
+              accent: RideColors.speed,
+              valueSize: 18,
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _MetricCard(
-            label: 'Control',
-            value: control,
-            unit: '',
-            accent: RideColors.control,
-            valueSize: 14,
+          const SizedBox(width: 12),
+          Expanded(
+            child: _MetricCard(
+              label: 'Control',
+              value: control,
+              unit: '',
+              accent: RideColors.control,
+              valueSize: 14,
+            ),
           ),
-        ),
         ],
       ),
     );
@@ -1037,6 +1152,9 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
+/// One-tap ERG targets (set + apply).
+const _ergPresets = [100, 150, 200, 250];
+
 class _ErgPanel extends StatefulWidget {
   const _ErgPanel({
     required this.targetWatts,
@@ -1074,8 +1192,7 @@ class _ErgPanelState extends State<_ErgPanel> {
   @override
   Widget build(BuildContext context) {
     final live = widget.liveTargetW?.round();
-    final pending =
-        live != null && live != widget.targetWatts;
+    final pending = live != null && live != widget.targetWatts;
     return _Panel(
       title: 'ERG mode',
       child: SingleChildScrollView(
@@ -1131,6 +1248,37 @@ class _ErgPanelState extends State<_ErgPanel> {
                   ? (s) => widget.onStep(s.first)
                   : null,
             ),
+            const SizedBox(height: 10),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final w in _ergPresets)
+                  ActionChip(
+                    key: ValueKey('erg-preset-$w'),
+                    label: Text(
+                      '${w}W',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: w == widget.targetWatts
+                            ? RideColors.accent
+                            : RideColors.textPrimary,
+                      ),
+                    ),
+                    tooltip: 'Set and apply ${w}W',
+                    side: BorderSide(
+                      color: w == widget.targetWatts
+                          ? RideColors.accent
+                          : RideColors.border,
+                    ),
+                    onPressed: widget.enabled
+                        ? () => widget.onSetExact(w)
+                        : null,
+                  ),
+              ],
+            ),
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1145,9 +1293,7 @@ class _ErgPanelState extends State<_ErgPanel> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    onPressed: widget.enabled
-                        ? () => widget.onNudge(-1)
-                        : null,
+                    onPressed: widget.enabled ? () => widget.onNudge(-1) : null,
                     child: const Text('−', style: TextStyle(fontSize: 22)),
                   ),
                 ),
@@ -1162,8 +1308,7 @@ class _ErgPanelState extends State<_ErgPanel> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    onPressed:
-                        widget.enabled ? () => widget.onNudge(1) : null,
+                    onPressed: widget.enabled ? () => widget.onNudge(1) : null,
                     child: const Text('+', style: TextStyle(fontSize: 22)),
                   ),
                 ),
@@ -1227,7 +1372,8 @@ class _ResistancePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final steps =
-        ((range.maxPct - range.minPct) / (range.stepPct <= 0 ? 1 : range.stepPct))
+        ((range.maxPct - range.minPct) /
+                (range.stepPct <= 0 ? 1 : range.stepPct))
             .round()
             .clamp(1, 1000);
     return _Panel(
@@ -1408,14 +1554,14 @@ class _SimulationPanel extends StatelessWidget {
                 onTap: onToggleExpanded,
                 borderRadius: BorderRadius.circular(8),
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 4,
+                    horizontal: 4,
+                  ),
                   child: Row(
                     children: [
                       Icon(
-                        expanded
-                            ? Icons.expand_less
-                            : Icons.expand_more,
+                        expanded ? Icons.expand_less : Icons.expand_more,
                         color: RideColors.textSecondary,
                       ),
                       const SizedBox(width: 4),
@@ -1553,8 +1699,7 @@ class _SimulationPanel extends StatelessWidget {
                               min: 40,
                               max: 120,
                               divisions: 80,
-                              label:
-                                  '${userWeightKg.toStringAsFixed(0)} kg',
+                              label: '${userWeightKg.toStringAsFixed(0)} kg',
                               onChanged: enabled ? onWeight : null,
                             ),
                             FilledButton.tonal(

@@ -178,6 +178,15 @@ pub fn get_ride_stats() -> RideStats {
     crate::trainer::ride::stats()
 }
 
+/// Post-ride analysis of the current recording: NP / IF / TSS, mean-max
+/// power (5 s, 1 min, 5 min, 20 min), time in zone and chart series.
+/// Pass `ftp_w = 0` when FTP is unknown (IF, TSS and zones stay empty).
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_ride_summary(ftp_w: u32) -> RideSummary {
+    ensure_runtime();
+    crate::trainer::ride::summary(ftp_w)
+}
+
 /// Zero the ride totals (keeps recording if a trainer is connected).
 #[flutter_rust_bridge::frb(sync)]
 pub fn reset_ride_stats() {

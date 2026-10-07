@@ -26,6 +26,19 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async => RustLib.init());
 
+  test('getRideSummary crosses FFI: nothing recorded → blanks, 4 bests', () {
+    resetRideStats();
+    final s = getRideSummary(ftpW: 250);
+    expect(s.recordedS, 0);
+    expect(s.npW, isNull);
+    expect(s.tss, isNull);
+    expect(s.best20MinW, isNull);
+    expect(s.bestPower.map((b) => b.durationS), [5, 60, 300, 1200]);
+    expect(s.bestPower.every((b) => b.watts == null), isTrue);
+    expect(s.timeInZoneS, List.filled(7, 0));
+    expect(getRideSummary(ftpW: 0).timeInZoneS, isEmpty);
+  });
+
   test('ride clock formats mm:ss and h:mm:ss', () {
     expect(RideSummaryStrip.clock(0), '00:00');
     expect(RideSummaryStrip.clock(754), '12:34');

@@ -264,6 +264,50 @@ mod bluetooth_status_tests {
     }
 }
 
+/// Best average power over one duration (mean-max point).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PowerBest {
+    pub duration_s: u32,
+    /// `None` when no unbroken stretch of the ride is that long.
+    pub watts: Option<f64>,
+}
+
+/// Post-ride analysis of the 1 Hz track (see `trainer::summary`).
+///
+/// FTP-dependent fields (`intensity_factor`, `tss`, `time_in_zone_s`) are
+/// empty when `ftp_w` is 0; `np_w` is `None` under 30 s of riding.
+#[derive(Clone, Debug, Default)]
+pub struct RideSummary {
+    /// Seconds of recorded 1 Hz samples (pauses / reconnect gaps excluded).
+    pub recorded_s: u32,
+    pub ftp_w: u32,
+    pub avg_power_w: f64,
+    pub max_power_w: f64,
+    /// Normalized Power: 4th root of the mean of (30 s rolling average)^4.
+    pub np_w: Option<f64>,
+    /// NP / FTP.
+    pub intensity_factor: Option<f64>,
+    /// Training Stress Score: hours × IF² × 100.
+    pub tss: Option<f64>,
+    pub avg_cadence_rpm: f64,
+    pub max_cadence_rpm: f64,
+    pub avg_heart_rate_bpm: f64,
+    pub max_heart_rate_bpm: u32,
+    /// Seconds in Coggan zones Z1..Z7 (7 entries), empty without FTP.
+    pub time_in_zone_s: Vec<u32>,
+    /// Mean-max power at 5 s, 1 min, 5 min and 20 min.
+    pub best_power: Vec<PowerBest>,
+    /// Best 20 min average power (input for a step-4 FTP estimate).
+    pub best_20min_w: Option<f64>,
+    /// Power downsampled to at most [`SUMMARY_SERIES_MAX`] bucket means, W.
+    pub power_series: Vec<f64>,
+    /// Heart rate on the same buckets, bpm (0 = no reading in the bucket).
+    pub heart_rate_series: Vec<f64>,
+}
+
+/// Upper bound on `RideSummary` chart series length.
+pub const SUMMARY_SERIES_MAX: usize = 600;
+
 /// Running totals for the current ride (since connect or the last Reset).
 /// Time only accumulates while a trainer is connected; reconnect gaps pause it.
 #[derive(Clone, Debug, Default)]

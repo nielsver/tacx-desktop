@@ -370,6 +370,27 @@ class IntervalStatus {
           remainingS == other.remainingS;
 }
 
+/// Best average power over one duration (mean-max point).
+class PowerBest {
+  final int durationS;
+
+  /// `None` when no unbroken stretch of the ride is that long.
+  final double? watts;
+
+  const PowerBest({required this.durationS, this.watts});
+
+  @override
+  int get hashCode => durationS.hashCode ^ watts.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PowerBest &&
+          runtimeType == other.runtimeType &&
+          durationS == other.durationS &&
+          watts == other.watts;
+}
+
 class PowerRange {
   final int minW;
   final int maxW;
@@ -492,6 +513,106 @@ class RideStats {
           avgHeartRateBpm == other.avgHeartRateBpm &&
           maxHeartRateBpm == other.maxHeartRateBpm &&
           recording == other.recording;
+}
+
+/// Post-ride analysis of the 1 Hz track (see `trainer::summary`).
+///
+/// FTP-dependent fields (`intensity_factor`, `tss`, `time_in_zone_s`) are
+/// empty when `ftp_w` is 0; `np_w` is `None` under 30 s of riding.
+class RideSummary {
+  /// Seconds of recorded 1 Hz samples (pauses / reconnect gaps excluded).
+  final int recordedS;
+  final int ftpW;
+  final double avgPowerW;
+  final double maxPowerW;
+
+  /// Normalized Power: 4th root of the mean of (30 s rolling average)^4.
+  final double? npW;
+
+  /// NP / FTP.
+  final double? intensityFactor;
+
+  /// Training Stress Score: hours × IF² × 100.
+  final double? tss;
+  final double avgCadenceRpm;
+  final double maxCadenceRpm;
+  final double avgHeartRateBpm;
+  final int maxHeartRateBpm;
+
+  /// Seconds in Coggan zones Z1..Z7 (7 entries), empty without FTP.
+  final Uint32List timeInZoneS;
+
+  /// Mean-max power at 5 s, 1 min, 5 min and 20 min.
+  final List<PowerBest> bestPower;
+
+  /// Best 20 min average power (input for a step-4 FTP estimate).
+  final double? best20MinW;
+
+  /// Power downsampled to at most [`SUMMARY_SERIES_MAX`] bucket means, W.
+  final Float64List powerSeries;
+
+  /// Heart rate on the same buckets, bpm (0 = no reading in the bucket).
+  final Float64List heartRateSeries;
+
+  const RideSummary({
+    required this.recordedS,
+    required this.ftpW,
+    required this.avgPowerW,
+    required this.maxPowerW,
+    this.npW,
+    this.intensityFactor,
+    this.tss,
+    required this.avgCadenceRpm,
+    required this.maxCadenceRpm,
+    required this.avgHeartRateBpm,
+    required this.maxHeartRateBpm,
+    required this.timeInZoneS,
+    required this.bestPower,
+    this.best20MinW,
+    required this.powerSeries,
+    required this.heartRateSeries,
+  });
+
+  @override
+  int get hashCode =>
+      recordedS.hashCode ^
+      ftpW.hashCode ^
+      avgPowerW.hashCode ^
+      maxPowerW.hashCode ^
+      npW.hashCode ^
+      intensityFactor.hashCode ^
+      tss.hashCode ^
+      avgCadenceRpm.hashCode ^
+      maxCadenceRpm.hashCode ^
+      avgHeartRateBpm.hashCode ^
+      maxHeartRateBpm.hashCode ^
+      timeInZoneS.hashCode ^
+      bestPower.hashCode ^
+      best20MinW.hashCode ^
+      powerSeries.hashCode ^
+      heartRateSeries.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RideSummary &&
+          runtimeType == other.runtimeType &&
+          recordedS == other.recordedS &&
+          ftpW == other.ftpW &&
+          avgPowerW == other.avgPowerW &&
+          maxPowerW == other.maxPowerW &&
+          npW == other.npW &&
+          intensityFactor == other.intensityFactor &&
+          tss == other.tss &&
+          avgCadenceRpm == other.avgCadenceRpm &&
+          maxCadenceRpm == other.maxCadenceRpm &&
+          avgHeartRateBpm == other.avgHeartRateBpm &&
+          maxHeartRateBpm == other.maxHeartRateBpm &&
+          timeInZoneS == other.timeInZoneS &&
+          bestPower == other.bestPower &&
+          best20MinW == other.best20MinW &&
+          powerSeries == other.powerSeries &&
+          heartRateSeries == other.heartRateSeries;
 }
 
 class RouteStatus {

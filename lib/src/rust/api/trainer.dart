@@ -107,6 +107,12 @@ IntervalStatus getIntervalStatus() =>
 /// Ride totals since connect / last reset (1 Hz sampler in Rust).
 RideStats getRideStats() => RustLib.instance.api.crateApiTrainerGetRideStats();
 
+/// Post-ride analysis of the current recording: NP / IF / TSS, mean-max
+/// power (5 s, 1 min, 5 min, 20 min), time in zone and chart series.
+/// Pass `ftp_w = 0` when FTP is unknown (IF, TSS and zones stay empty).
+RideSummary getRideSummary({required int ftpW}) =>
+    RustLib.instance.api.crateApiTrainerGetRideSummary(ftpW: ftpW);
+
 /// Zero the ride totals (keeps recording if a trainer is connected).
 void resetRideStats() => RustLib.instance.api.crateApiTrainerResetRideStats();
 

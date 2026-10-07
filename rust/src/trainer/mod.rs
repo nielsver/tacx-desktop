@@ -11,6 +11,7 @@ pub mod workouts;
 pub mod gpx;
 pub mod reconnect;
 pub mod ride;
+pub mod summary;
 pub mod tcx;
 pub mod types;
 

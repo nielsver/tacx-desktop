@@ -271,6 +271,13 @@ pub fn stats() -> RideStats {
     RECORDER.lock().stats()
 }
 
+/// Post-ride summary of the live recording (`ftp_w = 0`: unknown FTP).
+/// Points are copied under the lock; the analysis runs outside it.
+pub fn summary(ftp_w: u32) -> crate::trainer::types::RideSummary {
+    let points = RECORDER.lock().points.clone();
+    crate::trainer::summary::summarize(&points, ftp_w)
+}
+
 pub fn reset() {
     RECORDER.lock().reset();
 }

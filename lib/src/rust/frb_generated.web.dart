@@ -92,6 +92,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<IntervalPresetInfo> dco_decode_list_interval_preset_info(dynamic raw);
 
   @protected
+  List<PowerBest> dco_decode_list_power_best(dynamic raw);
+
+  @protected
+  Float64List dco_decode_list_prim_f_64_strict(dynamic raw);
+
+  @protected
+  Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
@@ -110,6 +119,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
 
   @protected
+  PowerBest dco_decode_power_best(dynamic raw);
+
+  @protected
   PowerRange dco_decode_power_range(dynamic raw);
 
   @protected
@@ -120,6 +132,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RideStats dco_decode_ride_stats(dynamic raw);
+
+  @protected
+  RideSummary dco_decode_ride_summary(dynamic raw);
 
   @protected
   RouteStatus dco_decode_route_status(dynamic raw);
@@ -222,6 +237,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<PowerBest> sse_decode_list_power_best(SseDeserializer deserializer);
+
+  @protected
+  Float64List sse_decode_list_prim_f_64_strict(SseDeserializer deserializer);
+
+  @protected
+  Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
@@ -240,6 +264,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
+  PowerBest sse_decode_power_best(SseDeserializer deserializer);
+
+  @protected
   PowerRange sse_decode_power_range(SseDeserializer deserializer);
 
   @protected
@@ -250,6 +277,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RideStats sse_decode_ride_stats(SseDeserializer deserializer);
+
+  @protected
+  RideSummary sse_decode_ride_summary(SseDeserializer deserializer);
 
   @protected
   RouteStatus sse_decode_route_status(SseDeserializer deserializer);
@@ -378,6 +408,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_power_best(
+    List<PowerBest> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_f_64_strict(
+    Float64List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_u_32_strict(
+    Uint32List self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -402,6 +450,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_power_best(PowerBest self, SseSerializer serializer);
+
+  @protected
   void sse_encode_power_range(PowerRange self, SseSerializer serializer);
 
   @protected
@@ -415,6 +466,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_ride_stats(RideStats self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ride_summary(RideSummary self, SseSerializer serializer);
 
   @protected
   void sse_encode_route_status(RouteStatus self, SseSerializer serializer);

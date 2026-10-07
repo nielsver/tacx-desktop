@@ -63,6 +63,8 @@ pub enum ControlMode {
     Idle,
     Erg,
     Resistance,
+    /// Indoor bike simulation (FTMS 0x11 or FE-C Track/Wind).
+    Simulation,
 }
 
 impl Default for ControlMode {
@@ -101,6 +103,8 @@ pub struct ConnectionSnapshot {
     pub is_demo: bool,
     pub mode: ControlMode,
     pub device_name: String,
+    /// True when FTMS Feature bit / FE-C / demo can accept simulation (grade/wind).
+    pub supports_simulation: bool,
 }
 
 impl Default for ConnectionSnapshot {
@@ -112,6 +116,7 @@ impl Default for ConnectionSnapshot {
             is_demo: true,
             mode: ControlMode::Idle,
             device_name: String::new(),
+            supports_simulation: true,
         }
     }
 }

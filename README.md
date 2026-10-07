@@ -23,7 +23,8 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 | GATT inventory on connect | — | UUID/property table + FTMS vs FE-C class in logs |
 | Link-lost → Reconnect | Simulated disconnect N/A | Auto Error state; Reconnect restores interval ERG |
 | FE-C write rate limit | — | ~4 Hz latest-wins coalesce on UART WithoutResponse |
-| FE-C Track / Wind / User-config | Demo stub grade→% | Pages `0x33` / `0x32` / `0x37` (public ANT+ FE-C); UI hooks after FRB regen |
+| FE-C Track / Wind / User-config | Demo simulates grade | Pages `0x33` / `0x32` / `0x37` + Flutter Simulation panel |
+| FTMS Indoor Bike Simulation | Demo grade feel | Opcode `0x11` when Feature bit 13 set; gated otherwise |
 | Fitness Machine Status | — | Subscribe `0x2ADA`; stop/pause banner; control-lost → Error |
 | DEMO badge | Always when demo on | — |
 
@@ -199,7 +200,7 @@ Rust crate tacx_desktop_core
    - Subscribe **Fitness Machine Status** (`0x2ADA`) when present — stop/pause surfaces in UI; **Control Permission Lost** (`0xFF`) → Error + Reconnect. If the characteristic is missing or subscribe fails, connect/control **continues** (soft-fail).
 4. Else if Tacx UART RX/TX (`6e40fec3…` / `6e40fec2…`) → **FE-C-over-BLE** path (pages 16+25; cmds `0x30` / `0x31`; simulation `0x32` Wind / `0x33` Track / `0x37` User Configuration).
    FE-C writes are rate-limited to **~4 Hz** with latest-wins coalescing so interval engines cannot flood the UART.
-   **Deferred:** Tacx NEO Road Feel / isokinetic (`0xFC` private-ish); FTMS Indoor Bike Simulation (`0x11`) UI.
+   **Deferred:** Tacx NEO Road Feel / isokinetic (`0xFC` — needs Garmin package; out of scope).
 5. Else error: unsupported device (GATT summary included).
 
 ### Trainer inventory (FTMS vs FE-C-only)

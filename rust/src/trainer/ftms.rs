@@ -8,6 +8,12 @@ pub const CONTROL_POINT: u16 = 0x2AD9;
 pub const SUPPORTED_RESISTANCE_RANGE: u16 = 0x2AD6;
 pub const SUPPORTED_POWER_RANGE: u16 = 0x2AD8;
 pub const MACHINE_STATUS: u16 = 0x2ADA;
+pub const FEATURE: u16 = 0x2ACC;
+
+pub const OP_SET_INDOOR_BIKE_SIMULATION: u8 = 0x11;
+
+/// Fitness Machine Features bit 13 — Indoor Bike Simulation Parameters Supported (FTMS 1.0.1).
+pub const FEATURE_BIT_INDOOR_BIKE_SIMULATION: u32 = 1 << 13;
 
 /// Fitness Machine Status is optional — connect/control must work when absent.
 pub fn machine_status_is_optional() -> bool {
@@ -241,7 +247,7 @@ pub fn format_cp_response(request_op: u8, result: u8) -> String {
         OP_SET_TARGET_RESISTANCE => "Set Target Resistance",
         OP_SET_TARGET_POWER => "Set Target Power",
         OP_START_RESUME => "Start/Resume",
-        0x11 => "Indoor Bike Simulation",
+        OP_SET_INDOOR_BIKE_SIMULATION => "Indoor Bike Simulation",
         _ => "Control Point op",
     };
     format!("{op_name} → {}", describe_cp_result(result))
@@ -294,6 +300,44 @@ pub fn encode_set_resistance(percent: f64, max_raw: i16) -> Vec<u8> {
     let raw = ((percent / 100.0) * (max_raw as f64) / 10.0).round() as i32;
     let raw = raw.clamp(0, 255) as u8;
     vec![OP_SET_TARGET_RESISTANCE, raw]
+}
+
+/// FTMS Set Indoor Bike Simulation Parameters (`0x11`).
+/// - `wind_speed_mps`: m/s (encoded as 0.001 m/s)
+/// - `grade_pct`: % grade (encoded as 0.01 %)
+/// - `crr`: rolling resistance coefficient (encoded as 0.0001)
+/// - `cw`: wind resistance coefficient kg/m (encoded as 0.01 kg/m)
+pub fn encode_indoor_bike_simulation(
+    wind_speed_mps: f64,
+    grade_pct: f64,
+    crr: f64,
+    cw: f64,
+) -> Vec<u8> {
+    let wind = (wind_speed_mps * 1000.0).round().clamp(i16::MIN as f64, i16::MAX as f64) as i16;
+    let grade = (grade_pct * 100.0).round().clamp(i16::MIN as f64, i16::MAX as f64) as i16;
+    let crr_u = (crr / 0.0001).round().clamp(0.0, 255.0) as u8;
+    let cw_u = (cw / 0.01).round().clamp(0.0, 255.0) as u8;
+    let mut v = vec![OP_SET_INDOOR_BIKE_SIMULATION];
+    v.extend_from_slice(&wind.to_le_bytes());
+    v.extend_from_slice(&grade.to_le_bytes());
+    v.push(crr_u);
+    v.push(cw_u);
+    v
+}
+
+/// Grade-only simulation helper (zero wind, default Crr/Cw).
+pub fn encode_simulation_grade(grade_pct: f64) -> Vec<u8> {
+    // Defaults commonly used by open FTMS clients: Crr=0.004, Cw=0.51
+    encode_indoor_bike_simulation(0.0, grade_pct, 0.004, 0.51)
+}
+
+/// Parse Fitness Machine Feature (0x2ACC) for Indoor Bike Simulation support.
+pub fn features_support_simulation(data: &[u8]) -> bool {
+    if data.len() < 4 {
+        return false;
+    }
+    let features = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+    features & FEATURE_BIT_INDOOR_BIKE_SIMULATION != 0
 }
 
 #[cfg(test)]
@@ -376,6 +420,33 @@ mod tests {
         assert_eq!(clamp_target_power(152, &range), 150);
         assert_eq!(clamp_target_power(153, &range), 155);
         assert_eq!(clamp_target_power(5000, &range), 1000);
+    }
+
+    #[test]
+    fn encode_simulation_flat_grade() {
+        let frame = encode_simulation_grade(0.0);
+        assert_eq!(frame[0], OP_SET_INDOOR_BIKE_SIMULATION);
+        assert_eq!(frame.len(), 7);
+        // wind 0
+        assert_eq!(i16::from_le_bytes([frame[1], frame[2]]), 0);
+        // grade 0
+        assert_eq!(i16::from_le_bytes([frame[3], frame[4]]), 0);
+        // crr 0.004 → 40; cw 0.51 → 51
+        assert_eq!(frame[5], 40);
+        assert_eq!(frame[6], 51);
+        let uphill = encode_indoor_bike_simulation(0.0, 5.0, 0.004, 0.51);
+        assert_eq!(i16::from_le_bytes([uphill[3], uphill[4]]), 500); // 5.00%
+    }
+
+    #[test]
+    fn feature_bit_simulation() {
+        let mut raw = vec![0u8; 8];
+        // set bit 13 in features
+        let features: u32 = FEATURE_BIT_INDOOR_BIKE_SIMULATION;
+        raw[0..4].copy_from_slice(&features.to_le_bytes());
+        assert!(features_support_simulation(&raw));
+        assert!(!features_support_simulation(&[0, 0, 0, 0]));
+        assert!(!features_support_simulation(&[]));
     }
 
     #[test]

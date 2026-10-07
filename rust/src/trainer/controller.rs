@@ -68,6 +68,8 @@ struct BleSession {
     status_banner: Arc<Mutex<Option<String>>>,
     /// Set when FTMS Status reports Control Permission Lost (0xFF).
     control_lost: Arc<AtomicBool>,
+    /// FTMS Feature bit 13 or FE-C path — simulation grade/wind allowed.
+    simulation_supported: bool,
 }
 
 pub struct TrainerController {
@@ -127,6 +129,7 @@ impl TrainerController {
                 let mut s = d.snapshot.lock().clone();
                 s.is_demo = true;
                 s.protocol = ProtocolKind::Demo;
+                s.supports_simulation = true;
                 s
             }
             Backend::Ble(b) => {
@@ -146,6 +149,7 @@ impl TrainerController {
                         is_demo: false,
                         mode: *b.mode.lock(),
                         device_name: b.device_name.clone(),
+                        supports_simulation: b.simulation_supported,
                     }
                 } else if control_lost {
                     ConnectionSnapshot {
@@ -158,6 +162,7 @@ impl TrainerController {
                         is_demo: false,
                         mode: *b.mode.lock(),
                         device_name: b.device_name.clone(),
+                        supports_simulation: b.simulation_supported,
                     }
                 } else {
                     let detail = match banner {
@@ -171,6 +176,7 @@ impl TrainerController {
                         is_demo: false,
                         mode: *b.mode.lock(),
                         device_name: b.device_name.clone(),
+                        supports_simulation: b.simulation_supported,
                     }
                 }
             }
@@ -427,13 +433,11 @@ impl TrainerController {
         }
     }
 
-    /// FE-C simulation: Track Resistance (page 0x33). Rate-limited. FTMS trainers: not supported yet.
+    /// Track / grade simulation: FE-C page 0x33 or FTMS Indoor Bike Simulation (`0x11`).
     pub async fn set_track_resistance(&mut self, grade_pct: f64, crr: f64) -> Result<(), String> {
         match &mut self.backend {
             Backend::Demo(d) => {
-                // Demo: treat as resistance-ish feedback only
-                let approx = (grade_pct.clamp(-10.0, 20.0) + 10.0) / 30.0 * 100.0;
-                d.set_resistance(approx.clamp(0.0, 100.0));
+                d.set_simulation_grade(grade_pct);
                 Ok(())
             }
             Backend::Ble(b) => {
@@ -444,13 +448,37 @@ impl TrainerController {
                     ProtocolKind::TacxFecBle => {
                         let payload = fec::encode_track_resistance(grade_pct, crr)?;
                         write_fec_throttled(b, payload).await?;
-                        *b.mode.lock() = ControlMode::Resistance;
+                        *b.mode.lock() = ControlMode::Simulation;
                         Ok(())
                     }
-                    ProtocolKind::Ftms => Err(
-                        "Track Resistance is FE-C simulation (page 0x33). This trainer is on FTMS — use ERG/Resistance for now."
-                            .into(),
-                    ),
+                    ProtocolKind::Ftms => {
+                        if !b.simulation_supported {
+                            return Err(
+                                "This FTMS trainer does not advertise Indoor Bike Simulation (Feature bit 13)."
+                                    .into(),
+                            );
+                        }
+                        let ch = b
+                            .control_char
+                            .as_ref()
+                            .ok_or_else(|| "FTMS Control Point missing".to_string())?;
+                        let payload = ftms::encode_indoor_bike_simulation(0.0, grade_pct, crr, 0.51);
+                        *b.last_cp.lock() = None;
+                        b.peripheral
+                            .write(ch, &payload, WriteType::WithResponse)
+                            .await
+                            .map_err(|e| format!("FTMS simulation (grade) failed: {e}"))?;
+                        await_cp_result(
+                            &b.last_cp,
+                            ftms::OP_SET_INDOOR_BIKE_SIMULATION,
+                            Duration::from_secs(3),
+                        )
+                        .await?;
+                        *b.mode.lock() = ControlMode::Simulation;
+                        let mut m = b.metrics.lock();
+                        m.target_power_w = None;
+                        Ok(())
+                    }
                     ProtocolKind::Demo => Ok(()),
                 }
             }
@@ -480,10 +508,39 @@ impl TrainerController {
                         write_fec_throttled(b, payload).await?;
                         Ok(())
                     }
-                    ProtocolKind::Ftms => Err(
-                        "Wind Resistance is FE-C simulation (page 0x32). This trainer is on FTMS."
-                            .into(),
-                    ),
+                    ProtocolKind::Ftms => {
+                        if !b.simulation_supported {
+                            return Err(
+                                "This FTMS trainer does not advertise Indoor Bike Simulation (Feature bit 13)."
+                                    .into(),
+                            );
+                        }
+                        // Map FE-C wind (km/h, kg/m) into FTMS 0x11 (m/s, cw).
+                        let wind_mps = wind_speed_kmh / 3.6;
+                        let ch = b
+                            .control_char
+                            .as_ref()
+                            .ok_or_else(|| "FTMS Control Point missing".to_string())?;
+                        let payload = ftms::encode_indoor_bike_simulation(
+                            wind_mps,
+                            0.0,
+                            0.004,
+                            wind_resistance_coefficient,
+                        );
+                        *b.last_cp.lock() = None;
+                        b.peripheral
+                            .write(ch, &payload, WriteType::WithResponse)
+                            .await
+                            .map_err(|e| format!("FTMS simulation (wind) failed: {e}"))?;
+                        await_cp_result(
+                            &b.last_cp,
+                            ftms::OP_SET_INDOOR_BIKE_SIMULATION,
+                            Duration::from_secs(3),
+                        )
+                        .await?;
+                        *b.mode.lock() = ControlMode::Simulation;
+                        Ok(())
+                    }
                     ProtocolKind::Demo => Ok(()),
                 }
             }
@@ -519,6 +576,68 @@ impl TrainerController {
                         "User Configuration is FE-C page 0x37. This trainer is on FTMS."
                             .into(),
                     ),
+                    ProtocolKind::Demo => Ok(()),
+                }
+            }
+        }
+    }
+
+
+    /// FTMS Indoor Bike Simulation Parameters (`0x11`) or FE-C Track+Wind pair.
+    pub async fn set_indoor_bike_simulation(
+        &mut self,
+        wind_speed_mps: f64,
+        grade_pct: f64,
+        crr: f64,
+        cw: f64,
+    ) -> Result<(), String> {
+        match &mut self.backend {
+            Backend::Demo(d) => {
+                d.set_simulation_grade(grade_pct);
+                Ok(())
+            }
+            Backend::Ble(b) => {
+                if !b.alive.load(Ordering::SeqCst) || b.control_lost.load(Ordering::SeqCst) {
+                    return Err("Trainer not controllable — Reconnect first".into());
+                }
+                match b.protocol {
+                    ProtocolKind::Ftms => {
+                        if !b.simulation_supported {
+                            return Err(
+                                "Indoor Bike Simulation not advertised (Feature 0x2ACC bit 13)."
+                                    .into(),
+                            );
+                        }
+                        let ch = b
+                            .control_char
+                            .as_ref()
+                            .ok_or_else(|| "FTMS Control Point missing".to_string())?;
+                        let payload =
+                            ftms::encode_indoor_bike_simulation(wind_speed_mps, grade_pct, crr, cw);
+                        *b.last_cp.lock() = None;
+                        b.peripheral
+                            .write(ch, &payload, WriteType::WithResponse)
+                            .await
+                            .map_err(|e| format!("FTMS 0x11 simulation failed: {e}"))?;
+                        await_cp_result(
+                            &b.last_cp,
+                            ftms::OP_SET_INDOOR_BIKE_SIMULATION,
+                            Duration::from_secs(3),
+                        )
+                        .await?;
+                        *b.mode.lock() = ControlMode::Simulation;
+                        let mut m = b.metrics.lock();
+                        m.target_power_w = None;
+                        Ok(())
+                    }
+                    ProtocolKind::TacxFecBle => {
+                        let track = fec::encode_track_resistance(grade_pct, crr)?;
+                        write_fec_throttled(b, track).await?;
+                        let wind = fec::encode_wind_resistance(cw, wind_speed_mps * 3.6, 1.0)?;
+                        write_fec_throttled(b, wind).await?;
+                        *b.mode.lock() = ControlMode::Simulation;
+                        Ok(())
+                    }
                     ProtocolKind::Demo => Ok(()),
                 }
             }
@@ -754,6 +873,7 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
     let fec_flush_armed = Arc::new(AtomicBool::new(false));
     let status_banner: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let control_lost = Arc::new(AtomicBool::new(false));
+    let mut simulation_supported = false;
 
     if has_ftms {
         // Prefer FTMS (even on Dual — FE-C UART stays unused while FTMS works).
@@ -772,6 +892,17 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             if let Ok(raw) = peripheral.read(ch).await {
                 power_range = ftms::parse_power_range(&raw);
             }
+        }
+        let ftms_feature = uuid_from_u16(ftms::FEATURE);
+        if let Some(ch) = chars.iter().find(|c| c.uuid == ftms_feature) {
+            if let Ok(raw) = peripheral.read(ch).await {
+                simulation_supported = ftms::features_support_simulation(&raw);
+                log::info!(
+                    "FTMS Feature: indoor bike simulation supported={simulation_supported}"
+                );
+            }
+        } else {
+            log::info!("FTMS Feature (0x2ACC) absent — simulation gated off");
         }
 
         let bike_ch = chars
@@ -900,6 +1031,7 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             fec_flush_armed,
             status_banner,
             control_lost,
+            simulation_supported,
         });
     }
 
@@ -952,6 +1084,7 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
         });
 
         central.stop_scan().await.ok();
+        simulation_supported = true;
         return Ok(BleSession {
             peripheral,
             protocol: ProtocolKind::TacxFecBle,
@@ -974,6 +1107,7 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             fec_flush_armed,
             status_banner,
             control_lost,
+            simulation_supported,
         });
     }
 

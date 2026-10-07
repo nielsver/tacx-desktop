@@ -42,6 +42,7 @@ impl DemoTrainer {
         s.mode = *self.mode.lock();
         s.is_demo = true;
         s.protocol = ProtocolKind::Demo;
+        s.supports_simulation = true;
     }
 
     pub async fn scan(&self) -> Vec<DiscoveredDevice> {
@@ -111,6 +112,18 @@ impl DemoTrainer {
         self.snapshot.lock().mode = ControlMode::Resistance;
     }
 
+    /// Demo stand-in for grade/wind simulation (maps grade into resistance feel).
+    pub fn set_simulation_grade(&self, grade_pct: f64) {
+        let approx = (grade_pct.clamp(-10.0, 20.0) + 10.0) / 30.0 * 100.0;
+        let p = approx.clamp(0.0, 100.0);
+        *self.resistance_pct.lock() = p;
+        *self.mode.lock() = ControlMode::Simulation;
+        let mut m = self.metrics.lock();
+        m.resistance_pct = Some(p);
+        m.target_power_w = None;
+        self.snapshot.lock().mode = ControlMode::Simulation;
+    }
+
     pub fn tick(&self) {
         if !*self.running.lock() {
             return;
@@ -143,6 +156,16 @@ impl DemoTrainer {
                 m.power_w = (40.0 + wobble).max(0.0);
                 m.cadence_rpm = 60.0 + t.sin() * 3.0;
                 m.speed_kmh = 18.0 + (t * 0.4).sin() * 1.5;
+            }
+            ControlMode::Simulation => {
+                let res = *self.resistance_pct.lock();
+                let expected = 80.0 + res * 3.0;
+                let power = m.power_w + (expected - m.power_w) * 0.2 + wobble;
+                m.power_w = power.max(0.0);
+                m.cadence_rpm = 82.0 + (t * 0.8).sin() * 4.0;
+                m.speed_kmh = 24.0 + (50.0 - res) * 0.08;
+                m.resistance_pct = Some(res);
+                m.target_power_w = None;
             }
         }
     }

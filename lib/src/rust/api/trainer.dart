@@ -32,6 +32,52 @@ Future<void> setTargetPower({required int watts}) =>
 Future<void> setResistancePercent({required double percent}) =>
     RustLib.instance.api.crateApiTrainerSetResistancePercent(percent: percent);
 
+/// FE-C Track Resistance (page 0x33). No-op path on FTMS until Indoor Bike Simulation lands.
+Future<void> setTrackResistance({
+  required double gradePct,
+  required double crr,
+}) => RustLib.instance.api.crateApiTrainerSetTrackResistance(
+  gradePct: gradePct,
+  crr: crr,
+);
+
+/// FE-C Wind Resistance (page 0x32).
+Future<void> setWindResistance({
+  required double windResistanceCoefficient,
+  required double windSpeedKmh,
+  required double draftingFactor,
+}) => RustLib.instance.api.crateApiTrainerSetWindResistance(
+  windResistanceCoefficient: windResistanceCoefficient,
+  windSpeedKmh: windSpeedKmh,
+  draftingFactor: draftingFactor,
+);
+
+/// FE-C User Configuration (page 0x37).
+Future<void> setUserConfiguration({
+  required double userWeightKg,
+  required double bicycleWeightKg,
+  required double wheelDiameterM,
+  required double gearRatio,
+}) => RustLib.instance.api.crateApiTrainerSetUserConfiguration(
+  userWeightKg: userWeightKg,
+  bicycleWeightKg: bicycleWeightKg,
+  wheelDiameterM: wheelDiameterM,
+  gearRatio: gearRatio,
+);
+
+/// FTMS `0x11` or FE-C Track+Wind simulation parameters.
+Future<void> setIndoorBikeSimulation({
+  required double windSpeedMps,
+  required double gradePct,
+  required double crr,
+  required double cw,
+}) => RustLib.instance.api.crateApiTrainerSetIndoorBikeSimulation(
+  windSpeedMps: windSpeedMps,
+  gradePct: gradePct,
+  crr: crr,
+  cw: cw,
+);
+
 TrainerMetrics getMetrics() => RustLib.instance.api.crateApiTrainerGetMetrics();
 
 ConnectionSnapshot getConnectionSnapshot() =>

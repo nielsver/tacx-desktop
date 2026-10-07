@@ -27,6 +27,7 @@ class _RideDashboardState extends State<RideDashboard> {
     isDemo: true,
     mode: ControlMode.idle,
     deviceName: '',
+    supportsSimulation: true,
   );
   ResistanceRange _resRange = const ResistanceRange(
     minPct: 0,
@@ -45,6 +46,11 @@ class _RideDashboardState extends State<RideDashboard> {
   int _targetWatts = 150;
   int _ergStep = 10;
   double _resistancePct = 20;
+  double _gradePct = 0;
+  double _windKmh = 0;
+  double _userWeightKg = 75;
+  final double _bikeWeightKg = 8;
+  final double _wheelDiameterM = 0.7;
   bool _busy = false;
   String? _error;
 
@@ -185,6 +191,43 @@ class _RideDashboardState extends State<RideDashboard> {
                     ),
                     const SizedBox(height: 12),
                     _MetricsRow(metrics: _metrics, snap: _snap),
+                    const SizedBox(height: 12),
+                    _SimulationPanel(
+                      gradePct: _gradePct,
+                      windKmh: _windKmh,
+                      userWeightKg: _userWeightKg,
+                      enabled: connected && (_snap.supportsSimulation || _snap.isDemo),
+                      supportsSimulation: _snap.supportsSimulation || _snap.isDemo,
+                      onGrade: (v) => setState(() => _gradePct = v),
+                      onWind: (v) => setState(() => _windKmh = v),
+                      onWeight: (v) => setState(() => _userWeightKg = v),
+                      onApplyGrade: () => _run(() async {
+                        await api.setTrackResistance(gradePct: _gradePct, crr: 0.004);
+                      }),
+                      onApplyWind: () => _run(() async {
+                        await api.setWindResistance(
+                          windResistanceCoefficient: 0.51,
+                          windSpeedKmh: _windKmh,
+                          draftingFactor: 1.0,
+                        );
+                      }),
+                      onApplyAll: () => _run(() async {
+                        await api.setIndoorBikeSimulation(
+                          windSpeedMps: _windKmh / 3.6,
+                          gradePct: _gradePct,
+                          crr: 0.004,
+                          cw: 0.51,
+                        );
+                      }),
+                      onApplyUser: () => _run(() async {
+                        await api.setUserConfiguration(
+                          userWeightKg: _userWeightKg,
+                          bicycleWeightKg: _bikeWeightKg,
+                          wheelDiameterM: _wheelDiameterM,
+                          gearRatio: 3.0,
+                        );
+                      }),
+                    ),
                     const SizedBox(height: 12),
                     Expanded(
                       child: Row(
@@ -703,6 +746,155 @@ class _IntervalPanel extends StatelessWidget {
             child: const Text('Stop intervals'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+class _SimulationPanel extends StatelessWidget {
+  const _SimulationPanel({
+    required this.gradePct,
+    required this.windKmh,
+    required this.userWeightKg,
+    required this.enabled,
+    required this.supportsSimulation,
+    required this.onGrade,
+    required this.onWind,
+    required this.onWeight,
+    required this.onApplyGrade,
+    required this.onApplyWind,
+    required this.onApplyAll,
+    required this.onApplyUser,
+  });
+
+  final double gradePct;
+  final double windKmh;
+  final double userWeightKg;
+  final bool enabled;
+  final bool supportsSimulation;
+  final ValueChanged<double> onGrade;
+  final ValueChanged<double> onWind;
+  final ValueChanged<double> onWeight;
+  final VoidCallback onApplyGrade;
+  final VoidCallback onApplyWind;
+  final VoidCallback onApplyAll;
+  final VoidCallback onApplyUser;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: const Color(0xFF151A22),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Simulation',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  supportsSimulation
+                      ? 'FTMS 0x11 / FE-C Track·Wind'
+                      : 'Not advertised on this trainer',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                const Spacer(),
+                FilledButton.tonal(
+                  onPressed: enabled ? onApplyAll : null,
+                  child: const Text('Apply grade+wind'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Grade ${gradePct.toStringAsFixed(1)} %',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Slider(
+                        value: gradePct.clamp(-10.0, 15.0),
+                        min: -10,
+                        max: 15,
+                        divisions: 250,
+                        label: '${gradePct.toStringAsFixed(1)}%',
+                        onChanged: enabled ? onGrade : null,
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton(
+                          onPressed: enabled ? onApplyGrade : null,
+                          child: const Text('Apply grade'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Wind ${windKmh.toStringAsFixed(0)} km/h',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Slider(
+                        value: windKmh.clamp(-40.0, 40.0),
+                        min: -40,
+                        max: 40,
+                        divisions: 80,
+                        label: '${windKmh.toStringAsFixed(0)} km/h',
+                        onChanged: enabled ? onWind : null,
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton(
+                          onPressed: enabled ? onApplyWind : null,
+                          child: const Text('Apply wind'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                SizedBox(
+                  width: 200,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Rider ${userWeightKg.toStringAsFixed(0)} kg',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Slider(
+                        value: userWeightKg.clamp(40.0, 120.0),
+                        min: 40,
+                        max: 120,
+                        divisions: 80,
+                        label: '${userWeightKg.toStringAsFixed(0)} kg',
+                        onChanged: enabled ? onWeight : null,
+                      ),
+                      FilledButton.tonal(
+                        onPressed: enabled ? onApplyUser : null,
+                        child: const Text('Apply user cfg'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

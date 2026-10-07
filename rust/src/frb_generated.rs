@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
                     default_rust_auto_opaque = RustAutoOpaqueMoi,
                 );
                 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1394867995;
+                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1091539691;
             
 
 // Section: executor
@@ -174,6 +174,18 @@ fn wire__crate__api__trainer__connect_trainer_impl(port_: flutter_rust_bridge::f
                 transform_result_sse::<_, ()>((move || {
                      let output_ok = Ok::<_, ()>({ crate::api::trainer::set_demo_mode(api_enabled); })?;   std::result::Result::Ok(output_ok)
                 })()) })
+            }fn wire__crate__api__trainer__set_indoor_bike_simulation_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "set_indoor_bike_simulation", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_wind_speed_mps = <f64>::sse_decode(&mut deserializer);
+let api_grade_pct = <f64>::sse_decode(&mut deserializer);
+let api_crr = <f64>::sse_decode(&mut deserializer);
+let api_cw = <f64>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, String>((move || async move {
+                         let output_ok = crate::api::trainer::set_indoor_bike_simulation(api_wind_speed_mps, api_grade_pct, api_crr, api_cw).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
             }fn wire__crate__api__trainer__set_resistance_percent_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
                 FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "set_resistance_percent", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
             let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
@@ -190,6 +202,39 @@ fn wire__crate__api__trainer__connect_trainer_impl(port_: flutter_rust_bridge::f
             let api_watts = <u32>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
                     transform_result_sse::<_, String>((move || async move {
                          let output_ok = crate::api::trainer::set_target_power(api_watts).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__trainer__set_track_resistance_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "set_track_resistance", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_grade_pct = <f64>::sse_decode(&mut deserializer);
+let api_crr = <f64>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, String>((move || async move {
+                         let output_ok = crate::api::trainer::set_track_resistance(api_grade_pct, api_crr).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__trainer__set_user_configuration_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "set_user_configuration", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_user_weight_kg = <f64>::sse_decode(&mut deserializer);
+let api_bicycle_weight_kg = <f64>::sse_decode(&mut deserializer);
+let api_wheel_diameter_m = <f64>::sse_decode(&mut deserializer);
+let api_gear_ratio = <f64>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, String>((move || async move {
+                         let output_ok = crate::api::trainer::set_user_configuration(api_user_weight_kg, api_bicycle_weight_kg, api_wheel_diameter_m, api_gear_ratio).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__trainer__set_wind_resistance_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "set_wind_resistance", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_wind_resistance_coefficient = <f64>::sse_decode(&mut deserializer);
+let api_wind_speed_kmh = <f64>::sse_decode(&mut deserializer);
+let api_drafting_factor = <f64>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, String>((move || async move {
+                         let output_ok = crate::api::trainer::set_wind_resistance(api_wind_resistance_coefficient, api_wind_speed_kmh, api_drafting_factor).await?;   std::result::Result::Ok(output_ok)
                     })().await)
                 } })
             }fn wire__crate__api__trainer__start_interval_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
@@ -233,7 +278,8 @@ let mut var_protocol = <crate::trainer::types::ProtocolKind>::sse_decode(deseria
 let mut var_isDemo = <bool>::sse_decode(deserializer);
 let mut var_mode = <crate::trainer::types::ControlMode>::sse_decode(deserializer);
 let mut var_deviceName = <String>::sse_decode(deserializer);
-return crate::trainer::types::ConnectionSnapshot{state: var_state, detail: var_detail, protocol: var_protocol, is_demo: var_isDemo, mode: var_mode, device_name: var_deviceName};}
+let mut var_supportsSimulation = <bool>::sse_decode(deserializer);
+return crate::trainer::types::ConnectionSnapshot{state: var_state, detail: var_detail, protocol: var_protocol, is_demo: var_isDemo, mode: var_mode, device_name: var_deviceName, supports_simulation: var_supportsSimulation};}
                 }
                 
                 impl SseDecode for crate::trainer::types::ConnectionState {
@@ -256,6 +302,7 @@ return crate::trainer::types::ConnectionSnapshot{state: var_state, detail: var_d
             0 => crate::trainer::types::ControlMode::Idle,
 1 => crate::trainer::types::ControlMode::Erg,
 2 => crate::trainer::types::ControlMode::Resistance,
+3 => crate::trainer::types::ControlMode::Simulation,
             _ => unreachable!("Invalid variant for ControlMode: {}", inner),
         };}
                 }
@@ -419,9 +466,13 @@ return crate::trainer::types::TrainerMetrics{power_w: var_powerW, cadence_rpm: v
 12 => wire__crate__api__trainer__reconnect_trainer_impl(port, ptr, rust_vec_len, data_len),
 13 => wire__crate__api__trainer__run_headless_demo_smoke_impl(port, ptr, rust_vec_len, data_len),
 14 => wire__crate__api__trainer__scan_trainers_impl(port, ptr, rust_vec_len, data_len),
-16 => wire__crate__api__trainer__set_resistance_percent_impl(port, ptr, rust_vec_len, data_len),
-17 => wire__crate__api__trainer__set_target_power_impl(port, ptr, rust_vec_len, data_len),
-18 => wire__crate__api__trainer__start_interval_impl(port, ptr, rust_vec_len, data_len),
+16 => wire__crate__api__trainer__set_indoor_bike_simulation_impl(port, ptr, rust_vec_len, data_len),
+17 => wire__crate__api__trainer__set_resistance_percent_impl(port, ptr, rust_vec_len, data_len),
+18 => wire__crate__api__trainer__set_target_power_impl(port, ptr, rust_vec_len, data_len),
+19 => wire__crate__api__trainer__set_track_resistance_impl(port, ptr, rust_vec_len, data_len),
+20 => wire__crate__api__trainer__set_user_configuration_impl(port, ptr, rust_vec_len, data_len),
+21 => wire__crate__api__trainer__set_wind_resistance_impl(port, ptr, rust_vec_len, data_len),
+22 => wire__crate__api__trainer__start_interval_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }
@@ -443,7 +494,7 @@ return crate::trainer::types::TrainerMetrics{power_w: var_powerW, cadence_rpm: v
 10 => wire__crate__api__trainer__is_demo_mode_impl(ptr, rust_vec_len, data_len),
 11 => wire__crate__api__trainer__list_interval_presets_impl(ptr, rust_vec_len, data_len),
 15 => wire__crate__api__trainer__set_demo_mode_impl(ptr, rust_vec_len, data_len),
-19 => wire__crate__api__trainer__stop_interval_impl(ptr, rust_vec_len, data_len),
+23 => wire__crate__api__trainer__stop_interval_impl(ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }
@@ -460,7 +511,8 @@ self.detail.into_into_dart().into_dart(),
 self.protocol.into_into_dart().into_dart(),
 self.is_demo.into_into_dart().into_dart(),
 self.mode.into_into_dart().into_dart(),
-self.device_name.into_into_dart().into_dart()
+self.device_name.into_into_dart().into_dart(),
+self.supports_simulation.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -496,6 +548,7 @@ impl flutter_rust_bridge::IntoIntoDart<crate::trainer::types::ConnectionState> f
                     Self::Idle => 0.into_dart(),
 Self::Erg => 1.into_dart(),
 Self::Resistance => 2.into_dart(),
+Self::Simulation => 3.into_dart(),
                     _ => unreachable!(),
                 }
                 }
@@ -647,7 +700,8 @@ impl flutter_rust_bridge::IntoIntoDart<crate::trainer::types::TrainerMetrics> fo
 <crate::trainer::types::ProtocolKind>::sse_encode(self.protocol, serializer);
 <bool>::sse_encode(self.is_demo, serializer);
 <crate::trainer::types::ControlMode>::sse_encode(self.mode, serializer);
-<String>::sse_encode(self.device_name, serializer);}
+<String>::sse_encode(self.device_name, serializer);
+<bool>::sse_encode(self.supports_simulation, serializer);}
                 }
                 
                 impl SseEncode for crate::trainer::types::ConnectionState {
@@ -665,6 +719,7 @@ crate::trainer::types::ConnectionState::Error => { 4 }
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(match self {crate::trainer::types::ControlMode::Idle => { 0 }
 crate::trainer::types::ControlMode::Erg => { 1 }
 crate::trainer::types::ControlMode::Resistance => { 2 }
+crate::trainer::types::ControlMode::Simulation => { 3 }
  _ => { unimplemented!(""); }}, serializer);}
                 }
                 

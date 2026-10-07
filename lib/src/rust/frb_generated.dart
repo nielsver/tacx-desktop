@@ -68,7 +68,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -1394867995;
+  int get rustContentHash => -1091539691;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -112,9 +112,34 @@ abstract class RustLibApi extends BaseApi {
 
   void crateApiTrainerSetDemoMode({required bool enabled});
 
+  Future<void> crateApiTrainerSetIndoorBikeSimulation({
+    required double windSpeedMps,
+    required double gradePct,
+    required double crr,
+    required double cw,
+  });
+
   Future<void> crateApiTrainerSetResistancePercent({required double percent});
 
   Future<void> crateApiTrainerSetTargetPower({required int watts});
+
+  Future<void> crateApiTrainerSetTrackResistance({
+    required double gradePct,
+    required double crr,
+  });
+
+  Future<void> crateApiTrainerSetUserConfiguration({
+    required double userWeightKg,
+    required double bicycleWeightKg,
+    required double wheelDiameterM,
+    required double gearRatio,
+  });
+
+  Future<void> crateApiTrainerSetWindResistance({
+    required double windResistanceCoefficient,
+    required double windSpeedKmh,
+    required double draftingFactor,
+  });
 
   Future<void> crateApiTrainerStartInterval({required String key});
 
@@ -496,6 +521,45 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "set_demo_mode", argNames: ["enabled"]);
 
   @override
+  Future<void> crateApiTrainerSetIndoorBikeSimulation({
+    required double windSpeedMps,
+    required double gradePct,
+    required double crr,
+    required double cw,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_f_64(windSpeedMps, serializer);
+          sse_encode_f_64(gradePct, serializer);
+          sse_encode_f_64(crr, serializer);
+          sse_encode_f_64(cw, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 16,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiTrainerSetIndoorBikeSimulationConstMeta,
+        argValues: [windSpeedMps, gradePct, crr, cw],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerSetIndoorBikeSimulationConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_indoor_bike_simulation",
+        argNames: ["windSpeedMps", "gradePct", "crr", "cw"],
+      );
+
+  @override
   Future<void> crateApiTrainerSetResistancePercent({required double percent}) {
     return handler.executeNormal(
       NormalTask(
@@ -505,7 +569,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 16,
+            funcId: 17,
             port: port_,
           );
         },
@@ -536,7 +600,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 17,
+            funcId: 18,
             port: port_,
           );
         },
@@ -555,6 +619,126 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "set_target_power", argNames: ["watts"]);
 
   @override
+  Future<void> crateApiTrainerSetTrackResistance({
+    required double gradePct,
+    required double crr,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_f_64(gradePct, serializer);
+          sse_encode_f_64(crr, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 19,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiTrainerSetTrackResistanceConstMeta,
+        argValues: [gradePct, crr],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerSetTrackResistanceConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_track_resistance",
+        argNames: ["gradePct", "crr"],
+      );
+
+  @override
+  Future<void> crateApiTrainerSetUserConfiguration({
+    required double userWeightKg,
+    required double bicycleWeightKg,
+    required double wheelDiameterM,
+    required double gearRatio,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_f_64(userWeightKg, serializer);
+          sse_encode_f_64(bicycleWeightKg, serializer);
+          sse_encode_f_64(wheelDiameterM, serializer);
+          sse_encode_f_64(gearRatio, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 20,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiTrainerSetUserConfigurationConstMeta,
+        argValues: [userWeightKg, bicycleWeightKg, wheelDiameterM, gearRatio],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerSetUserConfigurationConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_user_configuration",
+        argNames: [
+          "userWeightKg",
+          "bicycleWeightKg",
+          "wheelDiameterM",
+          "gearRatio",
+        ],
+      );
+
+  @override
+  Future<void> crateApiTrainerSetWindResistance({
+    required double windResistanceCoefficient,
+    required double windSpeedKmh,
+    required double draftingFactor,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_f_64(windResistanceCoefficient, serializer);
+          sse_encode_f_64(windSpeedKmh, serializer);
+          sse_encode_f_64(draftingFactor, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 21,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiTrainerSetWindResistanceConstMeta,
+        argValues: [windResistanceCoefficient, windSpeedKmh, draftingFactor],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerSetWindResistanceConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_wind_resistance",
+        argNames: [
+          "windResistanceCoefficient",
+          "windSpeedKmh",
+          "draftingFactor",
+        ],
+      );
+
+  @override
   Future<void> crateApiTrainerStartInterval({required String key}) {
     return handler.executeNormal(
       NormalTask(
@@ -564,7 +748,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 18,
+            funcId: 22,
             port: port_,
           );
         },
@@ -588,7 +772,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 23)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -632,8 +816,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ConnectionSnapshot dco_decode_connection_snapshot(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return ConnectionSnapshot(
       state: dco_decode_connection_state(arr[0]),
       detail: dco_decode_String(arr[1]),
@@ -641,6 +825,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       isDemo: dco_decode_bool(arr[3]),
       mode: dco_decode_control_mode(arr[4]),
       deviceName: dco_decode_String(arr[5]),
+      supportsSimulation: dco_decode_bool(arr[6]),
     );
   }
 
@@ -852,6 +1037,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_isDemo = sse_decode_bool(deserializer);
     var var_mode = sse_decode_control_mode(deserializer);
     var var_deviceName = sse_decode_String(deserializer);
+    var var_supportsSimulation = sse_decode_bool(deserializer);
     return ConnectionSnapshot(
       state: var_state,
       detail: var_detail,
@@ -859,6 +1045,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       isDemo: var_isDemo,
       mode: var_mode,
       deviceName: var_deviceName,
+      supportsSimulation: var_supportsSimulation,
     );
   }
 
@@ -1112,6 +1299,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.isDemo, serializer);
     sse_encode_control_mode(self.mode, serializer);
     sse_encode_String(self.deviceName, serializer);
+    sse_encode_bool(self.supportsSimulation, serializer);
   }
 
   @protected

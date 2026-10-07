@@ -14,6 +14,9 @@ class ConnectionSnapshot {
   final ControlMode mode;
   final String deviceName;
 
+  /// True when FTMS Feature bit / FE-C / demo can accept simulation (grade/wind).
+  final bool supportsSimulation;
+
   const ConnectionSnapshot({
     required this.state,
     required this.detail,
@@ -21,6 +24,7 @@ class ConnectionSnapshot {
     required this.isDemo,
     required this.mode,
     required this.deviceName,
+    required this.supportsSimulation,
   });
 
   @override
@@ -30,7 +34,8 @@ class ConnectionSnapshot {
       protocol.hashCode ^
       isDemo.hashCode ^
       mode.hashCode ^
-      deviceName.hashCode;
+      deviceName.hashCode ^
+      supportsSimulation.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -42,12 +47,20 @@ class ConnectionSnapshot {
           protocol == other.protocol &&
           isDemo == other.isDemo &&
           mode == other.mode &&
-          deviceName == other.deviceName;
+          deviceName == other.deviceName &&
+          supportsSimulation == other.supportsSimulation;
 }
 
 enum ConnectionState { disconnected, scanning, connecting, connected, error }
 
-enum ControlMode { idle, erg, resistance }
+enum ControlMode {
+  idle,
+  erg,
+  resistance,
+
+  /// Indoor bike simulation (FTMS 0x11 or FE-C Track/Wind).
+  simulation,
+}
 
 class DiscoveredDevice {
   final String id;

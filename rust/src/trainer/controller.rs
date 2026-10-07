@@ -2,6 +2,7 @@
 
 use crate::trainer::demo::DemoTrainer;
 use crate::trainer::fec;
+use crate::trainer::fec_rate::{FecWriteRateLimiter, RateDecision};
 use crate::trainer::ftms;
 use crate::trainer::gatt;
 use crate::trainer::intervals::IntervalEngine;
@@ -59,6 +60,14 @@ struct BleSession {
     /// Last FTMS Control Point indication: (request_op, result).
     last_cp: Arc<Mutex<Option<(u8, u8)>>>,
     gatt_summary: String,
+    /// FE-C WithoutResponse throttle (~4 Hz, latest-wins).
+    fec_limiter: Arc<Mutex<FecWriteRateLimiter>>,
+    /// True while a background FE-C flush task is scheduled.
+    fec_flush_armed: Arc<AtomicBool>,
+    /// Fitness Machine Status / control-lost banner text.
+    status_banner: Arc<Mutex<Option<String>>>,
+    /// Set when FTMS Status reports Control Permission Lost (0xFF).
+    control_lost: Arc<AtomicBool>,
 }
 
 pub struct TrainerController {
@@ -122,23 +131,42 @@ impl TrainerController {
             }
             Backend::Ble(b) => {
                 let alive = b.alive.load(Ordering::SeqCst);
-                if alive {
+                let control_lost = b.control_lost.load(Ordering::SeqCst);
+                let banner = b.status_banner.lock().clone();
+                let base_detail = if b.gatt_summary.is_empty() {
+                    b.device_name.clone()
+                } else {
+                    format!("{} · {}", b.device_name, b.gatt_summary)
+                };
+                if !alive {
                     ConnectionSnapshot {
-                        state: ConnectionState::Connected,
-                        detail: if b.gatt_summary.is_empty() {
-                            b.device_name.clone()
-                        } else {
-                            format!("{} · {}", b.device_name, b.gatt_summary)
-                        },
+                        state: ConnectionState::Error,
+                        detail: "Link lost — tap Reconnect to resume ERG / intervals".into(),
+                        protocol: b.protocol,
+                        is_demo: false,
+                        mode: *b.mode.lock(),
+                        device_name: b.device_name.clone(),
+                    }
+                } else if control_lost {
+                    ConnectionSnapshot {
+                        state: ConnectionState::Error,
+                        detail: banner.unwrap_or_else(|| {
+                            "Control lost — another app took the trainer. Close other apps and Reconnect."
+                                .into()
+                        }),
                         protocol: b.protocol,
                         is_demo: false,
                         mode: *b.mode.lock(),
                         device_name: b.device_name.clone(),
                     }
                 } else {
+                    let detail = match banner {
+                        Some(msg) => format!("{base_detail} · {msg}"),
+                        None => base_detail,
+                    };
                     ConnectionSnapshot {
-                        state: ConnectionState::Error,
-                        detail: "Link lost — tap Reconnect to resume ERG / intervals".into(),
+                        state: ConnectionState::Connected,
+                        detail,
                         protocol: b.protocol,
                         is_demo: false,
                         mode: *b.mode.lock(),
@@ -304,6 +332,12 @@ impl TrainerController {
                         "Trainer link lost — tap Reconnect, then re-apply ERG".into(),
                     );
                 }
+                if b.control_lost.load(Ordering::SeqCst) {
+                    return Err(
+                        "Control lost (Fitness Machine Status) — close other apps and Reconnect"
+                            .into(),
+                    );
+                }
                 let w = ftms::clamp_target_power(watts, &b.power_range);
                 match b.protocol {
                     ProtocolKind::Ftms => {
@@ -321,13 +355,8 @@ impl TrainerController {
                             .await?;
                     }
                     ProtocolKind::TacxFecBle => {
-                        let ch = b
-                            .fec_rx
-                            .as_ref()
-                            .ok_or_else(|| "Tacx FE-C RX characteristic missing".to_string())?;
                         let payload = fec::encode_target_power(w);
-                        b.peripheral
-                            .write(ch, &payload, WriteType::WithoutResponse)
+                        write_fec_throttled(b, payload)
                             .await
                             .map_err(|e| format!("FE-C set power failed: {e}"))?;
                     }
@@ -354,6 +383,12 @@ impl TrainerController {
                         "Trainer link lost — tap Reconnect, then re-apply resistance".into(),
                     );
                 }
+                if b.control_lost.load(Ordering::SeqCst) {
+                    return Err(
+                        "Control lost (Fitness Machine Status) — close other apps and Reconnect"
+                            .into(),
+                    );
+                }
                 let p = ftms::clamp_resistance_percent(percent, &b.resistance_range);
                 match b.protocol {
                     ProtocolKind::Ftms => {
@@ -375,14 +410,9 @@ impl TrainerController {
                         .await?;
                     }
                     ProtocolKind::TacxFecBle => {
-                        let ch = b
-                            .fec_rx
-                            .as_ref()
-                            .ok_or_else(|| "Tacx FE-C RX characteristic missing".to_string())?;
                         let payload =
                             fec::encode_basic_resistance_newtons(fec::percent_to_newtons(p));
-                        b.peripheral
-                            .write(ch, &payload, WriteType::WithoutResponse)
+                        write_fec_throttled(b, payload)
                             .await
                             .map_err(|e| format!("FE-C set resistance failed: {e}"))?;
                     }
@@ -622,6 +652,10 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
     let mode = Arc::new(Mutex::new(ControlMode::Idle));
     let alive = Arc::new(AtomicBool::new(true));
     let last_cp: Arc<Mutex<Option<(u8, u8)>>> = Arc::new(Mutex::new(None));
+    let fec_limiter = Arc::new(Mutex::new(FecWriteRateLimiter::new()));
+    let fec_flush_armed = Arc::new(AtomicBool::new(false));
+    let status_banner: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let control_lost = Arc::new(AtomicBool::new(false));
 
     if has_ftms {
         // Prefer FTMS (even on Dual — FE-C UART stays unused while FTMS works).
@@ -653,6 +687,7 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             .cloned()
             .ok_or("FTMS Control Point characteristic missing")?;
 
+        let ftms_status = uuid_from_u16(ftms::MACHINE_STATUS);
         peripheral
             .subscribe(&bike_ch)
             .await
@@ -661,11 +696,19 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             .subscribe(&cp_ch)
             .await
             .map_err(|e| format!("Subscribe FTMS Control Point failed: {e}"))?;
+        if let Some(status_ch) = chars.iter().find(|c| c.uuid == ftms_status) {
+            match peripheral.subscribe(status_ch).await {
+                Ok(()) => log::info!("Subscribed Fitness Machine Status (0x2ADA)"),
+                Err(e) => log::warn!("Fitness Machine Status subscribe failed (optional): {e}"),
+            }
+        }
 
-        // Notification pump: Indoor Bike Data + CP indications; mark link lost on stream end.
+        // Notification pump: Indoor Bike Data + CP + Machine Status; mark link lost on stream end.
         let metrics_n = metrics.clone();
         let last_cp_n = last_cp.clone();
         let alive_n = alive.clone();
+        let banner_n = status_banner.clone();
+        let lost_n = control_lost.clone();
         let peri_n = peripheral.clone();
         tokio::spawn(async move {
             if let Ok(mut stream) = peri_n.notifications().await {
@@ -680,6 +723,14 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
                                 ftms::format_cp_response(op, result)
                             );
                             *last_cp_n.lock() = Some((op, result));
+                        }
+                    } else if n.uuid == ftms_status {
+                        if let Some(ev) = ftms::parse_machine_status(&n.value) {
+                            log::info!("FTMS Machine Status: {}", ev.as_ux_message());
+                            *banner_n.lock() = Some(ev.as_ux_message().to_string());
+                            if ev.is_control_lost() {
+                                lost_n.store(true, Ordering::SeqCst);
+                            }
                         }
                     }
                     if !peri_n.is_connected().await.unwrap_or(true) {
@@ -740,6 +791,10 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             alive,
             last_cp,
             gatt_summary,
+            fec_limiter,
+            fec_flush_armed,
+            status_banner,
+            control_lost,
         });
     }
 
@@ -810,6 +865,10 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             alive,
             last_cp,
             gatt_summary,
+            fec_limiter,
+            fec_flush_armed,
+            status_banner,
+            control_lost,
         });
     }
 
@@ -817,6 +876,62 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
     Err(format!(
         "Trainer has neither FTMS (0x1826) nor Tacx FE-C UART. Unsupported device. GATT: {gatt_summary}"
     ))
+}
+
+
+/// FE-C UART write with ~4 Hz latest-wins coalescing (non-blocking when throttled).
+async fn write_fec_throttled(b: &BleSession, payload: Vec<u8>) -> Result<(), String> {
+    let ch = b
+        .fec_rx
+        .as_ref()
+        .ok_or_else(|| "Tacx FE-C RX characteristic missing".to_string())?;
+    let decision = b.fec_limiter.lock().offer(payload, Instant::now());
+    match decision {
+        RateDecision::SendNow(frame) => b
+            .peripheral
+            .write(ch, &frame, WriteType::WithoutResponse)
+            .await
+            .map_err(|e| e.to_string()),
+        RateDecision::Coalesced { wait } => {
+            if b
+                .fec_flush_armed
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                let lim = b.fec_limiter.clone();
+                let armed = b.fec_flush_armed.clone();
+                let peri = b.peripheral.clone();
+                let ch = ch.clone();
+                tokio::spawn(async move {
+                    let mut delay = wait;
+                    loop {
+                        tokio::time::sleep(delay).await;
+                        let frame = {
+                            let mut g = lim.lock();
+                            g.take_pending_if_ready(Instant::now())
+                        };
+                        if let Some(p) = frame {
+                            if let Err(e) =
+                                peri.write(&ch, &p, WriteType::WithoutResponse).await
+                            {
+                                log::warn!("FE-C coalesced flush failed: {e}");
+                            }
+                        }
+                        let next = {
+                            let g = lim.lock();
+                            g.pending_wait(Instant::now())
+                        };
+                        match next {
+                            Some(w) => delay = w.max(Duration::from_millis(1)),
+                            None => break,
+                        }
+                    }
+                    armed.store(false, Ordering::SeqCst);
+                });
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Wait for FTMS Control Point indication matching `expected_op`.

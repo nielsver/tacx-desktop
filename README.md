@@ -22,6 +22,8 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 | FTMS Control Point indications | — | Parsed (`0x80`); NOCTRL / failures surface in UI |
 | GATT inventory on connect | — | UUID/property table + FTMS vs FE-C class in logs |
 | Link-lost → Reconnect | Simulated disconnect N/A | Auto Error state; Reconnect restores interval ERG |
+| FE-C write rate limit | — | ~4 Hz latest-wins coalesce on UART WithoutResponse |
+| Fitness Machine Status | — | Subscribe `0x2ADA`; stop/pause banner; control-lost → Error |
 | DEMO badge | Always when demo on | — |
 
 ## Platforms
@@ -147,7 +149,9 @@ Rust crate tacx_desktop_core
    - **Request Control** (`0x00`) → parse CP response (`0x80 …`); fail loudly on **NOCTRL** (`0x05`).
    - **Start/Resume** (`0x07`) → then notify stream for power/cadence/speed.
    - **Set Target Power** (`0x05`) / **Set Resistance** (`0x04`) clamp to Supported Power / Resistance Range and check CP result.
+   - Subscribe **Fitness Machine Status** (`0x2ADA`) when present — stop/pause surfaces in UI; **Control Permission Lost** (`0xFF`) → Error + Reconnect.
 4. Else if Tacx UART RX/TX (`6e40fec3…` / `6e40fec2…`) → **FE-C-over-BLE** path (pages 16+25; cmds `0x30` / `0x31`).
+   FE-C writes are rate-limited to **~4 Hz** with latest-wins coalescing so interval engines cannot flood the UART.
 5. Else error: unsupported device (GATT summary included).
 
 ### Trainer inventory (FTMS vs FE-C-only)

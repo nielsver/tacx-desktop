@@ -149,7 +149,8 @@ class _RideDashboardState extends State<RideDashboard> {
               ),
             if (_error == null &&
                 _snap.state == ConnectionState.error &&
-                _snap.detail.toLowerCase().contains('link lost'))
+                (_snap.detail.toLowerCase().contains('link lost') ||
+                    _snap.detail.toLowerCase().contains('control lost')))
               MaterialBanner(
                 content: Text(
                   _snap.detail,

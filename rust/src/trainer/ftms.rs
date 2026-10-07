@@ -121,6 +121,93 @@ pub fn parse_power_range(data: &[u8]) -> PowerRange {
 }
 
 
+
+/// Fitness Machine Status (0x2ADA) op codes we care about for UX.
+pub const STATUS_RESET: u8 = 0x01;
+pub const STATUS_STOPPED_OR_PAUSED_BY_USER: u8 = 0x02;
+pub const STATUS_STOPPED_BY_SAFETY_KEY: u8 = 0x03;
+pub const STATUS_STARTED_OR_RESUMED_BY_USER: u8 = 0x04;
+pub const STATUS_TARGET_POWER_CHANGED: u8 = 0x08;
+pub const STATUS_TARGET_RESISTANCE_CHANGED: u8 = 0x07;
+pub const STATUS_CONTROL_PERMISSION_LOST: u8 = 0xFF;
+
+/// Stop/Pause parameter for STATUS_STOPPED_OR_PAUSED_BY_USER.
+pub const STOP_PARAM_STOP: u8 = 0x01;
+pub const STOP_PARAM_PAUSE: u8 = 0x02;
+
+/// Parsed Fitness Machine Status notification.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MachineStatusEvent {
+    Reset,
+    StoppedByUser,
+    PausedByUser,
+    StoppedBySafetyKey,
+    StartedOrResumedByUser,
+    TargetPowerChanged,
+    TargetResistanceChanged,
+    ControlPermissionLost,
+    Other(u8),
+}
+
+impl MachineStatusEvent {
+    pub fn as_ux_message(&self) -> &'static str {
+        match self {
+            Self::Reset => "Trainer reset",
+            Self::StoppedByUser => "Trainer stopped",
+            Self::PausedByUser => "Trainer paused",
+            Self::StoppedBySafetyKey => "Trainer stopped (safety key)",
+            Self::StartedOrResumedByUser => "Trainer started/resumed",
+            Self::TargetPowerChanged => "Target power changed (external)",
+            Self::TargetResistanceChanged => "Target resistance changed (external)",
+            Self::ControlPermissionLost => {
+                "Control lost — another app took the trainer (NOCTRL). Close other apps and Reconnect."
+            }
+            Self::Other(_) => "Fitness Machine Status update",
+        }
+    }
+
+    /// Whether UX should treat this as a hard control/link problem.
+    pub fn is_control_lost(&self) -> bool {
+        matches!(self, Self::ControlPermissionLost)
+    }
+
+    /// Whether the machine reported stop/pause (rider or safety).
+    pub fn is_stop_or_pause(&self) -> bool {
+        matches!(
+            self,
+            Self::StoppedByUser
+                | Self::PausedByUser
+                | Self::StoppedBySafetyKey
+                | Self::Reset
+        )
+    }
+}
+
+/// Parse Fitness Machine Status characteristic notification.
+pub fn parse_machine_status(data: &[u8]) -> Option<MachineStatusEvent> {
+    if data.is_empty() {
+        return None;
+    }
+    let op = data[0];
+    Some(match op {
+        STATUS_RESET => MachineStatusEvent::Reset,
+        STATUS_STOPPED_OR_PAUSED_BY_USER => {
+            let param = data.get(1).copied().unwrap_or(STOP_PARAM_STOP);
+            if param == STOP_PARAM_PAUSE {
+                MachineStatusEvent::PausedByUser
+            } else {
+                MachineStatusEvent::StoppedByUser
+            }
+        }
+        STATUS_STOPPED_BY_SAFETY_KEY => MachineStatusEvent::StoppedBySafetyKey,
+        STATUS_STARTED_OR_RESUMED_BY_USER => MachineStatusEvent::StartedOrResumedByUser,
+        STATUS_TARGET_POWER_CHANGED => MachineStatusEvent::TargetPowerChanged,
+        STATUS_TARGET_RESISTANCE_CHANGED => MachineStatusEvent::TargetResistanceChanged,
+        STATUS_CONTROL_PERMISSION_LOST => MachineStatusEvent::ControlPermissionLost,
+        other => MachineStatusEvent::Other(other),
+    })
+}
+
 pub fn describe_cp_result(result: u8) -> &'static str {
     match result {
         0x01 => "success",
@@ -294,6 +381,40 @@ mod tests {
         };
         assert!((clamp_resistance_percent(40.4, &range) - 40.0).abs() < 0.01);
         assert!((clamp_resistance_percent(200.0, &range) - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn parse_status_control_lost() {
+        let ev = parse_machine_status(&[0xFF]).unwrap();
+        assert_eq!(ev, MachineStatusEvent::ControlPermissionLost);
+        assert!(ev.is_control_lost());
+        assert!(ev.as_ux_message().contains("Control lost"));
+    }
+
+    #[test]
+    fn parse_status_stop_and_pause() {
+        assert_eq!(
+            parse_machine_status(&[0x02, 0x01]),
+            Some(MachineStatusEvent::StoppedByUser)
+        );
+        assert_eq!(
+            parse_machine_status(&[0x02, 0x02]),
+            Some(MachineStatusEvent::PausedByUser)
+        );
+        assert_eq!(
+            parse_machine_status(&[0x03]),
+            Some(MachineStatusEvent::StoppedBySafetyKey)
+        );
+        assert!(parse_machine_status(&[0x02, 0x01]).unwrap().is_stop_or_pause());
+        assert_eq!(
+            parse_machine_status(&[0x04]),
+            Some(MachineStatusEvent::StartedOrResumedByUser)
+        );
+        assert_eq!(
+            parse_machine_status(&[0x08]),
+            Some(MachineStatusEvent::TargetPowerChanged)
+        );
+        assert!(parse_machine_status(&[]).is_none());
     }
 
 }

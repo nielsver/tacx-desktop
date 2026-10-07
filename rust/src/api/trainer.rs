@@ -42,6 +42,12 @@ pub async fn connect_trainer(device_id: Option<String>) -> Result<(), String> {
     g.connect(device_id).await
 }
 
+pub async fn reconnect_trainer() -> Result<(), String> {
+    let ctrl = controller();
+    let mut g = ctrl.lock().await;
+    g.reconnect().await
+}
+
 pub async fn disconnect_trainer() -> Result<(), String> {
     let ctrl = controller();
     let mut g = ctrl.lock().await;

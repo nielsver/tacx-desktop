@@ -160,6 +160,7 @@ class _RideDashboardState extends State<RideDashboard> {
                       onSelect: (d) => setState(() => _selected = d),
                       onScan: _scan,
                       onConnect: _connect,
+                      onReconnect: () => _run(() => api.reconnectTrainer()),
                       onDisconnect: () => _run(() => api.disconnectTrainer()),
                     ),
                     const SizedBox(height: 12),
@@ -309,6 +310,7 @@ class _ConnectionBar extends StatelessWidget {
     required this.onSelect,
     required this.onScan,
     required this.onConnect,
+    required this.onReconnect,
     required this.onDisconnect,
   });
 
@@ -319,6 +321,7 @@ class _ConnectionBar extends StatelessWidget {
   final ValueChanged<DiscoveredDevice?> onSelect;
   final VoidCallback onScan;
   final VoidCallback onConnect;
+  final VoidCallback onReconnect;
   final VoidCallback onDisconnect;
 
   @override
@@ -328,18 +331,21 @@ class _ConnectionBar extends StatelessWidget {
       color: const Color(0xFF151A22),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Row(
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Expanded(
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 120, maxWidth: 220),
               child: Text(
                 '${_stateLabel(snap.state)}${snap.detail.isEmpty ? '' : ': ${snap.detail}'}',
                 style: const TextStyle(fontWeight: FontWeight.w600),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            const SizedBox(width: 8),
             SizedBox(
-              width: 280,
+              width: 220,
               child: DropdownButtonFormField<DiscoveredDevice>(
                 initialValue: selected != null && devices.any((d) => d.id == selected!.id)
                     ? devices.firstWhere((d) => d.id == selected!.id)
@@ -364,17 +370,18 @@ class _ConnectionBar extends StatelessWidget {
                 onChanged: connected ? null : onSelect,
               ),
             ),
-            const SizedBox(width: 8),
             FilledButton.tonal(
               onPressed: busy ? null : onScan,
               child: const Text('Scan'),
             ),
-            const SizedBox(width: 8),
             FilledButton(
               onPressed: busy || connected ? null : onConnect,
               child: const Text('Connect'),
             ),
-            const SizedBox(width: 8),
+            FilledButton.tonal(
+              onPressed: busy || connected ? null : onReconnect,
+              child: const Text('Reconnect'),
+            ),
             OutlinedButton(
               onPressed: busy || !connected ? null : onDisconnect,
               child: const Text('Disconnect'),
@@ -496,8 +503,9 @@ class _ErgPanelState extends State<_ErgPanel> {
   Widget build(BuildContext context) {
     return _Panel(
       title: 'ERG mode',
-      child: Column(
-        children: [
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
           Text('${widget.targetWatts} W', style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           SegmentedButton<int>(
@@ -553,6 +561,7 @@ class _ErgPanelState extends State<_ErgPanel> {
             ],
           ),
         ],
+        ),
       ),
     );
   }
@@ -580,8 +589,9 @@ class _ResistancePanel extends StatelessWidget {
         .clamp(1, 1000);
     return _Panel(
       title: 'Resistance',
-      child: Column(
-        children: [
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
           Text('${percent.toStringAsFixed(0)} %', style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold)),
           Slider(
             value: percent.clamp(range.minPct, range.maxPct),
@@ -603,12 +613,13 @@ class _ResistancePanel extends StatelessWidget {
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white38, fontSize: 11),
           ),
-          const Spacer(),
+          const SizedBox(height: 12),
           FilledButton(
             onPressed: enabled ? onApply : null,
             child: const Text('Apply Resistance'),
           ),
         ],
+        ),
       ),
     );
   }

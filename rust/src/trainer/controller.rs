@@ -61,6 +61,7 @@ pub struct TrainerController {
     intervals: IntervalEngine,
     interval_handle: Option<tokio::task::JoinHandle<()>>,
     demo_tick_handle: Option<tokio::task::JoinHandle<()>>,
+    last_device_id: Option<String>,
 }
 
 impl TrainerController {
@@ -76,6 +77,7 @@ impl TrainerController {
             intervals: IntervalEngine::new(),
             interval_handle: None,
             demo_tick_handle: None,
+            last_device_id: None,
         }
     }
 
@@ -114,9 +116,9 @@ impl TrainerController {
             Backend::Ble(b) => ConnectionSnapshot {
                 state: ConnectionState::Connected,
                 detail: b.device_name.clone(),
-                protocol: b.protocol.clone(),
+                protocol: b.protocol,
                 is_demo: false,
-                mode: b.mode.lock().clone(),
+                mode: *b.mode.lock(),
                 device_name: b.device_name.clone(),
             },
         }
@@ -180,8 +182,10 @@ impl TrainerController {
         if self.demo_mode {
             self.backend = Backend::Demo(DemoTrainer::new());
             if let Backend::Demo(d) = &self.backend {
+                let id = device_id.clone();
                 d.connect(device_id).await?;
                 self.snapshot = d.snapshot.lock().clone();
+                self.last_device_id = id.or_else(|| Some(self.snapshot.device_name.clone()));
             }
             let ctrl = controller();
             self.demo_tick_handle = Some(tokio::spawn(async move {
@@ -212,8 +216,9 @@ impl TrainerController {
                 self.snapshot.state = ConnectionState::Connected;
                 self.snapshot.detail = session.device_name.clone();
                 self.snapshot.device_name = session.device_name.clone();
-                self.snapshot.protocol = session.protocol.clone();
+                self.snapshot.protocol = session.protocol;
                 self.snapshot.mode = ControlMode::Idle;
+                self.last_device_id = Some(id.clone());
                 self.backend = Backend::Ble(session);
                 Ok(())
             }
@@ -356,6 +361,14 @@ impl TrainerController {
                 .await;
         }));
         Ok(())
+    }
+
+    pub async fn reconnect(&mut self) -> Result<(), String> {
+        let id = self
+            .last_device_id
+            .clone()
+            .ok_or_else(|| "Nothing to reconnect — scan and connect first".to_string())?;
+        self.connect(Some(id)).await
     }
 
     pub fn stop_interval(&mut self) {

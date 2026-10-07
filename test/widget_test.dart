@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tacx_desktop/main.dart';
 import 'package:tacx_desktop/src/rust/frb_generated.dart';
@@ -10,6 +11,10 @@ void main() {
   });
 
   testWidgets('Ride dashboard loads in demo mode', (tester) async {
+    // Desktop-sized surface (default 800x600 overflows the control panels).
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     await tester.pumpWidget(const TacxDesktopApp());
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.textContaining('Tacx Desktop'), findsOneWidget);
@@ -17,5 +22,6 @@ void main() {
     expect(find.text('ERG mode'), findsOneWidget);
     expect(find.text('Resistance'), findsOneWidget);
     expect(find.text('Intervals'), findsOneWidget);
+    expect(find.text('Reconnect'), findsOneWidget);
   });
 }

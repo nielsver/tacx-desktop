@@ -120,6 +120,18 @@ pub fn parse_power_range(data: &[u8]) -> PowerRange {
     }
 }
 
+
+pub fn describe_cp_result(result: u8) -> &'static str {
+    match result {
+        0x01 => "success",
+        0x02 => "op-code not supported",
+        0x03 => "invalid parameter",
+        0x04 => "operation failed",
+        0x05 => "control not permitted (NOCTRL) — another app holds the trainer",
+        _ => "unknown control-point result",
+    }
+}
+
 pub fn encode_request_control() -> Vec<u8> {
     vec![OP_REQUEST_CONTROL]
 }
@@ -171,4 +183,31 @@ mod tests {
         assert!((rr.max_pct - 100.0).abs() < 0.01);
         assert!((rr.step_pct - 1.0).abs() < 0.01);
     }
+
+    #[test]
+    fn describe_noctrl() {
+        assert!(describe_cp_result(0x05).contains("NOCTRL"));
+    }
+
+    #[test]
+    fn encode_power_and_resistance() {
+        let p = encode_set_target_power(200);
+        assert_eq!(p[0], OP_SET_TARGET_POWER);
+        assert_eq!(i16::from_le_bytes([p[1], p[2]]), 200);
+        let r = encode_set_resistance(50.0, 1000);
+        assert_eq!(r[0], OP_SET_TARGET_RESISTANCE);
+        assert_eq!(r[1], 50); // 50% of 1000 / 10 = 50
+    }
+
+    #[test]
+    fn power_only_more_data() {
+        let flags: u16 = 0x0001 | 0x0040;
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&flags.to_le_bytes());
+        payload.extend_from_slice(&185i16.to_le_bytes());
+        let m = parse_indoor_bike_data(&payload);
+        assert!((m.power_w - 185.0).abs() < 0.01);
+        assert_eq!(m.speed_kmh, 0.0);
+    }
+
 }

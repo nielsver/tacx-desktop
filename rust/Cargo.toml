@@ -1,6 +1,6 @@
 [package]
 name = "tacx_desktop_core"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Tacx Desktop trainer core — FTMS + Tacx FE-C-over-BLE via btleplug"
 license = "MIT"

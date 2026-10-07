@@ -1048,7 +1048,7 @@ dependencies = [
 
 [[package]]
 name = "tacx_desktop_core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "btleplug",

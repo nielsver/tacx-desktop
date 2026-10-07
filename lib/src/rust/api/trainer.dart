@@ -20,6 +20,9 @@ Future<List<DiscoveredDevice>> scanTrainers({required int timeoutMs}) =>
 Future<void> connectTrainer({String? deviceId}) =>
     RustLib.instance.api.crateApiTrainerConnectTrainer(deviceId: deviceId);
 
+Future<void> reconnectTrainer() =>
+    RustLib.instance.api.crateApiTrainerReconnectTrainer();
+
 Future<void> disconnectTrainer() =>
     RustLib.instance.api.crateApiTrainerDisconnectTrainer();
 

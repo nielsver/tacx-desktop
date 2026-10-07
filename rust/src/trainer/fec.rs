@@ -119,4 +119,33 @@ mod tests {
         assert!((percent_to_newtons(50.0) - 100.0).abs() < 0.01);
         assert!((percent_to_newtons(100.0) - 200.0).abs() < 0.01);
     }
+
+    #[test]
+    fn parse_trainer_page_power_cadence() {
+        let mut msg = vec![25u8, 1, 90, 0, 0];
+        // power 250: lsb=250, msb low nibble
+        msg.push(250);
+        msg.push(0); // msb nibble 0
+        msg.push(0);
+        let (power, cad) = parse_specific_trainer_page(&msg).unwrap();
+        assert_eq!(power, Some(250.0));
+        assert_eq!(cad, Some(90.0));
+    }
+
+    #[test]
+    fn extract_and_speed() {
+        // synthetic ANT+ frame: sync, len, type, channel, page16...
+        // page 16 with speed 10.000 m/s = 10000 raw → 36 km/h
+        let speed: u16 = 10000;
+        let mut packet = vec![0xA4, 0x09, 0x4E, 0x00, 16, 25, 0, 0];
+        packet.extend_from_slice(&speed.to_le_bytes());
+        packet.push(0xFF); // HR
+        packet.push(0x20); // flags
+        packet.push(0); // checksum placeholder
+        let msg = extract_fec_message_data(&packet).unwrap();
+        assert_eq!(msg[0], 16);
+        let spd = parse_general_fe_speed(&msg).unwrap();
+        assert!((spd - 36.0).abs() < 0.05);
+    }
+
 }

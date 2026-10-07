@@ -249,7 +249,12 @@ mod tests {
                 .run("10x30_30", |_w| async { Ok(()) })
                 .await;
         });
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        // Poll instead of a fixed 100 ms sleep: slow CI runners (macOS) may not
+        // have entered the work phase yet, which made this test flaky.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while engine.current_target_watts().is_none() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
         assert_eq!(engine.current_target_watts(), Some(280));
         engine.stop();
         let _ = handle.await;

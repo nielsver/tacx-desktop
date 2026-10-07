@@ -51,7 +51,8 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 300));
     });
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('ERG target 200 W sent'), findsOneWidget);
+    expect(find.textContaining('ERG 200 W sent'), findsOneWidget);
+    expect(find.textContaining('3–5 s'), findsWidgets);
   });
 
   testWidgets('Resistance auto-applies once on slider release', (tester) async {

@@ -19,6 +19,49 @@ const Color kGhostColor = Color(0xFFB39DDB);
   return (lo, (hi - lo).abs() < 1 ? 1.0 : hi - lo);
 }
 
+/// Elevation gain over [0, upToM] metres with the same 2 m hysteresis as
+/// Rust `gpx::elevation_gain` (so a full ride matches the GPX header).
+double elevGainUpTo(
+  List<ElevSample> samples,
+  double upToM, {
+  double threshold = 2,
+}) {
+  if (samples.length < 2 || !(upToM > 0)) return 0;
+  final es = <double>[];
+  for (var i = 0; i < samples.length; i++) {
+    final s = samples[i];
+    if (s.distanceM <= upToM) {
+      es.add(s.elevM);
+      continue;
+    }
+    final a = samples[i - 1];
+    final span = s.distanceM - a.distanceM;
+    final t = span <= 0 ? 0.0 : (upToM - a.distanceM) / span;
+    es.add(a.elevM + (s.elevM - a.elevM) * t);
+    break;
+  }
+  var gain = 0.0, low = es.first, high = es.first;
+  var climbing = false;
+  for (final e in es.skip(1)) {
+    if (climbing) {
+      if (e > high) {
+        gain += e - high;
+        high = e;
+      } else if (high - e >= threshold) {
+        climbing = false;
+        low = e;
+      }
+    } else if (e < low) {
+      low = e;
+    } else if (e - low >= threshold) {
+      gain += e - low;
+      high = e;
+      climbing = true;
+    }
+  }
+  return gain;
+}
+
 /// Projected route geometry. Build it **once per GPX load**; screen points
 /// and the path are cached per size.
 ///

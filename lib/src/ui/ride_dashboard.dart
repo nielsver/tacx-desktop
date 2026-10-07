@@ -21,6 +21,7 @@ import 'package:tacx_desktop/src/ui/bluetooth_tips.dart';
 import 'package:tacx_desktop/src/ui/mode_copy.dart';
 import 'package:tacx_desktop/src/ui/app_tokens.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
+import 'package:tacx_desktop/src/ui/ride_summary_view.dart';
 import 'package:tacx_desktop/src/ui/route_map.dart';
 import 'package:tacx_desktop/src/ui/status_bar.dart';
 import 'package:tacx_desktop/src/ui/window_chrome.dart';
@@ -158,6 +159,13 @@ class _RideDashboardState extends State<RideDashboard> {
   final ValueNotifier<double?> _mapRiderM = ValueNotifier(null);
   final ValueNotifier<double?> _mapGhostM = ValueNotifier(null);
 
+  /// Post-ride summary: open flag (one dialog at a time) and the route
+  /// result captured at finish / stop, before the attempt state is cleared.
+  bool _summaryOpen = false;
+
+  /// Rides shorter than this (recorded seconds) get no summary dialog.
+  static const int kSummaryMinS = 60;
+
   /// Chart / map hover preview (metres along the route); null = none.
   final ValueNotifier<double?> _hoverM = ValueNotifier(null);
   bool _ergFromGrade = false;
@@ -292,6 +300,12 @@ class _RideDashboardState extends State<RideDashboard> {
     _rideN.value = ride;
     _linkN.value = api.getLinkHealth();
     _workoutN.value = workout;
+    if (_workout.running &&
+        !workout.running &&
+        workout.done &&
+        workout.error == null) {
+      _scheduleSummary(title: _workout.workoutName);
+    }
     final err = workout.error;
     if (err != null && err != _workout.error) {
       _toast('Workout stopped: $err', Icons.error_outline);
@@ -413,14 +427,26 @@ class _RideDashboardState extends State<RideDashboard> {
         final riding = _ridingGpx;
         if (key != null && store != null && riding != null) {
           final prev = _best;
-          if (store.saveIfBest(
+          final saved = store.saveIfBest(
             key,
             riding.name,
             riding.distanceM,
             _attempt.toTrack(),
             legacyKey: _legacyKey,
             isDemo: _snap.isDemo, // Demo speed is synthetic (G2)
-          )) {
+          );
+          _scheduleSummary(
+            title: riding.name,
+            route: _routeResult(
+              riding,
+              route.progressM,
+              complete: true,
+              finishS: t,
+              bestS: prev?.totalS,
+              newBest: saved,
+            ),
+          );
+          if (saved) {
             final gain = prev == null ? '' : ' (${fmtDelta(t - prev.totalS)})';
             _toast(
               'New best on ${riding.name}: ${fmtClock(t)}$gain',
@@ -441,6 +467,59 @@ class _RideDashboardState extends State<RideDashboard> {
     return oldM != _ghostM ||
         oldD?.round() != _ghostDeltaS?.round() ||
         oldKey != _routeKey;
+  }
+
+  /// Route part of the summary for [riding] (call before [_endAttempt]).
+  RouteResult _routeResult(
+    GpxProfileInfo riding,
+    double progressM, {
+    required bool complete,
+    double? finishS,
+    double? bestS,
+    bool newBest = false,
+  }) {
+    final shown = _geo;
+    final geo = shown != null && identical(shown.samples, riding.samples)
+        ? shown
+        : RouteGeo(riding.samples);
+    final upTo = complete ? riding.distanceM : progressM;
+    return RouteResult(
+      name: riding.name,
+      geo: geo,
+      progressM: upTo,
+      complete: complete,
+      elevGainM: complete ? riding.elevGainM : elevGainUpTo(riding.samples, upTo),
+      finishS: finishS,
+      bestS: bestS,
+      newBest: newBest,
+    );
+  }
+
+  /// Opens the post-ride summary after the current frame (never from inside
+  /// a refresh / setState). Skipped for very short rides and while one is open.
+  void _scheduleSummary({String? title, RouteResult? route}) {
+    if (_summaryOpen) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _summaryOpen) return;
+      final summary = api.getRideSummary(ftpW: _ftp);
+      if (summary.recordedS < kSummaryMinS) return;
+      _summaryOpen = true;
+      try {
+        await showRideSummary(
+          context,
+          data: RideSummaryData(
+            title: (title == null || title.trim().isEmpty) ? 'Ride summary' : title,
+            summary: summary,
+            stats: api.getRideStats(),
+            isDemo: _snap.isDemo,
+            route: route,
+          ),
+          onSaveTcx: _exportRide,
+        );
+      } finally {
+        _summaryOpen = false;
+      }
+    });
   }
 
   /// "Reset best" for the shown route.
@@ -1071,10 +1150,21 @@ class _RideDashboardState extends State<RideDashboard> {
                         label: 'Disconnecting',
                       ),
                       onStopInterval: () {
+                        final riding = _ridingGpx;
+                        final result = _attemptLive && riding != null
+                            ? _routeResult(
+                                riding,
+                                _attempt.lastD,
+                                complete: false,
+                              )
+                            : null;
+                        final title = riding?.name ?? _workout.workoutName;
                         api.stopInterval();
                         api.stopWorkout();
                         api.stopGpxRoute();
+                        if (_attemptLive) setState(_endAttempt);
                         _refresh();
+                        _scheduleSummary(title: title, route: result);
                       },
                       onNudge: (d) => _setPref(
                         () => _targetWatts =
@@ -1333,9 +1423,11 @@ class _RideDashboardState extends State<RideDashboard> {
                                     successIcon: Icons.fitness_center,
                                   ),
                                   onStopWorkout: () {
+                                    final name = _workout.workoutName;
                                     api.stopWorkout();
                                     api.stopInterval();
                                     _refresh();
+                                    _scheduleSummary(title: name);
                                   },
                                   onImportGpxXml: (xml) {
                                     try {
@@ -1374,9 +1466,21 @@ class _RideDashboardState extends State<RideDashboard> {
                                     successIcon: Icons.terrain,
                                   ),
                                   onStopRoute: () {
+                                    final riding = _ridingGpx;
+                                    final result = _attemptLive && riding != null
+                                        ? _routeResult(
+                                            riding,
+                                            _attempt.lastD,
+                                            complete: false,
+                                          )
+                                        : null;
                                     api.stopGpxRoute();
                                     if (_attemptLive) setState(_endAttempt);
                                     _refresh();
+                                    _scheduleSummary(
+                                      title: riding?.name,
+                                      route: result,
+                                    );
                                   },
                                   onErgFromGrade: (v) {
                                     setState(() => _ergFromGrade = v);

@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:tacx_desktop/src/ride_prefs.dart';
 import 'package:tacx_desktop/src/ui/focus_ride_view.dart';
 import 'package:tacx_desktop/src/ui/hr_strap_bar.dart';
+import 'package:tacx_desktop/src/ui/live_trend_chart.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 import 'package:tacx_desktop/src/ui/window_chrome.dart';
 
@@ -84,6 +85,8 @@ class _RideDashboardState extends State<RideDashboard> {
     ),
   );
   RideStats get _ride => _rideN.value;
+  /// 1 Hz rolling history (last 10 min) for the live power/cadence/HR graph.
+  final TrendBuffer _trend = TrendBuffer();
   final _presets = api.listIntervalPresets();
 
   HrStrapStatus _strap = const HrStrapStatus(
@@ -151,6 +154,7 @@ class _RideDashboardState extends State<RideDashboard> {
     _scroll.dispose();
     _metricsN.dispose();
     _rideN.dispose();
+    _trend.dispose();
     super.dispose();
   }
 
@@ -178,6 +182,10 @@ class _RideDashboardState extends State<RideDashboard> {
         metrics.targetPowerW != _metrics.targetPowerW;
     _metricsN.value = metrics;
     _rideN.value = ride;
+    // Only graph while a trainer (or Demo) is actually streaming.
+    if (snap.state == ConnectionState.connected) {
+      _trend.offer(metrics, DateTime.now());
+    }
     if (changed) {
       setState(() {
         _snap = snap;
@@ -639,7 +647,8 @@ class _RideDashboardState extends State<RideDashboard> {
                         : 520.0;
                     // Ride summary strip + heart-rate strap bar sit between
                     // metrics and controls (48 px + 8 px gap each).
-                    final neededWithRide = needed + 56 + 56;
+                    // Live graph adds 88 px + 8 px gap.
+                    final neededWithRide = needed + 56 + 56 + 96;
                     final compact = box.maxHeight < neededWithRide;
                     final body = Column(
                       children: [
@@ -697,11 +706,16 @@ class _RideDashboardState extends State<RideDashboard> {
                               stats: r,
                               onReset: () {
                                 api.resetRideStats();
+                                _trend.clear();
                                 _refresh();
                               },
                               onExport: _exportRide,
                             ),
                           ),
+                        ),
+                        const SizedBox(height: 8),
+                        RepaintBoundary(
+                          child: LiveTrendChart(buffer: _trend),
                         ),
                         const SizedBox(height: 8),
                         HeartRateStrapBar(

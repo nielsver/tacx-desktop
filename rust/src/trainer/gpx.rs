@@ -149,12 +149,12 @@ fn smooth_grades(samples: &mut [ElevSample], window: usize) {
     }
     let raw: Vec<f64> = samples.iter().map(|s| s.grade_pct).collect();
     let half = window / 2;
-    for i in 0..samples.len() {
+    for (i, s) in samples.iter_mut().enumerate() {
         let lo = i.saturating_sub(half);
         let hi = (i + half + 1).min(raw.len());
         let slice = &raw[lo..hi];
         let mean = slice.iter().sum::<f64>() / slice.len() as f64;
-        samples[i].grade_pct = mean.clamp(-20.0, 20.0);
+        s.grade_pct = mean.clamp(-20.0, 20.0);
     }
 }
 
@@ -199,12 +199,27 @@ pub fn watts_from_grade(grade_pct: f64, speed_mps: f64, mass_kg: f64) -> u32 {
     let g = 9.81;
     let p_grade = mass_kg * g * speed * grade;
     let p_roll = mass_kg * g * speed * 0.004;
-    (p_grade + p_roll).max(80.0).min(1500.0).round() as u32
+    let p = p_grade + p_roll;
+    // clamp() would keep NaN (→ 0 W after the cast); fall back to the floor.
+    if !p.is_finite() {
+        return 80;
+    }
+    p.clamp(80.0, 1500.0).round() as u32
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn watts_from_grade_is_clamped_and_nan_safe() {
+        assert_eq!(watts_from_grade(f64::NAN, 5.0, 75.0), 80);
+        assert_eq!(watts_from_grade(0.0, f64::INFINITY, 75.0), 80);
+        assert_eq!(watts_from_grade(-10.0, 8.0, 75.0), 80);
+        assert_eq!(watts_from_grade(30.0, 10.0, 120.0), 1500);
+        let w = watts_from_grade(5.0, 5.0, 75.0);
+        assert!((150..250).contains(&w), "{w}");
+    }
 
     const SAMPLE: &str = r#"<?xml version="1.0"?>
 <gpx version="1.1"><trk><name>Test Climb</name><trkseg>

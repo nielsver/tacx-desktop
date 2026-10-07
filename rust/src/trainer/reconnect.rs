@@ -188,7 +188,9 @@ pub fn pick_resume_target(
 
 /// Auto-reconnect progress kept by the controller.
 #[derive(Clone, Debug, PartialEq)]
+#[derive(Default)]
 pub enum AutoReconnect {
+    #[default]
     Inactive,
     Waiting {
         attempt: u32,
@@ -208,11 +210,6 @@ pub enum AutoReconnect {
     },
 }
 
-impl Default for AutoReconnect {
-    fn default() -> Self {
-        Self::Inactive
-    }
-}
 
 /// Snapshot fields derived from [`AutoReconnect`] (only used while the link is down).
 #[derive(Clone, Debug, PartialEq)]

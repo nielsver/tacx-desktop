@@ -185,3 +185,9 @@ impl DemoTrainer {
         m.heart_rate_bpm = Some(next as u32);
     }
 }
+
+impl Default for DemoTrainer {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -1433,6 +1433,12 @@ impl TrainerController {
     }
 }
 
+impl Default for TrainerController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A trainer command from the GPX route loop.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum RouteCmd {
@@ -1711,7 +1717,7 @@ async fn scan_ble(timeout_ms: u32) -> Result<Vec<DiscoveredDevice>, String> {
             .local_name
             .clone()
             .unwrap_or_else(|| "(unknown)".into());
-        let has_ftms = props.services.iter().any(|u| *u == ftms_uuid);
+        let has_ftms = props.services.contains(&ftms_uuid);
         let mfg: Vec<u16> = props.manufacturer_data.keys().copied().collect();
         // Empty ScanFilter + post-filter: Kickr FTMS, Tacx FE-C, generic FTMS.
         let Some(hint) = scan::advertise_protocol_hint(&name, has_ftms, &mfg) else {
@@ -1725,7 +1731,7 @@ async fn scan_ble(timeout_ms: u32) -> Result<Vec<DiscoveredDevice>, String> {
         });
     }
     central.stop_scan().await.ok();
-    out.sort_by(|a, b| b.rssi.unwrap_or(-999).cmp(&a.rssi.unwrap_or(-999)));
+    out.sort_by_key(|d| std::cmp::Reverse(d.rssi.unwrap_or(-999)));
     Ok(out)
 }
 

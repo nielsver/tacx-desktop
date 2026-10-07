@@ -117,7 +117,7 @@ pub fn encode_user_configuration(
     let bw_raw = (bicycle_weight_kg / 0.05).round() as u16;
     let bw_lo = (bw_raw & 0xFF) as u8;
     let bw_hi = ((bw_raw >> 8) & 0xFF) as u8;
-    frame.push(offset.wrapping_add((bw_lo << 4) & 0xFF));
+    frame.push(offset.wrapping_add(bw_lo << 4));
     frame.push((bw_lo >> 4).wrapping_add(bw_hi << 4));
     frame.push((diam_hundredths / 0.01).round() as u8);
     frame.push((gear_ratio / 0.03).round() as u8);

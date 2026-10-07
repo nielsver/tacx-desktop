@@ -47,7 +47,9 @@ impl Default for PowerRange {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum ConnectionState {
+    #[default]
     Disconnected,
     Scanning,
     Connecting,
@@ -57,14 +59,11 @@ pub enum ConnectionState {
     Reconnecting,
 }
 
-impl Default for ConnectionState {
-    fn default() -> Self {
-        Self::Disconnected
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum ControlMode {
+    #[default]
     Idle,
     Erg,
     Resistance,
@@ -72,39 +71,28 @@ pub enum ControlMode {
     Simulation,
 }
 
-impl Default for ControlMode {
-    fn default() -> Self {
-        Self::Idle
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum ProtocolKind {
+    #[default]
     Demo,
     Ftms,
     TacxFecBle,
 }
 
-impl Default for ProtocolKind {
-    fn default() -> Self {
-        Self::Demo
-    }
-}
 
 /// Separate BLE heart-rate strap link (Heart Rate Service 0x180D).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum HrStrapState {
+    #[default]
     Disconnected,
     Connecting,
     Connected,
     Error,
 }
 
-impl Default for HrStrapState {
-    fn default() -> Self {
-        Self::Disconnected
-    }
-}
 
 #[derive(Clone, Debug, Default)]
 pub struct HrStrapStatus {

@@ -107,6 +107,8 @@ pub fn ensure_dirs() -> Result<(), String> {
     Ok(())
 }
 
+// One push per preset reads better than a 100-line vec![] literal.
+#[allow(clippy::vec_init_then_push)]
 fn builtins() -> Vec<WorkoutFile> {
     let mut out = Vec::new();
 
@@ -213,6 +215,7 @@ fn builtins() -> Vec<WorkoutFile> {
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 fn interval_builtin(
     id: &str,
     name: &str,

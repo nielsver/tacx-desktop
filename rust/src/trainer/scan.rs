@@ -14,7 +14,7 @@ pub fn advertise_protocol_hint(
 ) -> Option<&'static str> {
     let name_l = name.to_lowercase();
     let looks_kickr = name_looks_kickr(&name_l)
-        || manufacturer_ids.iter().any(|id| *id == WAHOO_COMPANY_ID);
+        || manufacturer_ids.contains(&WAHOO_COMPANY_ID);
     let looks_tacx = name_looks_tacx(&name_l);
 
     if has_ftms_service {

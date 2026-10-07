@@ -149,7 +149,7 @@ pub async fn scan(timeout_ms: u32) -> Result<Vec<DiscoveredDevice>, String> {
         };
         let name = props.local_name.clone().unwrap_or_else(|| "(unknown)".into());
         let name_l = name.to_lowercase();
-        let has_hr = props.services.iter().any(|u| *u == hr_uuid);
+        let has_hr = props.services.contains(&hr_uuid);
         let looks_hr = ["hrm", "polar h", "tickr", "heart"].iter().any(|k| name_l.contains(k));
         if !(has_hr || looks_hr) {
             continue;
@@ -162,7 +162,7 @@ pub async fn scan(timeout_ms: u32) -> Result<Vec<DiscoveredDevice>, String> {
         });
     }
     central.stop_scan().await.ok();
-    out.sort_by(|a, b| b.rssi.unwrap_or(-999).cmp(&a.rssi.unwrap_or(-999)));
+    out.sort_by_key(|d| std::cmp::Reverse(d.rssi.unwrap_or(-999)));
     Ok(out)
 }
 

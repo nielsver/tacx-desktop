@@ -127,8 +127,8 @@ pub fn classify_uuids(uuids: &[Uuid]) -> TrainerGattClass {
     let cp = uuid_from_u16(ftms::CONTROL_POINT);
     let fec_rx = fec::tacx_uart_rx();
     let fec_tx = fec::tacx_uart_tx();
-    let has_ftms = uuids.iter().any(|u| *u == bike) && uuids.iter().any(|u| *u == cp);
-    let has_fec = uuids.iter().any(|u| *u == fec_rx) && uuids.iter().any(|u| *u == fec_tx);
+    let has_ftms = uuids.contains(&bike) && uuids.contains(&cp);
+    let has_fec = uuids.contains(&fec_rx) && uuids.contains(&fec_tx);
     match (has_ftms, has_fec) {
         (true, true) => TrainerGattClass::Dual,
         (true, false) => TrainerGattClass::Ftms,
@@ -187,7 +187,7 @@ pub fn ftms_checklist(uuids: &[Uuid]) -> Vec<(&'static str, u16, bool)> {
         .into_iter()
         .map(|(name, u16v)| {
             let u = uuid_from_u16(u16v);
-            (name, u16v, uuids.iter().any(|x| *x == u))
+            (name, u16v, uuids.contains(&u))
         })
         .collect()
 }

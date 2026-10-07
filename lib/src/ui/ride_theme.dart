@@ -76,6 +76,10 @@ abstract final class RideType {
   ];
 }
 
+/// Minimum height (logical px) for anything a rider taps: buttons, chips,
+/// switches, collapsible headers. 44 = Apple HIG / WCAG 2.5.5 touch size.
+const double kMinTapTarget = 44;
+
 ThemeData buildRideTheme() {
   final scheme = ColorScheme.dark(
     surface: RideColors.surface,
@@ -93,6 +97,12 @@ ThemeData buildRideTheme() {
     colorScheme: scheme,
     scaffoldBackgroundColor: RideColors.bg,
     fontFamily: 'Roboto',
+    // Flutter defaults desktop to compact density + shrink-wrapped tap
+    // targets, which silently turns the 44px button minimum into 36px and
+    // chips/switches/headers into ~32px. Riders use touchscreens and sweaty
+    // mouse hands, so keep the touch-size targets on every platform.
+    visualDensity: VisualDensity.standard,
+    materialTapTargetSize: MaterialTapTargetSize.padded,
   );
 
   return base.copyWith(
@@ -176,7 +186,7 @@ ThemeData buildRideTheme() {
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        minimumSize: const Size(44, 40),
+        minimumSize: const Size(48, 44),
         foregroundColor: RideColors.accent,
         disabledForegroundColor: RideColors.textDisabled,
       ),

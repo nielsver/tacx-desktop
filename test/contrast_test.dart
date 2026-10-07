@@ -25,8 +25,11 @@ void main() {
     for (final bg in surfaces.entries) {
       test('${fg.key} on ${bg.key} >= 4.5:1', () {
         final r = contrastRatio(fg.value, bg.value);
-        expect(r, greaterThanOrEqualTo(4.5),
-            reason: '${fg.key} on ${bg.key} is ${r.toStringAsFixed(2)}:1');
+        expect(
+          r,
+          greaterThanOrEqualTo(4.5),
+          reason: '${fg.key} on ${bg.key} is ${r.toStringAsFixed(2)}:1',
+        );
       });
     }
   }

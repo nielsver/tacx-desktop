@@ -1556,7 +1556,7 @@ class _ResistancePanel extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             SizedBox(
-              height: 40,
+              height: 48,
               child: Row(
                 children: [
                   const Expanded(
@@ -1713,47 +1713,51 @@ class _SimulationPanel extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               InkWell(
+                key: const ValueKey('simulation-header'),
                 onTap: onToggleExpanded,
                 borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 4,
-                    horizontal: 4,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        expanded ? Icons.expand_less : Icons.expand_more,
-                        color: RideColors.textSecondary,
-                      ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Simulation',
-                        style: TextStyle(
-                          fontSize: RideType.title,
-                          fontWeight: FontWeight.w700,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: kMinTapTarget),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 4,
+                      horizontal: 4,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          expanded ? Icons.expand_less : Icons.expand_more,
+                          color: RideColors.textSecondary,
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          supportsSimulation
-                              ? 'Grade · wind · Crr/Cw'
-                              : 'Not advertised on this trainer',
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Simulation',
                           style: TextStyle(
-                            color: supportsSimulation
-                                ? RideColors.textSecondary
-                                : RideColors.textMuted,
-                            fontSize: RideType.caption,
+                            fontSize: RideType.title,
+                            fontWeight: FontWeight.w700,
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      FilledButton(
-                        onPressed: enabled ? onApplySim : null,
-                        child: const Text('Apply'),
-                      ),
-                    ],
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            supportsSimulation
+                                ? 'Grade · wind · Crr/Cw'
+                                : 'Not advertised on this trainer',
+                            style: TextStyle(
+                              color: supportsSimulation
+                                  ? RideColors.textSecondary
+                                  : RideColors.textMuted,
+                              fontSize: RideType.caption,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        FilledButton(
+                          onPressed: enabled ? onApplySim : null,
+                          child: const Text('Apply'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

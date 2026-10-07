@@ -25,6 +25,12 @@ abstract final class RideColors {
   static const warn = Color(0xFFFFB74D);
   static const ok = Color(0xFF66BB6A);
   static const demo = Color(0xFFE53935);
+
+  // Status-strip backgrounds behind white text: each must reach WCAG AA.
+  // (danger/warn themselves are foreground accents and fail AA under white.)
+  static const bannerInfo = Color(0xFF455A64);
+  static const bannerError = Color(0xFFC62828);
+  static const bannerWarn = Color(0xFF8D5A00);
 }
 
 /// Ride type scale. Every font size in the dashboard comes from here so the

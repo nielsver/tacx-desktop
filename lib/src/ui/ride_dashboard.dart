@@ -57,6 +57,10 @@ class _RideDashboardState extends State<RideDashboard> {
   final double _bikeWeightKg = 8;
   final double _wheelDiameterM = 0.7;
   bool _busy = false;
+
+  /// What the in-flight [_run] action is doing, shown next to the spinner
+  /// so progress is never an unlabeled bar (P1-S5).
+  String? _busyLabel;
   bool _resAutoApply = true;
   bool _didScan = false;
   String? _error;
@@ -144,11 +148,13 @@ class _RideDashboardState extends State<RideDashboard> {
     Future<void> Function() action, {
     String? success,
     IconData successIcon = Icons.check_circle_outline,
+    String label = 'Sending',
   }) async {
     // P1-X5: block double-submit while a write is already in flight.
     if (_busy) return;
     setState(() {
       _busy = true;
+      _busyLabel = label;
       _error = null;
     });
     try {
@@ -158,7 +164,10 @@ class _RideDashboardState extends State<RideDashboard> {
       setState(() => _error = e.toString());
     } finally {
       if (mounted) {
-        setState(() => _busy = false);
+        setState(() {
+          _busy = false;
+          _busyLabel = null;
+        });
         _refresh();
       }
     }
@@ -220,7 +229,7 @@ class _RideDashboardState extends State<RideDashboard> {
           _selected = null;
         }
       });
-    });
+    }, label: 'Scanning');
   }
 
   Future<void> _connect() async {
@@ -233,7 +242,7 @@ class _RideDashboardState extends State<RideDashboard> {
           _resRange.maxPct,
         );
       });
-    });
+    }, label: 'Connecting');
   }
 
   @override
@@ -264,8 +273,9 @@ class _RideDashboardState extends State<RideDashboard> {
             ),
             if (_btRadioBad)
               _StatusStrip(
+                key: const ValueKey('bt-off-banner'),
                 icon: Icons.bluetooth_disabled,
-                color: const Color(0xFF455A64),
+                color: RideColors.bannerInfo,
                 message: _bt!.hint,
                 actions: [
                   TextButton(
@@ -291,7 +301,7 @@ class _RideDashboardState extends State<RideDashboard> {
             if (_error != null)
               _StatusStrip(
                 icon: Icons.error_outline,
-                color: theme.colorScheme.error.withValues(alpha: 0.92),
+                color: RideColors.bannerError,
                 message: _error!,
                 actions: [
                   TextButton(
@@ -309,13 +319,16 @@ class _RideDashboardState extends State<RideDashboard> {
                     _snap.detail.toLowerCase().contains('control lost')))
               _StatusStrip(
                 icon: Icons.link_off,
-                color: RideColors.warn.withValues(alpha: 0.95),
+                color: RideColors.bannerWarn,
                 message: _snap.detail,
                 actions: [
                   TextButton(
                     onPressed: _busy
                         ? null
-                        : () => _run(() => api.reconnectTrainer()),
+                        : () => _run(
+                            () => api.reconnectTrainer(),
+                            label: 'Reconnecting',
+                          ),
                     child: const Text(
                       'Reconnect',
                       style: TextStyle(color: Colors.white),
@@ -343,15 +356,21 @@ class _RideDashboardState extends State<RideDashboard> {
                           devices: _devices,
                           selected: _selected,
                           busy: _busy,
+                          busyLabel: _busyLabel,
                           connected: connected,
                           snap: _snap,
                           canScan: _canScan || _snap.isDemo,
                           onSelect: (d) => setState(() => _selected = d),
                           onScan: _scan,
                           onConnect: _connect,
-                          onReconnect: () => _run(() => api.reconnectTrainer()),
-                          onDisconnect: () =>
-                              _run(() => api.disconnectTrainer()),
+                          onReconnect: () => _run(
+                            () => api.reconnectTrainer(),
+                            label: 'Reconnecting',
+                          ),
+                          onDisconnect: () => _run(
+                            () => api.disconnectTrainer(),
+                            label: 'Disconnecting',
+                          ),
                         ),
                         if (_permissionDenied && !connected) ...[
                           const SizedBox(height: 12),
@@ -567,6 +586,7 @@ class _FlexOrFixed extends StatelessWidget {
 
 class _StatusStrip extends StatelessWidget {
   const _StatusStrip({
+    super.key,
     required this.icon,
     required this.color,
     required this.message,
@@ -738,6 +758,7 @@ class _ConnectionBar extends StatelessWidget {
     required this.devices,
     required this.selected,
     required this.busy,
+    this.busyLabel,
     required this.connected,
     required this.snap,
     required this.onSelect,
@@ -751,6 +772,7 @@ class _ConnectionBar extends StatelessWidget {
   final List<DiscoveredDevice> devices;
   final DiscoveredDevice? selected;
   final bool busy;
+  final String? busyLabel;
   final bool connected;
   final ConnectionSnapshot snap;
   final ValueChanged<DiscoveredDevice?> onSelect;
@@ -763,13 +785,10 @@ class _ConnectionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canReconnect = !busy && !connected;
-    final stateColor = switch (snap.state) {
-      ConnectionState.connected => RideColors.ok,
-      ConnectionState.error => RideColors.warn,
-      ConnectionState.scanning || ConnectionState.connecting => RideColors.warn,
-      _ => RideColors.textSecondary,
-    };
-    final scanning = snap.state == ConnectionState.scanning || busy;
+    final inProgress =
+        busy ||
+        snap.state == ConnectionState.scanning ||
+        snap.state == ConnectionState.connecting;
 
     return Card(
       child: Padding(
@@ -777,7 +796,7 @@ class _ConnectionBar extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (scanning)
+            if (inProgress)
               const Padding(
                 padding: EdgeInsets.only(bottom: 10),
                 child: LinearProgressIndicator(minHeight: 3),
@@ -792,24 +811,11 @@ class _ConnectionBar extends StatelessWidget {
                     minWidth: 140,
                     maxWidth: 320,
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.circle, size: 10, color: stateColor),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          '${_stateLabel(snap.state)}${snap.detail.isEmpty ? '' : ' · ${snap.detail}'}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: RideType.label,
-                            color: stateColor,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
-                        ),
-                      ),
-                    ],
+                  child: ConnectionStatusIndicator(
+                    state: snap.state,
+                    detail: snap.detail,
+                    busy: busy,
+                    busyLabel: busyLabel,
                   ),
                 ),
                 SizedBox(
@@ -858,20 +864,91 @@ class _ConnectionBar extends StatelessWidget {
       ),
     );
   }
+}
 
-  String _stateLabel(ConnectionState s) {
-    switch (s) {
-      case ConnectionState.disconnected:
-        return 'Disconnected';
-      case ConnectionState.scanning:
-        return 'Scanning';
-      case ConnectionState.connecting:
-        return 'Connecting';
-      case ConnectionState.connected:
-        return 'Connected';
-      case ConnectionState.error:
-        return 'Error';
-    }
+/// Connection state dot or spinner plus its label (P1-S5). Any in-progress
+/// state (scanning, connecting, or a busy action) shows a spinner and a
+/// matching label together; settled states show a coloured dot.
+class ConnectionStatusIndicator extends StatelessWidget {
+  const ConnectionStatusIndicator({
+    super.key,
+    required this.state,
+    this.detail = '',
+    this.busy = false,
+    this.busyLabel,
+  });
+
+  final ConnectionState state;
+  final String detail;
+  final bool busy;
+  final String? busyLabel;
+
+  bool get inProgress =>
+      busy ||
+      state == ConnectionState.scanning ||
+      state == ConnectionState.connecting;
+
+  static String stateLabel(ConnectionState s) => switch (s) {
+    ConnectionState.disconnected => 'Disconnected',
+    ConnectionState.scanning => 'Scanning',
+    ConnectionState.connecting => 'Connecting',
+    ConnectionState.connected => 'Connected',
+    ConnectionState.error => 'Error',
+  };
+
+  /// Label shown next to the dot/spinner.
+  String get label {
+    if (busy) return '${busyLabel ?? 'Working'}…';
+    final base = stateLabel(state);
+    final withEllipsis = inProgress ? '$base…' : base;
+    return detail.isEmpty ? withEllipsis : '$withEllipsis · $detail';
+  }
+
+  Color get color {
+    if (inProgress) return RideColors.warn;
+    return switch (state) {
+      ConnectionState.connected => RideColors.ok,
+      ConnectionState.error => RideColors.warn,
+      _ => RideColors.textSecondary,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (inProgress)
+          SizedBox(
+            key: const ValueKey('connection-spinner'),
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2, color: c),
+          )
+        else
+          Icon(
+            Icons.circle,
+            key: const ValueKey('connection-dot'),
+            size: 10,
+            color: c,
+          ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            label,
+            key: const ValueKey('connection-state-label'),
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: RideType.label,
+              color: c,
+            ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+          ),
+        ),
+      ],
+    );
   }
 }
 

@@ -1,136 +1,160 @@
 # Tacx Desktop
 
-Windows-first **desktop** remote for Tacx (and other) smart trainers over **public FTMS BLE**.
+Cross-platform **desktop** remote for Tacx (and other) smart trainers.
 
-Not a Connect IQ / watch app. Not private Tacx BLE. Not ANT+ / FE-C simulation / FIT logging.
+**Stack:** Flutter UI + Rust trainer core (`btleplug`) via [flutter_rust_bridge](https://cjycode.com/flutter_rust_bridge/).
 
-Stack: **Python 3.12+**, **Bleak** (WinRT backend on Windows), **CustomTkinter** UI, optional **pycycling** helpers.
+> **Note:** The earlier Python / CustomTkinter / Bleak scaffold lived here as v0. It was replaced by this Flutter + Rust app. See [`archive/python-v0/`](archive/python-v0/) for the historical code.
 
-## What it does (v1)
+Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C here is **over BLE**, Tacx UART).
+
+## Features
 
 | Feature | Demo mode | Real trainer |
 | --- | --- | --- |
-| Scan / connect FTMS Indoor Bike (`0x1826`) | Stub devices | Live BLE |
-| Live power, cadence, speed + connection status | Simulated | Indoor Bike Data `0x2AD2` |
-| ERG target watts with ± steps (5 / 10 / 25) | Yes | Control Point `0x2AD9` Set Target Power |
-| Resistance % (range from Supported Resistance Level Range when available) | Fixed 0–100% | Live range + Set Target Resistance |
-| Interval presets (10×30/30, 5×3/2, 4×4/3) swapping ERG + timer | Yes | Yes |
-| Clear **DEMO** badge | Always | — |
+| Scan / connect | Stub devices | Live BLE |
+| Auto protocol | Demo | **FTMS first**, then **Tacx FE-C-over-BLE** fallback |
+| Live power, cadence, speed | Simulated | FTMS Indoor Bike Data / FE-C pages 16+25 |
+| ERG target watts (± 5 / 10 / 25) | Yes | FTMS Control Point or FE-C target power |
+| Resistance % | Yes | FTMS Supported Resistance Level Range + Set Resistance; FE-C basic resistance 0–200 N mapped from % |
+| Interval presets (10×30/30, 5×3/2, 4×4/3) | Yes | Yes |
+| Exclusive-control messaging | Hint banner | Clear errors for busy trainer / NOCTRL |
+| DEMO badge | Always when demo on | — |
 
-## Requirements (Windows)
+## Platforms
 
-1. **Windows 10/11** with Bluetooth LE (built-in or USB dongle).
-2. **Python 3.12+**.
-3. Trainer paired / radio on; stand within a few meters.
+| OS | Status | Notes |
+| --- | --- | --- |
+| **Windows** | Supported | Bleak/btleplug WinRT BLE; build with Visual Studio + Flutter Windows desktop |
+| **Linux** | Supported | Needs **BlueZ** + D-Bus; portable binary via `flutter build linux` |
+| **macOS** | Supported | Enable **Bluetooth** permission for the app (entitlements included) |
+
+“All distros” on Linux means: a portable Flutter Linux binary **or** `flutter run -d linux` / source build on common distros with BlueZ. We do not ship every distro’s native `.deb`/`.rpm` packager.
+
+## Requirements
+
+1. Flutter **3.29+** (Dart 3.7+) and Rust **1.75+** (`rustup`).
+2. Bluetooth LE adapter.
+3. Trainer powered on; stand nearby.
 4. **Quit other apps that hold the trainer BLE link** before connecting:
    - Zwift, Tacx Training / Tacx Desktop, MyWhoosh, Rouvy, TrainerRoad, etc.
-   - Only one BLE client can typically control FTMS at a time.
+   - Only one BLE client can typically control FTMS / Tacx FE-C at a time.
 
-Linux/macOS may work with Bleak but are not the primary target; use `--demo` / `--headless-demo` for UI/logic smoke tests without hardware.
+### Linux (BlueZ)
 
-## Install
+```bash
+# Debian/Ubuntu/Fedora-family examples — package names vary
+sudo apt install bluez bluetooth libdbus-1-dev
+# Ensure your user can use Bluetooth (often group `bluetooth` or via polkit)
+```
 
-```powershell
+### macOS
+
+- Allow Bluetooth for **Tacx Desktop** when prompted.
+- Debug/Release entitlements request `com.apple.security.device.bluetooth`.
+
+### Windows
+
+- Windows 10/11 with BLE (built-in or USB dongle).
+- Enable **Developer Mode** if Flutter asks; install Visual Studio C++ desktop workload for Windows builds.
+
+## Install (developers)
+
+```bash
 git clone https://github.com/nielsver/tacx-desktop.git
 cd tacx-desktop
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-pip install -e .
+
+# Optional: install codegen
+cargo install flutter_rust_bridge_codegen
+
+flutter pub get
+# After editing Rust under rust/src/api/, regenerate bindings:
+flutter_rust_bridge_codegen generate
+
+# Rust unit + headless demo smoke
+cd rust && cargo test && cd ..
 ```
 
 ## Run
 
-```powershell
-# Real trainer (Windows + BLE)
-python -m tacx_desktop
-
-# Demo UI (no trainer) — shows red DEMO badge
-python -m tacx_desktop --demo
-
-# Headless smoke test (CI / no display) — exercises demo backend + intervals
-python -m tacx_desktop --headless-demo
+```bash
+# Demo UI (default on first launch — toggle Demo in the header)
+flutter run -d linux          # or windows / macos
+flutter run -d windows
+flutter run -d macos
 ```
 
-Or after install: `tacx-desktop`, `tacx-desktop --demo`, `tacx-desktop --headless-demo`.
+In the app: leave **Demo** on to try the UI without a trainer; turn Demo **off** for live BLE (FTMS → FE-C fallback).
 
-### Connect flow
+### Headless / CI smoke (Rust)
 
-1. Close Zwift / Tacx Training / other FTMS clients.
-2. Power on the trainer.
-3. Click **Scan** → select your bike → **Connect**.
-4. Use **ERG** (± steps or Set watts), **Resistance** slider, or start an **interval preset**.
+```bash
+cd rust && cargo test --test headless_demo
+```
+
+## Build release binaries
+
+```bash
+# Linux portable bundle
+flutter build linux --release
+# → build/linux/x64/release/bundle/
+
+# Windows
+flutter build windows --release
+# → build/windows/x64/runner/Release/
+
+# macOS
+flutter build macos --release
+# → build/macos/Build/Products/Release/tacx_desktop.app
+```
+
+Ship the Linux `bundle/` folder as-is (includes `lib/` + binary). On Windows zip the `Release/` folder. On macOS distribute the `.app` (notarize for Gatekeeper if you ship outside your machine).
 
 ## Architecture
 
 ```
-TrainerBackend (ABC)
-├── RealFtmsBleak   # Bleak GATT: notify 0x2AD2, indicate/write 0x2AD9
-└── DemoStub        # Simulated metrics + control (is_demo=True)
-
-UI (CustomTkinter) + IntervalEngine → set_target_power / set_resistance
+Flutter (Material 3 ride dashboard)
+        │  flutter_rust_bridge
+        ▼
+Rust crate tacx_desktop_core
+  api/trainer.rs     → scan / connect / ERG / resistance / intervals
+  trainer/ftms.rs    → FTMS 0x1826 parse + control opcodes
+  trainer/fec.rs     → Tacx FE-C-over-BLE UART frames (pycycling-compatible)
+  trainer/demo.rs    → simulated metrics
+  trainer/controller.rs → FTMS first, FE-C fallback, exclusive-control errors
+  btleplug           → Windows / Linux (BlueZ) / macOS BLE
 ```
 
-Package layout:
+### Connect sequence (live)
 
-```
-tacx_desktop/
-  backend.py          # interface + metrics/state types
-  ble_ftms.py         # RealFtmsBleak + Indoor Bike Data parser
-  demo_backend.py     # DemoStub
-  interval_timer.py   # presets + timer
-  ui_app.py           # CustomTkinter app
-  main.py             # CLI entry
-```
+1. Scan advertisements (FTMS UUID and/or Tacx-like names).
+2. Connect + discover GATT.
+3. If FTMS Indoor Bike + Control Point → **FTMS** path (Request Control, Start/Resume, notify 0x2AD2).
+4. Else if Tacx UART RX/TX (`6e40fec3…` / `6e40fec2…`) → **FE-C-over-BLE** path.
+5. Else error: unsupported device.
 
-### FTMS (public) — what we use
+## Protocol context
 
-| Role | UUID | Notes |
-| --- | --- | --- |
-| Fitness Machine Service | `0x1826` | Scan filter / service |
-| Indoor Bike Data | `0x2AD2` | Notify — power, cadence, speed |
-| Fitness Machine Control Point | `0x2AD9` | Indicate + write — Request Control, Set Target Power, Set Resistance |
-| Supported Resistance Level Range | `0x2AD6` | Optional read for % bounds |
-| Supported Power Range | `0x2AD8` | Optional read for watt clamp |
-
-Typical control sequence:
-
-1. Connect + start notify on Indoor Bike Data.
-2. Enable Control Point indications.
-3. **Request Control** (`0x00`).
-4. Optional **Start/Resume** (`0x07`).
-5. **Set Target Power** (`0x05`, sint16 watts) or **Set Target Resistance Level** (`0x04`, uint8 × 0.1).
-
-## Protocol context (from research notes)
-
-Smart trainers commonly expose:
-
-| Interface | Role |
+| Interface | Role in this app |
 | --- | --- |
-| **FTMS** (BLE) | Standard control + feedback (resistance, target power, indoor bike data) — **this app** |
-| **CPS** / **CSC** (BLE) | Power / speed-cadence measurement only |
-| **ANT+ FE-C** | Grade, wind, drafting, simulation — **out of scope** |
-| **Private Tacx BLE** | Vendor extras (e.g. Road Feel) — **out of scope** (docs not fully public) |
+| **FTMS** (BLE) | Primary control + feedback |
+| **Tacx FE-C over BLE** | Fallback for older Tacx without FTMS |
+| ANT+ FE-C (radio) | Out of scope |
+| Private Tacx extras | Out of scope |
 
-Control modes: **Resistance**, **ERG / target power**, **Simulation** (grade/wind — not in v1).
+## Non-goals
 
-Prefer public FTMS first; treat private Tacx BLE as optional and blocked on documentation.
-
-## Non-goals (v1)
-
-- Connect IQ / watch remotes  
-- Private Tacx BLE / Road Feel / virtual gear  
-- Grade / simulation / FE-C  
-- FIT recording  
-- ANT+  
-- Multi-trainer  
+- Connect IQ / Garmin watch remotes  
+- Private Tacx Road Feel / virtual gear  
+- FIT recording / ANT+ USB sticks  
+- Multi-trainer simultaneous control  
 
 ## Tests
 
-```powershell
-pip install pytest pytest-asyncio
-pytest -q
-python -m tacx_desktop --headless-demo
+```bash
+cd rust && cargo test
+flutter analyze
+flutter test
 ```
 
 ## License

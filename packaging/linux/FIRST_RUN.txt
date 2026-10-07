@@ -31,8 +31,8 @@ Tacx Desktop — Linux first-run (Garuda / Arch primary)
      ./install.sh        # remove again with ./uninstall.sh
 
 5) In-app
-   Demo ON → ERG / Resistance / Intervals / Simulation
-   Demo OFF → quit Zwift/Tacx/MyWhoosh/Rouvy → forget trainer in KDE Bluetooth
-   (do NOT OS-pair) → Scan → Connect → ERG. UI must stay responsive while Connecting.
+   Demo ON → ERG / Resistance / Intervals / Simulation (includes DEMO KICKR CORE)
+   Demo OFF → quit Zwift/Tacx/MyWhoosh/Wahoo/Rouvy → forget trainer in KDE Bluetooth
+   (do NOT OS-pair) → Scan (Tacx or Kickr FTMS) → Connect → ERG. UI must stay responsive while Connecting.
 
 Pitfalls: Soft-blocked rfkill; OS pairing; another app holding the link (busy/NOCTRL).

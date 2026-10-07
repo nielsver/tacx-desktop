@@ -1,0 +1,3 @@
+bleak>=0.22
+pycycling>=0.4
+customtkinter>=5.2

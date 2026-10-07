@@ -370,6 +370,47 @@ class IntervalStatus {
           remainingS == other.remainingS;
 }
 
+/// Trainer packets per second and last-packet age (see `trainer::link_health`).
+class LinkHealth {
+  final double packetsPerS;
+  final int? lastPacketAgeMs;
+  final LinkLevel level;
+
+  const LinkHealth({
+    required this.packetsPerS,
+    this.lastPacketAgeMs,
+    required this.level,
+  });
+
+  @override
+  int get hashCode =>
+      packetsPerS.hashCode ^ lastPacketAgeMs.hashCode ^ level.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LinkHealth &&
+          runtimeType == other.runtimeType &&
+          packetsPerS == other.packetsPerS &&
+          lastPacketAgeMs == other.lastPacketAgeMs &&
+          level == other.level;
+}
+
+/// Trainer data-link health level for the status bar.
+enum LinkLevel {
+  /// No packet since connect.
+  noData,
+
+  /// Last packet under 1.5 s old.
+  good,
+
+  /// 1.5–4 s since the last packet.
+  stale,
+
+  /// 4 s or more: the trainer (or BLE) has stopped sending.
+  lost,
+}
+
 /// Best average power over one duration (mean-max point).
 class PowerBest {
   final int durationS;

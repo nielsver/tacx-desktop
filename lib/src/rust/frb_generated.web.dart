@@ -83,6 +83,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   IntervalStatus dco_decode_interval_status(dynamic raw);
 
   @protected
+  LinkHealth dco_decode_link_health(dynamic raw);
+
+  @protected
+  LinkLevel dco_decode_link_level(dynamic raw);
+
+  @protected
   List<DiscoveredDevice> dco_decode_list_discovered_device(dynamic raw);
 
   @protected
@@ -222,6 +228,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   IntervalStatus sse_decode_interval_status(SseDeserializer deserializer);
+
+  @protected
+  LinkHealth sse_decode_link_health(SseDeserializer deserializer);
+
+  @protected
+  LinkLevel sse_decode_link_level(SseDeserializer deserializer);
 
   @protected
   List<DiscoveredDevice> sse_decode_list_discovered_device(
@@ -388,6 +400,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     IntervalStatus self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_link_health(LinkHealth self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_link_level(LinkLevel self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_discovered_device(

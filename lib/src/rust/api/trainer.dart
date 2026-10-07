@@ -87,6 +87,11 @@ TrainerMetrics getMetrics() => RustLib.instance.api.crateApiTrainerGetMetrics();
 ConnectionSnapshot getConnectionSnapshot() =>
     RustLib.instance.api.crateApiTrainerGetConnectionSnapshot();
 
+/// Trainer data-link health: packets/s over 5 s, last-packet age and a
+/// Good (< 1.5 s) / Stale (< 4 s) / Lost level. Lock-free, cheap at 4 Hz.
+LinkHealth getLinkHealth() =>
+    RustLib.instance.api.crateApiTrainerGetLinkHealth();
+
 ResistanceRange getResistanceRange() =>
     RustLib.instance.api.crateApiTrainerGetResistanceRange();
 

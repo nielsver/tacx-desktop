@@ -136,6 +136,13 @@ pub fn get_connection_snapshot() -> ConnectionSnapshot {
     crate::trainer::controller::try_snapshot()
 }
 
+/// Trainer data-link health: packets/s over 5 s, last-packet age and a
+/// Good (< 1.5 s) / Stale (< 4 s) / Lost level. Lock-free, cheap at 4 Hz.
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_link_health() -> LinkHealth {
+    crate::trainer::link_health::trainer_link_health()
+}
+
 #[flutter_rust_bridge::frb(sync)]
 pub fn get_resistance_range() -> ResistanceRange {
     crate::trainer::controller::try_resistance_range()

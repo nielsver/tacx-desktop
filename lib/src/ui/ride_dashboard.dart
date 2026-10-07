@@ -98,6 +98,11 @@ class _RideDashboardState extends State<RideDashboard> {
     ),
   );
   RideStats get _ride => _rideN.value;
+
+  /// Trainer link health for the status bar (polled with the metrics).
+  final ValueNotifier<LinkHealth> _linkN = ValueNotifier(
+    const LinkHealth(packetsPerS: 0, level: LinkLevel.noData),
+  );
   /// 1 Hz rolling history (last 10 min) for the live power/cadence/HR graph.
   final TrendBuffer _trend = TrendBuffer();
   List<WorkoutInfo> _workouts = const [];
@@ -220,6 +225,7 @@ class _RideDashboardState extends State<RideDashboard> {
     _scroll.dispose();
     _metricsN.dispose();
     _rideN.dispose();
+    _linkN.dispose();
     _trend.dispose();
     _wTrace.dispose();
     _workoutN.dispose();
@@ -280,6 +286,7 @@ class _RideDashboardState extends State<RideDashboard> {
         metrics.targetPowerW != _metrics.targetPowerW;
     _metricsN.value = metrics;
     _rideN.value = ride;
+    _linkN.value = api.getLinkHealth();
     _workoutN.value = workout;
     final err = workout.error;
     if (err != null && err != _workout.error) {
@@ -1455,7 +1462,13 @@ class _RideDashboardState extends State<RideDashboard> {
               ),
             ),
             if (!_inFocus)
-              RideStatusBar(snap: _snap, strap: _strap, ride: _rideN),
+              RideStatusBar(
+                snap: _snap,
+                strap: _strap,
+                ride: _rideN,
+                link: _linkN,
+                metrics: _metricsN,
+              ),
           ],
         ),
       ),

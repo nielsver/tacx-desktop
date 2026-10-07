@@ -264,6 +264,28 @@ mod bluetooth_status_tests {
     }
 }
 
+/// Trainer data-link health level for the status bar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LinkLevel {
+    /// No packet since connect.
+    #[default]
+    NoData,
+    /// Last packet under 1.5 s old.
+    Good,
+    /// 1.5–4 s since the last packet.
+    Stale,
+    /// 4 s or more: the trainer (or BLE) has stopped sending.
+    Lost,
+}
+
+/// Trainer packets per second and last-packet age (see `trainer::link_health`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LinkHealth {
+    pub packets_per_s: f64,
+    pub last_packet_age_ms: Option<u32>,
+    pub level: LinkLevel,
+}
+
 /// Best average power over one duration (mean-max point).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PowerBest {

@@ -24,6 +24,13 @@ ConnectionSnapshot _snap({
   reconnectGaveUp: false,
 );
 
+final _link = ValueNotifier(
+  const LinkHealth(packetsPerS: 4, lastPacketAgeMs: 250, level: LinkLevel.good),
+);
+final _metrics = ValueNotifier(
+  const TrainerMetrics(powerW: 0, cadenceRpm: 0, speedKmh: 0),
+);
+
 const _noStrap = HrStrapStatus(
   state: HrStrapState.disconnected,
   deviceId: '',
@@ -130,7 +137,7 @@ void main() {
             heartRateBpm: 142,
           ),
         ),
-        'HR 142',
+        'HR 142 · strap',
       );
       expect(
         RideStatusBar.hrLabel(
@@ -141,7 +148,11 @@ void main() {
             detail: '',
           ),
         ),
-        'HR —',
+        'HR — · strap',
+      );
+      expect(
+        RideStatusBar.hrLabel(_noStrap, trainerBpm: 131),
+        'HR 131 · trainer',
       );
     });
   });
@@ -151,7 +162,15 @@ void main() {
     (tester) async {
       final ride = ValueNotifier(_ride(754));
       await tester.pumpWidget(
-        _host(RideStatusBar(snap: _snap(), strap: _noStrap, ride: ride)),
+        _host(
+          RideStatusBar(
+            link: _link,
+            metrics: _metrics,
+            snap: _snap(),
+            strap: _noStrap,
+            ride: ride,
+          ),
+        ),
       );
       expect(_text(tester, 'status-trainer'), 'KICKR CORE 1A2B · FTMS');
       expect(_text(tester, 'status-mode'), 'ERG');
@@ -167,6 +186,8 @@ void main() {
       await tester.pumpWidget(
         _host(
           RideStatusBar(
+            link: _link,
+            metrics: _metrics,
             snap: _snap(demo: true, protocol: ProtocolKind.demo),
             strap: _noStrap,
             ride: ride,
@@ -188,7 +209,15 @@ void main() {
   ) async {
     final ride = ValueNotifier(_ride(1));
     await tester.pumpWidget(
-      _host(RideStatusBar(snap: _snap(), strap: _noStrap, ride: ride)),
+      _host(
+        RideStatusBar(
+          link: _link,
+          metrics: _metrics,
+          snap: _snap(),
+          strap: _noStrap,
+          ride: ride,
+        ),
+      ),
     );
     final trainer = tester.element(
       find.byKey(const ValueKey('status-trainer')),
@@ -212,6 +241,8 @@ void main() {
     await tester.pumpWidget(
       _host(
         RideStatusBar(
+          link: _link,
+          metrics: _metrics,
           snap: _snap(name: 'A very long trainer name ' * 6, demo: false),
           strap: const HrStrapStatus(
             state: HrStrapState.connected,
@@ -227,5 +258,194 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(_text(tester, 'status-clock'), '10:00:00');
     ride.dispose();
+  });
+
+  group('link health', () {
+    test('label: rate and last-packet age, waiting before first packet', () {
+      expect(
+        RideStatusBar.linkLabel(
+          const LinkHealth(
+            packetsPerS: 4,
+            lastPacketAgeMs: 250,
+            level: LinkLevel.good,
+          ),
+        ),
+        '4.0/s · 0.3 s',
+      );
+      expect(
+        RideStatusBar.linkLabel(
+          const LinkHealth(
+            packetsPerS: 0,
+            lastPacketAgeMs: 125000,
+            level: LinkLevel.lost,
+          ),
+        ),
+        '0.0/s · 2 min',
+      );
+      expect(
+        RideStatusBar.linkLabel(
+          const LinkHealth(packetsPerS: 0, level: LinkLevel.noData),
+        ),
+        'waiting for data',
+      );
+    });
+
+    test('colour per level (green < 1.5 s, amber < 4 s, red)', () {
+      expect(RideStatusBar.linkColor(LinkLevel.good), RideColors.ok);
+      expect(RideStatusBar.linkColor(LinkLevel.stale), RideColors.warn);
+      expect(RideStatusBar.linkColor(LinkLevel.lost), RideColors.danger);
+      expect(RideStatusBar.linkColor(LinkLevel.noData), RideColors.textMuted);
+    });
+
+    test('reconnect countdown is visible', () {
+      final s = ConnectionSnapshot(
+        state: ConnectionState.reconnecting,
+        detail: '',
+        protocol: ProtocolKind.ftms,
+        isDemo: false,
+        mode: ControlMode.erg,
+        deviceName: 'KICKR',
+        supportsSimulation: true,
+        reconnectAttempt: 2,
+        reconnectMaxAttempts: 5,
+        reconnectInS: 3,
+        reconnectGaveUp: false,
+      );
+      expect(RideStatusBar.trainerLabel(s), 'Reconnecting KICKR in 3 s · 2/5');
+      expect(
+        RideStatusBar.reconnectLabel(
+          ConnectionSnapshot(
+            state: ConnectionState.reconnecting,
+            detail: '',
+            protocol: ProtocolKind.ftms,
+            isDemo: false,
+            mode: ControlMode.erg,
+            deviceName: '',
+            supportsSimulation: true,
+            reconnectAttempt: 1,
+            reconnectMaxAttempts: 5,
+            reconnectInS: 0,
+            reconnectGaveUp: false,
+          ),
+        ),
+        'Reconnecting… · 1/5',
+      );
+      expect(
+        RideStatusBar.reconnectLabel(
+          ConnectionSnapshot(
+            state: ConnectionState.reconnecting,
+            detail: '',
+            protocol: ProtocolKind.ftms,
+            isDemo: false,
+            mode: ControlMode.erg,
+            deviceName: 'KICKR',
+            supportsSimulation: true,
+            reconnectAttempt: 5,
+            reconnectMaxAttempts: 5,
+            reconnectInS: 0,
+            reconnectGaveUp: true,
+          ),
+        ),
+        'Link lost · press Reconnect',
+      );
+    });
+
+    testWidgets('a stalled trainer turns the dot amber then red, text too', (
+      tester,
+    ) async {
+      final link = ValueNotifier(
+        const LinkHealth(
+          packetsPerS: 4,
+          lastPacketAgeMs: 200,
+          level: LinkLevel.good,
+        ),
+      );
+      final ride = ValueNotifier(_ride(10));
+      await tester.pumpWidget(
+        _host(
+          RideStatusBar(
+            snap: _snap(),
+            strap: _noStrap,
+            ride: ride,
+            link: link,
+            metrics: _metrics,
+          ),
+        ),
+      );
+      Color dot() =>
+          ((tester.widget(
+                            find.descendant(
+                              of: find.byKey(const ValueKey('status-link-dot')),
+                              matching: find.byType(Container),
+                            ),
+                          )
+                          as Container)
+                      .decoration!
+                  as BoxDecoration)
+              .color!;
+      expect(dot(), RideColors.ok);
+      expect(_text(tester, 'status-link'), '4.0/s · 0.2 s');
+
+      link.value = const LinkHealth(
+        packetsPerS: 2.4,
+        lastPacketAgeMs: 2100,
+        level: LinkLevel.stale,
+      );
+      await tester.pump();
+      expect(dot(), RideColors.warn);
+      expect(_text(tester, 'status-link'), '2.4/s · 2.1 s');
+
+      link.value = const LinkHealth(
+        packetsPerS: 0,
+        lastPacketAgeMs: 6000,
+        level: LinkLevel.lost,
+      );
+      await tester.pump();
+      expect(dot(), RideColors.danger);
+      final t = tester.widget<Text>(find.byKey(const ValueKey('status-link')));
+      expect(t.style!.color, RideColors.danger);
+
+      // Disconnected: no link readout at all.
+      await tester.pumpWidget(
+        _host(
+          RideStatusBar(
+            snap: _snap(state: ConnectionState.disconnected),
+            strap: _noStrap,
+            ride: ride,
+            link: link,
+            metrics: _metrics,
+          ),
+        ),
+      );
+      expect(find.byKey(const ValueKey('status-link')), findsNothing);
+      link.dispose();
+      ride.dispose();
+    });
+
+    testWidgets('trainer-relayed HR shows with its source', (tester) async {
+      final ride = ValueNotifier(_ride(10));
+      final m = ValueNotifier(
+        const TrainerMetrics(
+          powerW: 0,
+          cadenceRpm: 0,
+          speedKmh: 0,
+          heartRateBpm: 128,
+        ),
+      );
+      await tester.pumpWidget(
+        _host(
+          RideStatusBar(
+            snap: _snap(),
+            strap: _noStrap,
+            ride: ride,
+            link: _link,
+            metrics: m,
+          ),
+        ),
+      );
+      expect(_text(tester, 'status-hr'), 'HR 128 · trainer');
+      ride.dispose();
+      m.dispose();
+    });
   });
 }

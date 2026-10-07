@@ -537,6 +537,7 @@ impl TrainerController {
     ) -> Result<ConnectPrep, String> {
         self.cancel_auto_reconnect();
         self.connect_gen += 1;
+        crate::trainer::link_health::reset_trainer_link();
         if !preserve_intervals {
             self.stop_interval();
         }
@@ -563,6 +564,7 @@ impl TrainerController {
                             break;
                         }
                         d.tick();
+                        crate::trainer::link_health::trainer_packet();
                     } else {
                         break;
                     }
@@ -627,6 +629,7 @@ impl TrainerController {
         // User-initiated: never auto-reconnect after this.
         self.cancel_auto_reconnect();
         self.connect_gen += 1;
+        crate::trainer::link_health::reset_trainer_link();
         self.stop_interval();
         self.stop_workout();
         self.stop_gpx_route();
@@ -1952,6 +1955,7 @@ async fn open_session(
             if let Ok(mut stream) = peri_n.notifications().await {
                 while let Some(n) = stream.next().await {
                     if n.uuid == ftms_bike {
+                        crate::trainer::link_health::trainer_packet();
                         let mut m = metrics_n.lock();
                         merge_ftms_metrics(&mut m, &n.value);
                     } else if n.uuid == ftms_cp {
@@ -2065,6 +2069,7 @@ async fn open_session(
             if let Ok(mut stream) = peri_n.notifications().await {
                 while let Some(n) = stream.next().await {
                     if n.uuid == fec::tacx_uart_tx() {
+                        crate::trainer::link_health::trainer_packet();
                         if let Some(msg) = fec::extract_fec_message_data(&n.value) {
                             let mut m = metrics_n.lock();
                             if let Some((power, cadence)) = fec::parse_specific_trainer_page(&msg) {

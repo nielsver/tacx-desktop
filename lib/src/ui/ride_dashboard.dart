@@ -147,6 +147,24 @@ class _RideDashboardState extends State<RideDashboard> {
                   ),
                 ],
               ),
+            if (_error == null &&
+                _snap.state == ConnectionState.error &&
+                _snap.detail.toLowerCase().contains('link lost'))
+              MaterialBanner(
+                content: Text(
+                  _snap.detail,
+                  style: const TextStyle(color: Colors.white),
+                ),
+                backgroundColor: const Color(0xFFE65100).withValues(alpha: 0.95),
+                actions: [
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () => _run(() => api.reconnectTrainer()),
+                    child: const Text('Reconnect', style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -157,6 +175,7 @@ class _RideDashboardState extends State<RideDashboard> {
                       selected: _selected,
                       busy: _busy,
                       connected: connected,
+                      snap: _snap,
                       onSelect: (d) => setState(() => _selected = d),
                       onScan: _scan,
                       onConnect: _connect,
@@ -219,8 +238,9 @@ class _RideDashboardState extends State<RideDashboard> {
                     const SizedBox(height: 10),
                     Text(
                       'Only one BLE client can control the trainer. Close Zwift / Tacx Training / '
-                      'MyWhoosh / TrainerRoad before connecting. FTMS is preferred; older Tacx '
-                      'trainers fall back to FE-C-over-BLE automatically.',
+                      'MyWhoosh / TrainerRoad before connecting. Windows: leave the trainer unpaired '
+                      'in OS Bluetooth settings. FTMS is preferred; older Tacx trainers fall back to '
+                      'FE-C-over-BLE. Link loss keeps intervals — tap Reconnect to restore ERG.',
                       style: theme.textTheme.bodySmall?.copyWith(color: Colors.white54),
                     ),
                   ],
@@ -307,6 +327,7 @@ class _ConnectionBar extends StatelessWidget {
     required this.selected,
     required this.busy,
     required this.connected,
+    required this.snap,
     required this.onSelect,
     required this.onScan,
     required this.onConnect,
@@ -318,6 +339,7 @@ class _ConnectionBar extends StatelessWidget {
   final DiscoveredDevice? selected;
   final bool busy;
   final bool connected;
+  final ConnectionSnapshot snap;
   final ValueChanged<DiscoveredDevice?> onSelect;
   final VoidCallback onScan;
   final VoidCallback onConnect;
@@ -326,7 +348,13 @@ class _ConnectionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final snap = api.getConnectionSnapshot();
+    final canReconnect = !busy && !connected;
+    final stateColor = switch (snap.state) {
+      ConnectionState.connected => const Color(0xFF66BB6A),
+      ConnectionState.error => const Color(0xFFFF8A65),
+      ConnectionState.scanning || ConnectionState.connecting => const Color(0xFFFFD54F),
+      _ => Colors.white70,
+    };
     return Card(
       color: const Color(0xFF151A22),
       child: Padding(
@@ -337,11 +365,12 @@ class _ConnectionBar extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 120, maxWidth: 220),
+              constraints: const BoxConstraints(minWidth: 120, maxWidth: 280),
               child: Text(
                 '${_stateLabel(snap.state)}${snap.detail.isEmpty ? '' : ': ${snap.detail}'}',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                style: TextStyle(fontWeight: FontWeight.w600, color: stateColor),
                 overflow: TextOverflow.ellipsis,
+                maxLines: 2,
               ),
             ),
             SizedBox(
@@ -379,7 +408,7 @@ class _ConnectionBar extends StatelessWidget {
               child: const Text('Connect'),
             ),
             FilledButton.tonal(
-              onPressed: busy || connected ? null : onReconnect,
+              onPressed: canReconnect ? onReconnect : null,
               child: const Text('Reconnect'),
             ),
             OutlinedButton(
@@ -668,7 +697,10 @@ class _IntervalPanel extends StatelessWidget {
               ],
             ),
           ),
-          OutlinedButton(onPressed: enabled ? onStop : null, child: const Text('Stop intervals')),
+          OutlinedButton(
+            onPressed: (enabled || status.running) ? onStop : null,
+            child: const Text('Stop intervals'),
+          ),
         ],
       ),
     );

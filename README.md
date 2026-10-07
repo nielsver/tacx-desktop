@@ -19,6 +19,9 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 | Resistance % | Yes | FTMS Supported Resistance Level Range + Set Resistance; FE-C basic resistance 0–200 N mapped from % |
 | Interval presets (10×30/30, 5×3/2, 4×4/3) | Yes | Yes |
 | Exclusive-control messaging | Hint banner | Clear errors for busy trainer / NOCTRL |
+| FTMS Control Point indications | — | Parsed (`0x80`); NOCTRL / failures surface in UI |
+| GATT inventory on connect | — | UUID/property table + FTMS vs FE-C class in logs |
+| Link-lost → Reconnect | Simulated disconnect N/A | Auto Error state; Reconnect restores interval ERG |
 | DEMO badge | Always when demo on | — |
 
 ## Platforms
@@ -46,17 +49,25 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 # Debian/Ubuntu/Fedora-family examples — package names vary
 sudo apt install bluez bluetooth libdbus-1-dev
 # Ensure your user can use Bluetooth (often group `bluetooth` or via polkit)
+sudo usermod -aG bluetooth "$USER"   # then log out/in
+systemctl --user status  # D-Bus session must be active for desktop BLE
 ```
 
-### macOS
+- Keep the scan filter **empty** (this app post-filters by FTMS UUID / Tacx-like names). BlueZ UUID filters are unioned across D-Bus clients and can hide FE-C-only trainers.
+- Run as a normal user (no `sudo`); if scan fails, check `bluetoothctl show` and group membership.
 
-- Allow Bluetooth for **Tacx Desktop** when prompted.
-- Debug/Release entitlements request `com.apple.security.device.bluetooth`.
+### macOS (TCC + entitlements)
 
-### Windows
+- First launch of a **release** `.app` should prompt for Bluetooth (TCC). If scan fails silently: **System Settings → Privacy & Security → Bluetooth** → enable **Tacx Desktop**.
+- Debug/Release entitlements include `com.apple.security.device.bluetooth`; Info.plist has `NSBluetoothAlwaysUsageDescription`.
+- Prefer connecting from the app only. If you previously **paired** the trainer in macOS Bluetooth settings and control fails, **Forget This Device**, then Connect from Tacx Desktop.
+
+### Windows (leave trainer unpaired)
 
 - Windows 10/11 with BLE (built-in or USB dongle).
 - Enable **Developer Mode** if Flutter asks; install Visual Studio C++ desktop workload for Windows builds.
+- **Do not OS-pair the trainer** in Settings → Bluetooth. Tacx / FTMS control often breaks when Windows holds a system bond. Remove/forget the device so it is unpaired, quit Zwift / Tacx Training / MyWhoosh, then **Connect** from this app only.
+- If the radio is off: Settings → Bluetooth & devices → turn Bluetooth on.
 
 ## Install (developers)
 
@@ -95,20 +106,22 @@ cd rust && cargo test --test headless_demo
 ## Build release binaries
 
 ```bash
-# Linux portable bundle
-flutter build linux --release
-# → build/linux/x64/release/bundle/
+# Helper (linux | windows | macos | all)
+./scripts/build_release.sh linux
 
-# Windows
-flutter build windows --release
-# → build/windows/x64/runner/Release/
-
-# macOS
-flutter build macos --release
-# → build/macos/Build/Products/Release/tacx_desktop.app
+# Or manually:
+flutter build linux --release    # → build/linux/x64/release/bundle/
+flutter build windows --release  # → build/windows/x64/runner/Release/
+flutter build macos --release    # → build/macos/Build/Products/Release/tacx_desktop.app
 ```
 
-Ship the Linux `bundle/` folder as-is (includes `lib/` + binary). On Windows zip the `Release/` folder. On macOS distribute the `.app` (notarize for Gatekeeper if you ship outside your machine).
+Ship the Linux `bundle/` folder as-is (includes `lib/` + the Rust **cdylib**). On Windows zip the `Release/` folder. On macOS distribute the `.app` (notarize for Gatekeeper if you ship outside your machine).
+
+### flutter_rust_bridge / cdylib notes
+
+- Rust crate `tacx_desktop_core` builds as `cdylib` + `staticlib` + `rlib` (`rust/Cargo.toml`).
+- After editing `rust/src/api/`, regenerate: `./scripts/gen_bridge.sh` (or `flutter_rust_bridge_codegen generate`).
+- Linux runners / local: ensure `LD_LIBRARY_PATH` includes `rust/target/debug` (or release) when loading the native lib outside a full Flutter bundle — see `scripts/test_all.sh`.
 
 ## Architecture
 
@@ -127,11 +140,49 @@ Rust crate tacx_desktop_core
 
 ### Connect sequence (live)
 
-1. Scan advertisements (FTMS UUID and/or Tacx-like names).
-2. Connect + discover GATT.
-3. If FTMS Indoor Bike + Control Point → **FTMS** path (Request Control, Start/Resume, notify 0x2AD2).
-4. Else if Tacx UART RX/TX (`6e40fec3…` / `6e40fec2…`) → **FE-C-over-BLE** path.
-5. Else error: unsupported device.
+1. Scan advertisements (FTMS UUID and/or Tacx-like names). Empty `ScanFilter` + post-filter (BlueZ-safe).
+2. Connect + discover GATT → **inventory dump** (UUID / properties / class `ftms` | `fec_only` | `dual_ftms_fec`) to stderr / logs.
+3. If FTMS Indoor Bike (`0x2AD2`) + Control Point (`0x2AD9`) → **FTMS** path:
+   - Subscribe Indoor Bike Data **and** Control Point indications.
+   - **Request Control** (`0x00`) → parse CP response (`0x80 …`); fail loudly on **NOCTRL** (`0x05`).
+   - **Start/Resume** (`0x07`) → then notify stream for power/cadence/speed.
+   - **Set Target Power** (`0x05`) / **Set Resistance** (`0x04`) clamp to Supported Power / Resistance Range and check CP result.
+4. Else if Tacx UART RX/TX (`6e40fec3…` / `6e40fec2…`) → **FE-C-over-BLE** path (pages 16+25; cmds `0x30` / `0x31`).
+5. Else error: unsupported device (GATT summary included).
+
+### Trainer inventory (FTMS vs FE-C-only)
+
+On every live connect the core prints a GATT table, for example:
+
+```text
+GATT inventory (N) — class=ftms
+UUID    Name    Properties
+0x2ad2  Indoor Bike Data    notify
+0x2ad9  FTMS Control Point  indicate|write
+…
+```
+
+Use one FTMS trainer and one legacy FE-C-only Tacx to fill your lab matrix. Dual trainers prefer FTMS. No private Garmin Tacx APIs are used.
+
+### Disconnect + reconnect during intervals
+
+- When the BLE notification stream ends (trainer asleep / out of range / other app), connection state becomes **Error** with “Link lost — tap Reconnect…”.
+- **Reconnect** keeps an active interval preset and restores the current phase ERG target (or last manual ERG watts) after the link is back.
+- Quit other apps first; exclusive control still applies after reconnect.
+
+### Demo mode
+
+- Demo is **on** by default (header toggle). Scan returns stub devices; metrics tick locally; ERG / resistance / intervals work without BLE.
+- Turn Demo **off** for live FTMS → FE-C fallback. The red **DEMO** badge is shown whenever demo is active.
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`):
+
+| Job | What |
+| --- | --- |
+| **Rust** | `cargo test` in `rust/` |
+| **Flutter** | `flutter pub get`, `flutter analyze`, `flutter test`, Linux desktop deps as needed |
 
 ## Protocol context
 

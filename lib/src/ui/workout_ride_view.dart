@@ -552,18 +552,26 @@ class WorkoutGraphPainter extends CustomPainter {
     required this.ftp,
     required this.elapsedS,
     required this.actual,
+    this.actualVersion = 0,
   });
 
   final WorkoutPlan plan;
   final int ftp;
   final double elapsedS;
+
+  /// Live view of the recorded power (may be the trace's own list).
   final List<({double t, double watts})> actual;
+
+  /// [WorkoutTrace.version] of [actual]; the list itself is a live view, so
+  /// identity / length alone can't tell whether it changed.
+  final int actualVersion;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (plan.steps.isEmpty || size.width <= 0 || size.height <= 0) return;
-    final actualMax = actual.fold<double>(0, (m, p) => math.max(m, p.watts));
-    final ym = WorkoutGraphLayout.yMax(plan, ftp, actualMax: actualMax);
+    // Scale from plan + FTP only: one sprint must not rescale every block
+    // mid-ride (QA cycle 2). Spikes above the top are clipped.
+    final ym = WorkoutGraphLayout.yMax(plan, ftp);
     final blocks = WorkoutGraphLayout.blocks(plan, size, ftp, yMaxW: ym);
     final nowX = WorkoutGraphLayout.xAt(plan, size, elapsedS);
     final current = plan.stepIndexAt(elapsedS);
@@ -615,12 +623,13 @@ class WorkoutGraphPainter extends CustomPainter {
     )..layout();
     tp.paint(canvas, Offset(4, math.max(0, ftpY - tp.height - 1)));
 
-    // Actual power.
-    if (actual.length >= 2) {
+    // Actual power (min/max decimated to ~2 points per pixel column).
+    final line = decimateMinMax(actual, math.max(4, size.width.ceil() * 2));
+    if (line.length >= 2) {
       final p = Path();
-      for (var i = 0; i < actual.length; i++) {
-        final x = WorkoutGraphLayout.xAt(plan, size, actual[i].t);
-        final y = size.height * (1 - (actual[i].watts / ym).clamp(0.0, 1.0));
+      for (var i = 0; i < line.length; i++) {
+        final x = WorkoutGraphLayout.xAt(plan, size, line[i].t);
+        final y = size.height * (1 - (line[i].watts / ym).clamp(0.0, 1.0));
         i == 0 ? p.moveTo(x, y) : p.lineTo(x, y);
       }
       canvas.drawPath(
@@ -651,6 +660,7 @@ class WorkoutGraphPainter extends CustomPainter {
       !identical(old.plan, plan) ||
       old.ftp != ftp ||
       old.elapsedS != elapsedS ||
+      old.actualVersion != actualVersion ||
       old.actual.length != actual.length ||
       !identical(old.actual, actual);
 }

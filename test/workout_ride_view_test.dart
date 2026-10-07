@@ -163,7 +163,9 @@ void main() {
       expect(t.offer('a', 0, 100), isTrue);
       expect(t.offer('a', 0.25, 110), isFalse); // < 1 s apart
       expect(t.offer('a', 1.0, 120), isTrue);
-      expect(t.offer('a', 2.0, double.nan), isTrue);
+      // Non-finite samples are dropped (no fake 0 W dips, QA finding 2).
+      expect(t.offer('a', 2.0, double.nan), isFalse);
+      expect(t.offer('a', 2.0, -5), isTrue);
       expect(t.points.last.watts, 0);
       expect(t.length, 3);
       // Same workout restarted: time jumps back → new trace.

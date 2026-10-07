@@ -121,6 +121,9 @@ class _RideDashboardState extends State<RideDashboard> {
   WorkoutPlan? _plan;
   /// Actual power on the workout time axis (1 Hz).
   final WorkoutTrace _wTrace = WorkoutTrace();
+  /// Live workout status (time left, ramp target). Updated every poll
+  /// without rebuilding the dashboard; only the workout widgets listen.
+  late final ValueNotifier<WorkoutStatus> _workoutN = ValueNotifier(_workout);
   /// Rider FTP for zone colours (persisted).
   int _ftp = 200;
 
@@ -202,6 +205,7 @@ class _RideDashboardState extends State<RideDashboard> {
     _rideN.dispose();
     _trend.dispose();
     _wTrace.dispose();
+    _workoutN.dispose();
     super.dispose();
   }
 
@@ -212,13 +216,20 @@ class _RideDashboardState extends State<RideDashboard> {
     final snap = api.getConnectionSnapshot();
     final resRange = api.getResistanceRange();
     final interval = api.getIntervalStatus();
-    final workout = api.getWorkoutStatus();
+    // A default status (empty text) means the read was not possible: keep
+    // the last one instead of flashing "no workout" (and dropping the plan).
+    final rawWorkout = api.getWorkoutStatus();
+    final workout = rawWorkout.statusText.isEmpty ? _workoutN.value : rawWorkout;
     final route = api.getRouteStatus();
     final ride = api.getRideStats();
     final strap = api.getHeartRateStrapStatus();
     final ghostChanged = _trackGhost(route, DateTime.now());
     final plan = _planFor(workout);
-    if (plan != null && workout.running) {
+    // Only real samples go on the trace: no default / disconnected zeros.
+    if (plan != null &&
+        workout.running &&
+        snap.state == ConnectionState.connected &&
+        (metrics.powerW > 0 || metrics.cadenceRpm > 0)) {
       _wTrace.offer(
         plan.id,
         plan.elapsedFrom(
@@ -239,7 +250,7 @@ class _RideDashboardState extends State<RideDashboard> {
         snap != _snap ||
         resRange != _resRange ||
         interval != _interval ||
-        workout != _workout ||
+        _workoutShape(workout) != _workoutShape(_workout) ||
         route != _route ||
         strap != _strap ||
         !identical(plan, _plan) ||
@@ -247,6 +258,11 @@ class _RideDashboardState extends State<RideDashboard> {
         metrics.targetPowerW != _metrics.targetPowerW;
     _metricsN.value = metrics;
     _rideN.value = ride;
+    _workoutN.value = workout;
+    final err = workout.error;
+    if (err != null && err != _workout.error) {
+      _toast('Workout stopped: $err', Icons.error_outline);
+    }
     // Only graph while a trainer (or Demo) is actually streaming.
     if (snap.state == ConnectionState.connected) {
       _trend.offer(metrics, DateTime.now());
@@ -351,21 +367,38 @@ class _RideDashboardState extends State<RideDashboard> {
     }
   }
 
-  WorkoutProgress get _workoutProgress => WorkoutProgress(
-    stepIndex: _workout.stepIndex,
-    remainingS: _workout.remainingS,
-    running: _workout.running,
-    done: _workout.done,
+  /// The parts of a workout status that change the dashboard layout.
+  /// Time left / ramp target change 4×/s and only drive [_workoutN].
+  static Object _workoutShape(WorkoutStatus w) => (
+    w.running,
+    w.done,
+    w.workoutId,
+    w.stepIndex,
+    w.stepCount,
+    w.error,
   );
 
-  Widget _workoutView({required bool large}) => WorkoutRideView(
-    plan: _plan!,
-    progress: _workoutProgress,
-    trace: _wTrace,
-    ftp: _ftp,
-    large: large,
-    onEditFtp: _editFtp,
+  static WorkoutProgress _progressOf(WorkoutStatus w) => WorkoutProgress(
+    stepIndex: w.stepIndex,
+    remainingS: w.remainingS,
+    running: w.running,
+    done: w.done,
   );
+
+  Widget _workoutView({required bool large}) {
+    final plan = _plan!;
+    return ValueListenableBuilder<WorkoutStatus>(
+      valueListenable: _workoutN,
+      builder: (context, w, _) => WorkoutRideView(
+        plan: plan,
+        progress: _progressOf(w),
+        trace: _wTrace,
+        ftp: _ftp,
+        large: large,
+        onEditFtp: _editFtp,
+      ),
+    );
+  }
 
   Future<void> _editFtp() async {
     final ctrl = TextEditingController(text: '$_ftp');
@@ -666,8 +699,15 @@ class _RideDashboardState extends State<RideDashboard> {
     _savePrefsSoon();
   }
 
+  /// Demo can't be toggled while a connect / disconnect is in flight (the
+  /// BLE handshake runs unlocked in Rust; see connect_gen there too).
+  bool get _demoLocked =>
+      _busy || _snap.state == ConnectionState.connecting;
+
   /// Toggle Demo mode: clear any stub/live scan list, persist preference.
   void _setDemoMode(bool enabled) {
+    // QA B3: never flip Demo while a connect / disconnect is in flight.
+    if (_demoLocked) return;
     _demoUserChoice = enabled;
     api.setDemoMode(enabled: enabled);
     setState(() {
@@ -764,7 +804,7 @@ class _RideDashboardState extends State<RideDashboard> {
                     onFullScreen: _toggleFullScreen,
                     onEffectsChanged: (e) =>
                         _setPref(() => _focusEffects = e),
-                    onDemoChanged: _setDemoMode,
+                    onDemoChanged: _demoLocked ? null : _setDemoMode,
                     onShowModes: () => showModesDialog(context),
                   ),
             if (_btRadioBad)
@@ -986,7 +1026,7 @@ class _RideDashboardState extends State<RideDashboard> {
                         RepaintBoundary(
                           child: LiveTrendChart(
                             buffer: _trend,
-                            targetWatts: (_workout.targetWatts?.toDouble() ??
+                            targetWatts: (_workoutN.value.targetWatts?.toDouble() ??
                                 _metrics.targetPowerW),
                           ),
                         ),
@@ -1083,11 +1123,13 @@ class _RideDashboardState extends State<RideDashboard> {
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: WorkoutPanel(
+                                child: ValueListenableBuilder<WorkoutStatus>(
+ valueListenable: _workoutN,
+ builder: (context, liveWorkout, _) => WorkoutPanel(
                                   workouts: _workouts.isEmpty
                                       ? const []
                                       : _workouts,
-                                  workoutStatus: _workout,
+                                  workoutStatus: liveWorkout,
                                   routeStatus: _route,
                                   gpxProfile: _gpx,
                                   ergFromGrade: _ergFromGrade,
@@ -1167,6 +1209,7 @@ class _RideDashboardState extends State<RideDashboard> {
                                     }
                                   },
                                 ),
+),
                               ),
                             ],
                           ),
@@ -1415,7 +1458,8 @@ class _Header extends StatelessWidget {
 
   final ConnectionSnapshot snap;
   final bool demo;
-  final ValueChanged<bool> onDemoChanged;
+  /// Null while connecting / busy: the switch is disabled.
+  final ValueChanged<bool>? onDemoChanged;
   final bool focusMode;
   final FocusEffects focusEffects;
   final bool canFocus;

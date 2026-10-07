@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' show Color;
@@ -225,26 +226,39 @@ String fmtClock(num seconds) {
 }
 
 /// 1 Hz actual-power trace on the workout time axis (for the ride graph).
+///
+/// [points] is a live read-only view (no copy per frame); painters compare
+/// [version] to decide whether to repaint.
 class WorkoutTrace extends ChangeNotifier {
   String _workoutId = '';
   final List<({double t, double watts})> _points = [];
+  late final UnmodifiableListView<({double t, double watts})> _view =
+      UnmodifiableListView(_points);
+  int _version = 0;
 
   String get workoutId => _workoutId;
-  List<({double t, double watts})> get points => List.unmodifiable(_points);
+  UnmodifiableListView<({double t, double watts})> get points => _view;
   int get length => _points.length;
+
+  /// Bumped on every change (append / reset / clear).
+  int get version => _version;
 
   /// Records [watts] at workout time [t]. Keeps ≥ [minGapS] between points,
   /// and restarts the trace when the workout id changes or time jumps back
-  /// (the same workout was restarted).
+  /// (the same workout was restarted). Non-finite watts are dropped (a
+  /// missing sample is better than a fake 0 W dip).
   bool offer(String workoutId, double t, double watts, {double minGapS = 1}) {
-    if (!t.isFinite) return false;
+    if (!t.isFinite || !watts.isFinite) return false;
     if (workoutId != _workoutId ||
         (_points.isNotEmpty && t + 0.5 < _points.last.t)) {
+      // 0.5 s tolerance so poll jitter never resets the trace.
       _workoutId = workoutId;
       _points.clear();
+      _version++;
     }
     if (_points.isNotEmpty && t - _points.last.t < minGapS) return false;
-    _points.add((t: t, watts: watts.isFinite ? math.max(0, watts) : 0));
+    _points.add((t: t, watts: math.max(0, watts)));
+    _version++;
     notifyListeners();
     return true;
   }
@@ -253,6 +267,38 @@ class WorkoutTrace extends ChangeNotifier {
     if (_points.isEmpty && _workoutId.isEmpty) return;
     _points.clear();
     _workoutId = '';
+    _version++;
     notifyListeners();
   }
+}
+
+/// Min/max decimation for line plots: at most [maxPoints] points, keeping
+/// each bucket's lowest and highest sample (in time order) so short sprints
+/// and dips stay visible on long rides.
+List<({double t, double watts})> decimateMinMax(
+  List<({double t, double watts})> pts,
+  int maxPoints,
+) {
+  if (maxPoints < 4 || pts.length <= maxPoints) return pts;
+  final buckets = maxPoints ~/ 2;
+  final out = <({double t, double watts})>[];
+  final per = pts.length / buckets;
+  for (var b = 0; b < buckets; b++) {
+    final lo = (b * per).floor();
+    final hi = math.min(pts.length, ((b + 1) * per).floor());
+    if (hi <= lo) continue;
+    var iMin = lo, iMax = lo;
+    for (var i = lo + 1; i < hi; i++) {
+      if (pts[i].watts < pts[iMin].watts) iMin = i;
+      if (pts[i].watts > pts[iMax].watts) iMax = i;
+    }
+    if (iMin == iMax) {
+      out.add(pts[iMin]);
+    } else if (iMin < iMax) {
+      out..add(pts[iMin])..add(pts[iMax]);
+    } else {
+      out..add(pts[iMax])..add(pts[iMin]);
+    }
+  }
+  return out;
 }

@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
+import 'package:tacx_desktop/src/ui/ride_theme.dart';
 
 class RideDashboard extends StatefulWidget {
   const RideDashboard({super.key});
@@ -54,8 +56,11 @@ class _RideDashboardState extends State<RideDashboard> {
   final double _bikeWeightKg = 8;
   final double _wheelDiameterM = 0.7;
   bool _busy = false;
+  bool _didScan = false;
   String? _error;
   BluetoothStatus? _bt;
+  bool _simExpanded = false;
+  bool _simAdvanced = false;
 
   @override
   void initState() {
@@ -79,6 +84,9 @@ class _RideDashboardState extends State<RideDashboard> {
       _snap = api.getConnectionSnapshot();
       _resRange = api.getResistanceRange();
       _interval = api.getIntervalStatus();
+      if (_snap.mode == ControlMode.simulation) {
+        _simExpanded = true;
+      }
     });
   }
 
@@ -87,12 +95,41 @@ class _RideDashboardState extends State<RideDashboard> {
       final st = await api.bluetoothStatus();
       if (mounted) setState(() => _bt = st);
     } catch (_) {
-      // Probe failures fall back to letting the user try a scan.
       if (mounted) setState(() => _bt = null);
     }
   }
 
   bool get _canScan => _bt?.canScan ?? true;
+
+  bool get _permissionDenied {
+    if (_snap.isDemo) return false;
+    // No BluetoothRadio.unauthorized in FRB; classify from hint + scan errors
+    // (distinct from BT-off / noAdapter).
+    final hint = (_bt?.hint ?? '').toLowerCase();
+    final err = (_error ?? '').toLowerCase();
+    final looksDenied = hint.contains('permission') ||
+        hint.contains('not authorized') ||
+        hint.contains('denied') ||
+        hint.contains('tcc') ||
+        hint.contains('privacy') ||
+        err.contains('permission') ||
+        err.contains('not authorized') ||
+        err.contains('denied') ||
+        err.contains('tcc') ||
+        err.contains('privacy');
+    if (!looksDenied) return false;
+    final radio = _bt?.radio;
+    if (radio == BluetoothRadio.off || radio == BluetoothRadio.noAdapter) {
+      return false;
+    }
+    return true;
+  }
+
+  bool get _btRadioBad {
+    if (_snap.isDemo || _bt == null) return false;
+    return _bt!.radio == BluetoothRadio.off ||
+        _bt!.radio == BluetoothRadio.noAdapter;
+  }
 
   Future<void> _run(Future<void> Function() action) async {
     setState(() {
@@ -113,16 +150,19 @@ class _RideDashboardState extends State<RideDashboard> {
 
   Future<void> _scan() async {
     await _checkBluetooth();
-    if (!_canScan) return;
+    if (!_canScan && !_snap.isDemo) return;
     await _run(() async {
       final list = await api.scanTrainers(timeoutMs: 8000);
       setState(() {
+        _didScan = true;
         _devices = list;
         if (list.isNotEmpty) {
           _selected ??= list.first;
           if (!_devices.any((d) => d.id == _selected?.id)) {
             _selected = list.first;
           }
+        } else {
+          _selected = null;
         }
       });
     });
@@ -133,7 +173,8 @@ class _RideDashboardState extends State<RideDashboard> {
       await api.connectTrainer(deviceId: _selected?.id);
       setState(() {
         _resRange = api.getResistanceRange();
-        _resistancePct = _resistancePct.clamp(_resRange.minPct, _resRange.maxPct);
+        _resistancePct =
+            _resistancePct.clamp(_resRange.minPct, _resRange.maxPct);
       });
     });
   }
@@ -142,6 +183,8 @@ class _RideDashboardState extends State<RideDashboard> {
   Widget build(BuildContext context) {
     final connected = _snap.state == ConnectionState.connected;
     final theme = Theme.of(context);
+    final simSupported = _snap.supportsSimulation || _snap.isDemo;
+    final activeMode = _snap.mode;
 
     return Scaffold(
       body: SafeArea(
@@ -156,23 +199,22 @@ class _RideDashboardState extends State<RideDashboard> {
                   _devices = [];
                   _selected = null;
                   _error = null;
+                  _didScan = false;
                 });
                 _refresh();
                 _checkBluetooth();
               },
             ),
-            if (_bt != null &&
-                !_snap.isDemo &&
-                (_bt!.radio == BluetoothRadio.off ||
-                    _bt!.radio == BluetoothRadio.noAdapter))
-              MaterialBanner(
-                leading: const Icon(Icons.bluetooth_disabled, color: Colors.white),
-                content: Text(_bt!.hint, style: const TextStyle(color: Colors.white)),
-                backgroundColor: const Color(0xFF455A64),
+            if (_btRadioBad)
+              _StatusStrip(
+                icon: Icons.bluetooth_disabled,
+                color: const Color(0xFF455A64),
+                message: _bt!.hint,
                 actions: [
                   TextButton(
                     onPressed: _checkBluetooth,
-                    child: const Text('Check again', style: TextStyle(color: Colors.white)),
+                    child: const Text('Check again',
+                        style: TextStyle(color: Colors.white)),
                   ),
                   TextButton(
                     onPressed: () {
@@ -180,18 +222,21 @@ class _RideDashboardState extends State<RideDashboard> {
                       _refresh();
                       _checkBluetooth();
                     },
-                    child: const Text('Use demo', style: TextStyle(color: Colors.white)),
+                    child: const Text('Use demo',
+                        style: TextStyle(color: Colors.white)),
                   ),
                 ],
               ),
             if (_error != null)
-              MaterialBanner(
-                content: Text(_error!, style: const TextStyle(color: Colors.white)),
-                backgroundColor: theme.colorScheme.error.withValues(alpha: 0.9),
+              _StatusStrip(
+                icon: Icons.error_outline,
+                color: theme.colorScheme.error.withValues(alpha: 0.92),
+                message: _error!,
                 actions: [
                   TextButton(
                     onPressed: () => setState(() => _error = null),
-                    child: const Text('Dismiss', style: TextStyle(color: Colors.white)),
+                    child: const Text('Dismiss',
+                        style: TextStyle(color: Colors.white)),
                   ),
                 ],
               ),
@@ -199,24 +244,22 @@ class _RideDashboardState extends State<RideDashboard> {
                 _snap.state == ConnectionState.error &&
                 (_snap.detail.toLowerCase().contains('link lost') ||
                     _snap.detail.toLowerCase().contains('control lost')))
-              MaterialBanner(
-                content: Text(
-                  _snap.detail,
-                  style: const TextStyle(color: Colors.white),
-                ),
-                backgroundColor: const Color(0xFFE65100).withValues(alpha: 0.95),
+              _StatusStrip(
+                icon: Icons.link_off,
+                color: RideColors.warn.withValues(alpha: 0.95),
+                message: _snap.detail,
                 actions: [
                   TextButton(
-                    onPressed: _busy
-                        ? null
-                        : () => _run(() => api.reconnectTrainer()),
-                    child: const Text('Reconnect', style: TextStyle(color: Colors.white)),
+                    onPressed:
+                        _busy ? null : () => _run(() => api.reconnectTrainer()),
+                    child: const Text('Reconnect',
+                        style: TextStyle(color: Colors.white)),
                   ),
                 ],
               ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                 child: Column(
                   children: [
                     _ConnectionBar(
@@ -225,24 +268,125 @@ class _RideDashboardState extends State<RideDashboard> {
                       busy: _busy,
                       connected: connected,
                       snap: _snap,
+                      canScan: _canScan || _snap.isDemo,
                       onSelect: (d) => setState(() => _selected = d),
-                      canScan: _canScan,
                       onScan: _scan,
                       onConnect: _connect,
-                      onReconnect: () => _run(() => api.reconnectTrainer()),
-                      onDisconnect: () => _run(() => api.disconnectTrainer()),
+                      onReconnect: () =>
+                          _run(() => api.reconnectTrainer()),
+                      onDisconnect: () =>
+                          _run(() => api.disconnectTrainer()),
                     ),
+                    if (_permissionDenied && !connected) ...[
+                      const SizedBox(height: 12),
+                      _PermissionDeniedPanel(
+                        onRetry: _checkBluetooth,
+                        onUseDemo: () {
+                          api.setDemoMode(enabled: true);
+                          _refresh();
+                          _checkBluetooth();
+                        },
+                      ),
+                    ] else if (!_permissionDenied &&
+                        !_btRadioBad &&
+                        _didScan &&
+                        _devices.isEmpty &&
+                        !connected &&
+                        !_busy) ...[
+                      const SizedBox(height: 12),
+                      _EmptyScanPanel(onScanAgain: _scan),
+                    ],
                     const SizedBox(height: 12),
                     _MetricsRow(metrics: _metrics, snap: _snap),
                     const SizedBox(height: 12),
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: Opacity(
+                              opacity: activeMode == ControlMode.erg ||
+                                      activeMode == ControlMode.idle
+                                  ? 1
+                                  : 0.45,
+                              child: _ErgPanel(
+                                targetWatts: _targetWatts,
+                                liveTargetW: _metrics.targetPowerW,
+                                step: _ergStep,
+                                enabled: connected && !_busy,
+                                onStep: (s) =>
+                                    setState(() => _ergStep = s),
+                                onNudge: (d) => setState(
+                                  () => _targetWatts =
+                                      (_targetWatts + d * _ergStep)
+                                          .clamp(0, 2000),
+                                ),
+                                onApply: () => _run(
+                                  () => api.setTargetPower(
+                                      watts: _targetWatts),
+                                ),
+                                onSetExact: (w) {
+                                  setState(() => _targetWatts = w);
+                                  _run(() =>
+                                      api.setTargetPower(watts: w));
+                                },
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Opacity(
+                              opacity:
+                                  activeMode == ControlMode.resistance ||
+                                          activeMode == ControlMode.idle
+                                      ? 1
+                                      : 0.45,
+                              child: _ResistancePanel(
+                                percent: _resistancePct,
+                                range: _resRange,
+                                enabled: connected && !_busy,
+                                onChanged: (v) =>
+                                    setState(() => _resistancePct = v),
+                                onApply: () => _run(
+                                  () => api.setResistancePercent(
+                                      percent: _resistancePct),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _IntervalPanel(
+                              presets: _presets,
+                              status: _interval,
+                              enabled: connected && !_busy,
+                              onStart: (key) =>
+                                  _run(() => api.startInterval(key: key)),
+                              onStop: () {
+                                api.stopInterval();
+                                _refresh();
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     _SimulationPanel(
+                      expanded: _simExpanded ||
+                          activeMode == ControlMode.simulation,
+                      advanced: _simAdvanced,
                       gradePct: _gradePct,
                       windKmh: _windKmh,
                       crr: _crr,
                       cw: _cw,
                       userWeightKg: _userWeightKg,
-                      enabled: connected && (_snap.supportsSimulation || _snap.isDemo),
-                      supportsSimulation: _snap.supportsSimulation || _snap.isDemo,
+                      enabled: connected && simSupported && !_busy,
+                      supportsSimulation: simSupported,
+                      onToggleExpanded: () =>
+                          setState(() => _simExpanded = !_simExpanded),
+                      onToggleAdvanced: () =>
+                          setState(() => _simAdvanced = !_simAdvanced),
                       onGrade: (v) => setState(() => _gradePct = v),
                       onWind: (v) => setState(() => _windKmh = v),
                       onCrr: (v) => setState(() => _crr = v),
@@ -265,69 +409,62 @@ class _RideDashboardState extends State<RideDashboard> {
                         );
                       }),
                     ),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: _ErgPanel(
-                              targetWatts: _targetWatts,
-                              step: _ergStep,
-                              enabled: connected,
-                              onStep: (s) => setState(() => _ergStep = s),
-                              onNudge: (d) => setState(
-                                () => _targetWatts = (_targetWatts + d * _ergStep).clamp(0, 2000),
-                              ),
-                              onApply: () => _run(
-                                () => api.setTargetPower(watts: _targetWatts),
-                              ),
-                              onSetExact: (w) {
-                                setState(() => _targetWatts = w);
-                                _run(() => api.setTargetPower(watts: w));
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _ResistancePanel(
-                              percent: _resistancePct,
-                              range: _resRange,
-                              enabled: connected,
-                              onChanged: (v) => setState(() => _resistancePct = v),
-                              onApply: () => _run(
-                                () => api.setResistancePercent(percent: _resistancePct),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _IntervalPanel(
-                              presets: _presets,
-                              status: _interval,
-                              enabled: connected,
-                              onStart: (key) => _run(() => api.startInterval(key: key)),
-                              onStop: () {
-                                api.stopInterval();
-                                _refresh();
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     Text(
                       'Only one BLE client can control the trainer. Close Zwift / Tacx Training / '
                       'MyWhoosh / TrainerRoad before connecting. Windows: leave the trainer unpaired '
-                      'in OS Bluetooth settings. FTMS is preferred; older Tacx trainers fall back to '
-                      'FE-C-over-BLE. Link loss keeps intervals — tap Reconnect to restore ERG.',
-                      style: theme.textTheme.bodySmall?.copyWith(color: Colors.white54),
+                      'in OS Bluetooth settings.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: RideColors.textMuted,
+                        fontSize: 11,
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusStrip extends StatelessWidget {
+  const _StatusStrip({
+    required this.icon,
+    required this.color,
+    required this.message,
+    required this.actions,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String message;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white, size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  height: 1.3,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            ...actions,
           ],
         ),
       ),
@@ -348,6 +485,7 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final connected = snap.state == ConnectionState.connected;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
@@ -357,48 +495,101 @@ class _Header extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.pedal_bike, size: 28),
+          const Icon(Icons.pedal_bike, size: 28, color: Colors.white),
           const SizedBox(width: 10),
           const Text(
             'Tacx Desktop',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: -0.2,
+            ),
           ),
           const SizedBox(width: 12),
           if (demo)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: const Color(0xFFC62828),
-                borderRadius: BorderRadius.circular(6),
+                color: RideColors.demo,
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: const Text('DEMO', style: TextStyle(fontWeight: FontWeight.bold)),
+              child: const Text(
+                'DEMO',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                  letterSpacing: 0.6,
+                  color: Colors.white,
+                ),
+              ),
             ),
+          const SizedBox(width: 10),
+          _ModeChip(mode: snap.mode),
           const Spacer(),
-          Text(
-            _protocolLabel(snap.protocol),
-            style: const TextStyle(color: Colors.white70),
-          ),
-          const SizedBox(width: 16),
-          Row(
-            children: [
-              const Text('Demo'),
-              Switch(value: demo, onChanged: onDemoChanged),
-            ],
-          ),
+          if (connected && snap.deviceName.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Text(
+                '${snap.deviceName} · ${_protocolShort(snap.protocol)}',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            )
+          else
+            Text(
+              _protocolShort(snap.protocol),
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          const SizedBox(width: 12),
+          const Text('Demo', style: TextStyle(color: Colors.white)),
+          Switch(value: demo, onChanged: onDemoChanged),
         ],
       ),
     );
   }
 
-  String _protocolLabel(ProtocolKind p) {
+  String _protocolShort(ProtocolKind p) {
     switch (p) {
       case ProtocolKind.demo:
-        return 'Protocol: Demo';
+        return 'Demo';
       case ProtocolKind.ftms:
-        return 'Protocol: FTMS';
+        return 'FTMS';
       case ProtocolKind.tacxFecBle:
-        return 'Protocol: Tacx FE-C BLE';
+        return 'FE-C';
     }
+  }
+}
+
+class _ModeChip extends StatelessWidget {
+  const _ModeChip({required this.mode});
+  final ControlMode mode;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (mode) {
+      ControlMode.erg => 'ERG',
+      ControlMode.resistance => 'Resistance',
+      ControlMode.simulation => 'Simulation',
+      ControlMode.idle => 'Idle',
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
   }
 }
 
@@ -411,7 +602,7 @@ class _ConnectionBar extends StatelessWidget {
     required this.snap,
     required this.onSelect,
     required this.onScan,
-    this.canScan = true,
+    required this.canScan,
     required this.onConnect,
     required this.onReconnect,
     required this.onDisconnect,
@@ -433,70 +624,96 @@ class _ConnectionBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final canReconnect = !busy && !connected;
     final stateColor = switch (snap.state) {
-      ConnectionState.connected => const Color(0xFF66BB6A),
-      ConnectionState.error => const Color(0xFFFF8A65),
-      ConnectionState.scanning || ConnectionState.connecting => const Color(0xFFFFD54F),
-      _ => Colors.white70,
+      ConnectionState.connected => RideColors.ok,
+      ConnectionState.error => RideColors.warn,
+      ConnectionState.scanning ||
+      ConnectionState.connecting =>
+        RideColors.warn,
+      _ => RideColors.textSecondary,
     };
+    final scanning = snap.state == ConnectionState.scanning || busy;
+
     return Card(
-      color: const Color(0xFF151A22),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 120, maxWidth: 280),
-              child: Text(
-                '${_stateLabel(snap.state)}${snap.detail.isEmpty ? '' : ': ${snap.detail}'}',
-                style: TextStyle(fontWeight: FontWeight.w600, color: stateColor),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2,
+            if (scanning)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 10),
+                child: LinearProgressIndicator(minHeight: 3),
               ),
-            ),
-            SizedBox(
-              width: 220,
-              child: DropdownButtonFormField<DiscoveredDevice>(
-                initialValue: selected != null && devices.any((d) => d.id == selected!.id)
-                    ? devices.firstWhere((d) => d.id == selected!.id)
-                    : null,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                  labelText: 'Trainer',
-                ),
-                items: devices
-                    .map(
-                      (d) => DropdownMenuItem(
-                        value: d,
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                ConstrainedBox(
+                  constraints:
+                      const BoxConstraints(minWidth: 140, maxWidth: 320),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.circle, size: 10, color: stateColor),
+                      const SizedBox(width: 8),
+                      Flexible(
                         child: Text(
-                          '${d.name} [${d.protocolHint}]',
+                          '${_stateLabel(snap.state)}${snap.detail.isEmpty ? '' : ' · ${snap.detail}'}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            color: stateColor,
+                          ),
                           overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
                         ),
                       ),
-                    )
-                    .toList(),
-                onChanged: connected ? null : onSelect,
-              ),
-            ),
-            FilledButton.tonal(
-              onPressed: (busy || !canScan) ? null : onScan,
-              child: const Text('Scan'),
-            ),
-            FilledButton(
-              onPressed: busy || connected ? null : onConnect,
-              child: const Text('Connect'),
-            ),
-            FilledButton.tonal(
-              onPressed: canReconnect ? onReconnect : null,
-              child: const Text('Reconnect'),
-            ),
-            OutlinedButton(
-              onPressed: busy || !connected ? null : onDisconnect,
-              child: const Text('Disconnect'),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 240,
+                  child: DropdownButtonFormField<DiscoveredDevice>(
+                    initialValue: selected != null &&
+                            devices.any((d) => d.id == selected!.id)
+                        ? devices.firstWhere((d) => d.id == selected!.id)
+                        : null,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Trainer'),
+                    items: devices
+                        .map(
+                          (d) => DropdownMenuItem(
+                            value: d,
+                            child: Text(
+                              '${d.name} · ${d.protocolHint}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: connected ? null : onSelect,
+                  ),
+                ),
+                FilledButton.tonal(
+                  onPressed: (busy || !canScan) ? null : onScan,
+                  child: const Text('Scan'),
+                ),
+                FilledButton(
+                  onPressed: busy || connected || selected == null
+                      ? null
+                      : onConnect,
+                  child: const Text('Connect'),
+                ),
+                FilledButton.tonal(
+                  onPressed: canReconnect ? onReconnect : null,
+                  child: const Text('Reconnect'),
+                ),
+                OutlinedButton(
+                  onPressed: busy || !connected ? null : onDisconnect,
+                  child: const Text('Disconnect'),
+                ),
+              ],
             ),
           ],
         ),
@@ -520,6 +737,153 @@ class _ConnectionBar extends StatelessWidget {
   }
 }
 
+class _EmptyScanPanel extends StatelessWidget {
+  const _EmptyScanPanel({required this.onScanAgain});
+  final VoidCallback onScanAgain;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: RideColors.surfaceHigh,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.search_off,
+                  color: RideColors.textSecondary, size: 28),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'No trainers found',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: RideColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '• Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad\n'
+                    '• Wake the trainer and stand nearby\n'
+                    '• Windows: leave the trainer unpaired in Bluetooth settings',
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.45,
+                      color: RideColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: onScanAgain,
+                    icon: const Icon(Icons.bluetooth_searching, size: 18),
+                    label: const Text('Scan again'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PermissionDeniedPanel extends StatelessWidget {
+  const _PermissionDeniedPanel({
+    required this.onRetry,
+    required this.onUseDemo,
+  });
+
+  final VoidCallback onRetry;
+  final VoidCallback onUseDemo;
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = switch (defaultTargetPlatform) {
+      TargetPlatform.macOS =>
+        'macOS: System Settings → Privacy & Security → Bluetooth → allow Tacx Desktop.',
+      TargetPlatform.windows =>
+        'Windows: Settings → Bluetooth & devices → ensure Bluetooth is on and app access is allowed.',
+      TargetPlatform.linux =>
+        'Linux: BlueZ running, D-Bus user session active, user in the bluetooth group.',
+      _ =>
+        'Allow Bluetooth permission for Tacx Desktop in your OS privacy settings.',
+    };
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: RideColors.danger.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.lock_outline,
+                  color: RideColors.danger, size: 28),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Bluetooth permission denied',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: RideColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    steps,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.45,
+                      color: RideColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton(
+                        onPressed: onRetry,
+                        child: const Text('Check again'),
+                      ),
+                      OutlinedButton(
+                        onPressed: onUseDemo,
+                        child: const Text('Use demo'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _MetricsRow extends StatelessWidget {
   const _MetricsRow({required this.metrics, required this.snap});
 
@@ -536,44 +900,138 @@ class _MetricsRow extends StatelessWidget {
     } else {
       control = snap.mode.name.toUpperCase();
     }
-    return Row(
-      children: [
-        _MetricCard(label: 'Power', value: '${metrics.powerW.toStringAsFixed(0)} W', accent: const Color(0xFFFF7043)),
-        const SizedBox(width: 10),
-        _MetricCard(label: 'Cadence', value: '${metrics.cadenceRpm.toStringAsFixed(0)} rpm', accent: const Color(0xFF66BB6A)),
-        const SizedBox(width: 10),
-        _MetricCard(label: 'Speed', value: '${metrics.speedKmh.toStringAsFixed(1)} km/h', accent: const Color(0xFF42A5F5)),
-        const SizedBox(width: 10),
-        _MetricCard(label: 'Control', value: control, accent: const Color(0xFFAB47BC)),
-      ],
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 2,
+            child: _MetricCard(
+              label: 'Power',
+              value: metrics.powerW.toStringAsFixed(0),
+            unit: 'W',
+            accent: RideColors.power,
+            valueSize: 48,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _MetricCard(
+            label: 'Cadence',
+            value: metrics.cadenceRpm.toStringAsFixed(0),
+            unit: 'rpm',
+            accent: RideColors.cadence,
+            valueSize: 18,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _MetricCard(
+            label: 'Speed',
+            value: metrics.speedKmh.toStringAsFixed(1),
+            unit: 'km/h',
+            accent: RideColors.speed,
+            valueSize: 18,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _MetricCard(
+            label: 'Control',
+            value: control,
+            unit: '',
+            accent: RideColors.control,
+            valueSize: 14,
+          ),
+        ),
+        ],
+      ),
     );
   }
 }
 
 class _MetricCard extends StatelessWidget {
-  const _MetricCard({required this.label, required this.value, required this.accent});
+  const _MetricCard({
+    required this.label,
+    required this.value,
+    required this.unit,
+    required this.accent,
+    required this.valueSize,
+  });
 
   final String label;
   final String value;
+  final String unit;
   final Color accent;
+  final double valueSize;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
-        decoration: BoxDecoration(
-          color: const Color(0xFF151A22),
-          borderRadius: BorderRadius.circular(14),
-          border: Border(left: BorderSide(color: accent, width: 4)),
-        ),
-        child: Column(
-          children: [
-            Text(label, style: TextStyle(color: accent.withValues(alpha: 0.9), fontSize: 13)),
-            const SizedBox(height: 6),
-            Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
-          ],
-        ),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+      decoration: BoxDecoration(
+        color: RideColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: RideColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: 0.12),
+            blurRadius: 0,
+            spreadRadius: 0,
+            offset: const Offset(-4, 0),
+          ),
+        ],
+      ),
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border(left: BorderSide(color: accent, width: 4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              color: accent.withValues(alpha: 0.95),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 6),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: valueSize,
+                    fontWeight: FontWeight.w800,
+                    height: 1.05,
+                    letterSpacing: -0.5,
+                    color: RideColors.textPrimary,
+                  ),
+                ),
+                if (unit.isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    unit,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: RideColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -582,6 +1040,7 @@ class _MetricCard extends StatelessWidget {
 class _ErgPanel extends StatefulWidget {
   const _ErgPanel({
     required this.targetWatts,
+    required this.liveTargetW,
     required this.step,
     required this.enabled,
     required this.onStep,
@@ -591,6 +1050,7 @@ class _ErgPanel extends StatefulWidget {
   });
 
   final int targetWatts;
+  final double? liveTargetW;
   final int step;
   final bool enabled;
   final ValueChanged<int> onStep;
@@ -613,66 +1073,136 @@ class _ErgPanelState extends State<_ErgPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final live = widget.liveTargetW?.round();
+    final pending =
+        live != null && live != widget.targetWatts;
     return _Panel(
       title: 'ERG mode',
       child: SingleChildScrollView(
         child: Column(
           children: [
-          Text('${widget.targetWatts} W', style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          SegmentedButton<int>(
-            segments: const [
-              ButtonSegment(value: 5, label: Text('5')),
-              ButtonSegment(value: 10, label: Text('10')),
-              ButtonSegment(value: 25, label: Text('25')),
-            ],
-            selected: {widget.step},
-            onSelectionChanged: widget.enabled
-                ? (s) => widget.onStep(s.first)
-                : null,
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              FilledButton(onPressed: widget.enabled ? () => widget.onNudge(-1) : null, child: const Text('−')),
-              const SizedBox(width: 12),
-              FilledButton(onPressed: widget.enabled ? () => widget.onNudge(1) : null, child: const Text('+')),
-            ],
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: widget.enabled ? widget.onApply : null,
-            child: const Text('Apply ERG'),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _ctrl,
-                  enabled: widget.enabled,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Watts',
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                  ),
+            Text(
+              '${widget.targetWatts}',
+              style: const TextStyle(
+                fontSize: 40,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -1,
+                height: 1,
+              ),
+            ),
+            const Text(
+              'W pending',
+              style: TextStyle(
+                fontSize: 12,
+                color: RideColors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (pending) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Trainer at ${live}W — tap Apply',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: RideColors.warn,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(width: 8),
-              FilledButton.tonal(
-                onPressed: widget.enabled
-                    ? () {
-                        final w = int.tryParse(_ctrl.text.trim());
-                        if (w != null) widget.onSetExact(w.clamp(0, 2000));
-                      }
-                    : null,
-                child: const Text('Set'),
+            ] else if (live != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Trainer at ${live}W',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: RideColors.ok,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
-          ),
-        ],
+            const SizedBox(height: 12),
+            SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(value: 5, label: Text('5')),
+                ButtonSegment(value: 10, label: Text('10')),
+                ButtonSegment(value: 25, label: Text('25')),
+              ],
+              selected: {widget.step},
+              onSelectionChanged: widget.enabled
+                  ? (s) => widget.onStep(s.first)
+                  : null,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: widget.enabled
+                        ? () => widget.onNudge(-1)
+                        : null,
+                    child: const Text('−', style: TextStyle(fontSize: 22)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed:
+                        widget.enabled ? () => widget.onNudge(1) : null,
+                    child: const Text('+', style: TextStyle(fontSize: 22)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: widget.enabled ? widget.onApply : null,
+                child: const Text('Apply ERG'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _ctrl,
+                    enabled: widget.enabled,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Watts'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonal(
+                  onPressed: widget.enabled
+                      ? () {
+                          final w = int.tryParse(_ctrl.text.trim());
+                          if (w != null) {
+                            widget.onSetExact(w.clamp(0, 2000));
+                          }
+                        }
+                      : null,
+                  child: const Text('Set'),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -696,41 +1226,57 @@ class _ResistancePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final steps = ((range.maxPct - range.minPct) / (range.stepPct <= 0 ? 1 : range.stepPct))
-        .round()
-        .clamp(1, 1000);
+    final steps =
+        ((range.maxPct - range.minPct) / (range.stepPct <= 0 ? 1 : range.stepPct))
+            .round()
+            .clamp(1, 1000);
     return _Panel(
       title: 'Resistance',
       child: SingleChildScrollView(
         child: Column(
           children: [
-          Text('${percent.toStringAsFixed(0)} %', style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold)),
-          Slider(
-            value: percent.clamp(range.minPct, range.maxPct),
-            min: range.minPct,
-            max: range.maxPct,
-            divisions: steps,
-            label: '${percent.toStringAsFixed(0)}%',
-            onChanged: enabled ? onChanged : null,
-          ),
-          Text(
-            'Range ${range.minPct.toStringAsFixed(0)}–${range.maxPct.toStringAsFixed(0)}% '
-            '(step ${range.stepPct.toStringAsFixed(1)})',
-            style: const TextStyle(color: Colors.white54, fontSize: 12),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'FTMS: Supported Resistance Level Range when available.\n'
-            'FE-C fallback: basic resistance 0–200 N mapped from %.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white38, fontSize: 11),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: enabled ? onApply : null,
-            child: const Text('Apply Resistance'),
-          ),
-        ],
+            Text(
+              percent.toStringAsFixed(0),
+              style: const TextStyle(
+                fontSize: 40,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -1,
+                height: 1,
+              ),
+            ),
+            const Text(
+              '%',
+              style: TextStyle(
+                fontSize: 12,
+                color: RideColors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Slider(
+              value: percent.clamp(range.minPct, range.maxPct),
+              min: range.minPct,
+              max: range.maxPct,
+              divisions: steps,
+              label: '${percent.toStringAsFixed(0)}%',
+              onChanged: enabled ? onChanged : null,
+            ),
+            Text(
+              'Range ${range.minPct.toStringAsFixed(0)}–${range.maxPct.toStringAsFixed(0)}% · step ${range.stepPct.toStringAsFixed(1)}',
+              style: const TextStyle(
+                color: RideColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: enabled ? onApply : null,
+                child: const Text('Apply Resistance'),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -759,30 +1305,46 @@ class _IntervalPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(status.statusText, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(
+            status.statusText,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              color: RideColors.textPrimary,
+            ),
+          ),
           const SizedBox(height: 8),
           Expanded(
             child: ListView(
               children: [
                 for (final p in presets) ...[
-                  FilledButton.tonal(
-                    onPressed: enabled ? () => onStart(p.key) : null,
-                    child: Text(p.label),
+                  SizedBox(
+                    height: 44,
+                    child: FilledButton.tonal(
+                      onPressed: enabled ? () => onStart(p.key) : null,
+                      child: Text(p.label),
+                    ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 8, top: 2),
+                    padding: const EdgeInsets.only(bottom: 10, top: 4),
                     child: Text(
                       '${p.workWatts}W / ${p.restWatts}W — ${p.description}',
-                      style: const TextStyle(color: Colors.white54, fontSize: 11),
+                      style: const TextStyle(
+                        color: RideColors.textSecondary,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ],
               ],
             ),
           ),
-          OutlinedButton(
-            onPressed: (enabled || status.running) ? onStop : null,
-            child: const Text('Stop intervals'),
+          SizedBox(
+            height: 44,
+            child: OutlinedButton(
+              onPressed: (enabled || status.running) ? onStop : null,
+              child: const Text('Stop intervals'),
+            ),
           ),
         ],
       ),
@@ -790,9 +1352,10 @@ class _IntervalPanel extends StatelessWidget {
   }
 }
 
-
 class _SimulationPanel extends StatelessWidget {
   const _SimulationPanel({
+    required this.expanded,
+    required this.advanced,
     required this.gradePct,
     required this.windKmh,
     required this.crr,
@@ -800,6 +1363,8 @@ class _SimulationPanel extends StatelessWidget {
     required this.userWeightKg,
     required this.enabled,
     required this.supportsSimulation,
+    required this.onToggleExpanded,
+    required this.onToggleAdvanced,
     required this.onGrade,
     required this.onWind,
     required this.onCrr,
@@ -809,6 +1374,8 @@ class _SimulationPanel extends StatelessWidget {
     required this.onApplyUser,
   });
 
+  final bool expanded;
+  final bool advanced;
   final double gradePct;
   final double windKmh;
   final double crr;
@@ -816,6 +1383,8 @@ class _SimulationPanel extends StatelessWidget {
   final double userWeightKg;
   final bool enabled;
   final bool supportsSimulation;
+  final VoidCallback onToggleExpanded;
+  final VoidCallback onToggleAdvanced;
   final ValueChanged<double> onGrade;
   final ValueChanged<double> onWind;
   final ValueChanged<double> onCrr;
@@ -826,145 +1395,181 @@ class _SimulationPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: const Color(0xFF151A22),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  'Simulation',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+    final active = supportsSimulation;
+    return Opacity(
+      opacity: active ? 1 : 0.55,
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              InkWell(
+                onTap: onToggleExpanded,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                  child: Row(
+                    children: [
+                      Icon(
+                        expanded
+                            ? Icons.expand_less
+                            : Icons.expand_more,
+                        color: RideColors.textSecondary,
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Simulation',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          supportsSimulation
+                              ? 'Grade · wind · Crr/Cw'
+                              : 'Not advertised on this trainer',
+                          style: TextStyle(
+                            color: supportsSimulation
+                                ? RideColors.textSecondary
+                                : RideColors.textMuted,
+                            fontSize: 12,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      FilledButton(
+                        onPressed: enabled ? onApplySim : null,
+                        child: const Text('Apply'),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
+              ),
+              if (expanded) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Grade ${gradePct.toStringAsFixed(1)} %',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+                Slider(
+                  value: gradePct.clamp(-10.0, 15.0),
+                  min: -10,
+                  max: 15,
+                  divisions: 250,
+                  label: '${gradePct.toStringAsFixed(1)}%',
+                  onChanged: enabled ? onGrade : null,
+                ),
+                Text(
+                  'Wind ${windKmh.toStringAsFixed(0)} km/h',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+                Slider(
+                  value: windKmh.clamp(-40.0, 40.0),
+                  min: -40,
+                  max: 40,
+                  divisions: 80,
+                  label: '${windKmh.toStringAsFixed(0)} km/h',
+                  onChanged: enabled ? onWind : null,
+                ),
+                TextButton(
+                  onPressed: onToggleAdvanced,
                   child: Text(
-                    supportsSimulation
-                        ? 'FTMS 0x11 / FE-C Track·Wind — Crr 0–0.0127, Cw 0–1.86 kg/m'
-                        : 'Not advertised on this trainer',
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
-                    overflow: TextOverflow.ellipsis,
+                    advanced ? 'Hide advanced' : 'Advanced (Crr / Cw / Rider)',
                   ),
                 ),
-                FilledButton(
-                  onPressed: enabled ? onApplySim : null,
-                  child: const Text('Apply simulation'),
-                ),
+                if (advanced) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Crr ${crr.toStringAsFixed(4)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Slider(
+                              value: crr.clamp(0.0, 0.0127),
+                              min: 0,
+                              max: 0.0127,
+                              divisions: 127,
+                              label: crr.toStringAsFixed(4),
+                              onChanged: enabled ? onCrr : null,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Cw ${cw.toStringAsFixed(2)} kg/m',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Slider(
+                              value: cw.clamp(0.0, 1.86),
+                              min: 0,
+                              max: 1.86,
+                              divisions: 186,
+                              label: cw.toStringAsFixed(2),
+                              onChanged: enabled ? onCw : null,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 180,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Rider ${userWeightKg.toStringAsFixed(0)} kg',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Slider(
+                              value: userWeightKg.clamp(40.0, 120.0),
+                              min: 40,
+                              max: 120,
+                              divisions: 80,
+                              label:
+                                  '${userWeightKg.toStringAsFixed(0)} kg',
+                              onChanged: enabled ? onWeight : null,
+                            ),
+                            FilledButton.tonal(
+                              onPressed: enabled ? onApplyUser : null,
+                              child: const Text('Apply user'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Grade ${gradePct.toStringAsFixed(1)} %',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      Slider(
-                        value: gradePct.clamp(-10.0, 15.0),
-                        min: -10,
-                        max: 15,
-                        divisions: 250,
-                        label: '${gradePct.toStringAsFixed(1)}%',
-                        onChanged: enabled ? onGrade : null,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Wind ${windKmh.toStringAsFixed(0)} km/h',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      Slider(
-                        value: windKmh.clamp(-40.0, 40.0),
-                        min: -40,
-                        max: 40,
-                        divisions: 80,
-                        label: '${windKmh.toStringAsFixed(0)} km/h',
-                        onChanged: enabled ? onWind : null,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Crr ${crr.toStringAsFixed(4)}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      Slider(
-                        value: crr.clamp(0.0, 0.0127),
-                        min: 0,
-                        max: 0.0127,
-                        divisions: 127,
-                        label: crr.toStringAsFixed(4),
-                        onChanged: enabled ? onCrr : null,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Cw ${cw.toStringAsFixed(2)} kg/m',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      Slider(
-                        value: cw.clamp(0.0, 1.86),
-                        min: 0,
-                        max: 1.86,
-                        divisions: 186,
-                        label: cw.toStringAsFixed(2),
-                        onChanged: enabled ? onCw : null,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 180,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Rider ${userWeightKg.toStringAsFixed(0)} kg',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      Slider(
-                        value: userWeightKg.clamp(40.0, 120.0),
-                        min: 40,
-                        max: 120,
-                        divisions: 80,
-                        label: '${userWeightKg.toStringAsFixed(0)} kg',
-                        onChanged: enabled ? onWeight : null,
-                      ),
-                      FilledButton.tonal(
-                        onPressed: enabled ? onApplyUser : null,
-                        child: const Text('Apply user cfg'),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -980,14 +1585,20 @@ class _Panel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: const Color(0xFF151A22),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 10),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: RideColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
             Expanded(child: child),
           ],
         ),

@@ -22,10 +22,15 @@ mkdir -p "$OUT"
 # --- .deb ---
 "$ROOT/scripts/package_linux_deb.sh" "$BUNDLE" "0.2.1-test" "$OUT"
 DEB="$(ls "$OUT"/tacx-desktop_0.2.1-test_amd64.deb)"
-dpkg-deb -c "$DEB" | grep -q './opt/tacx-desktop/tacx_desktop'
-dpkg-deb -c "$DEB" | grep -q './usr/bin/tacx-desktop'
-dpkg-deb -c "$DEB" | grep -q './usr/share/applications/com.nielsver.tacx_desktop.desktop'
-dpkg-deb -I "$DEB" | grep -q 'Package: tacx-desktop'
+# Avoid `dpkg-deb -c | grep -q` under pipefail (SIGPIPE → tar write error on CI).
+CONTENTS="$TMP/deb-contents.txt"
+dpkg-deb -c "$DEB" > "$CONTENTS"
+grep -q './opt/tacx-desktop/tacx_desktop' "$CONTENTS"
+grep -q './usr/bin/tacx-desktop' "$CONTENTS"
+grep -q './usr/share/applications/com.nielsver.tacx_desktop.desktop' "$CONTENTS"
+INFO="$TMP/deb-info.txt"
+dpkg-deb -I "$DEB" > "$INFO"
+grep -q 'Package: tacx-desktop' "$INFO"
 echo "deb packaging OK: $DEB"
 
 # Extract and check wrapper + desktop Exec

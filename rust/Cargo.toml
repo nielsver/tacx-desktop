@@ -9,6 +9,7 @@ license = "MIT"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+sha2 = "0.10"
 flutter_rust_bridge = "=2.13.0"
 btleplug = "0.13"
 uuid = { version = "=1.26.1", features = ["v4"] }

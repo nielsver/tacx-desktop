@@ -1541,12 +1541,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ElevSample dco_decode_elev_sample(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return ElevSample(
       distanceM: dco_decode_f_64(arr[0]),
       elevM: dco_decode_f_64(arr[1]),
       gradePct: dco_decode_f_64(arr[2]),
+      lat: dco_decode_f_64(arr[3]),
+      lon: dco_decode_f_64(arr[4]),
     );
   }
 
@@ -1560,13 +1562,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   GpxProfileInfo dco_decode_gpx_profile_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return GpxProfileInfo(
       name: dco_decode_String(arr[0]),
       distanceM: dco_decode_f_64(arr[1]),
       elevGainM: dco_decode_f_64(arr[2]),
       samples: dco_decode_list_elev_sample(arr[3]),
+      routeKey: dco_decode_String(arr[4]),
     );
   }
 
@@ -1949,10 +1952,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_distanceM = sse_decode_f_64(deserializer);
     var var_elevM = sse_decode_f_64(deserializer);
     var var_gradePct = sse_decode_f_64(deserializer);
+    var var_lat = sse_decode_f_64(deserializer);
+    var var_lon = sse_decode_f_64(deserializer);
     return ElevSample(
       distanceM: var_distanceM,
       elevM: var_elevM,
       gradePct: var_gradePct,
+      lat: var_lat,
+      lon: var_lon,
     );
   }
 
@@ -1969,11 +1976,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_distanceM = sse_decode_f_64(deserializer);
     var var_elevGainM = sse_decode_f_64(deserializer);
     var var_samples = sse_decode_list_elev_sample(deserializer);
+    var var_routeKey = sse_decode_String(deserializer);
     return GpxProfileInfo(
       name: var_name,
       distanceM: var_distanceM,
       elevGainM: var_elevGainM,
       samples: var_samples,
+      routeKey: var_routeKey,
     );
   }
 
@@ -2424,6 +2433,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_f_64(self.distanceM, serializer);
     sse_encode_f_64(self.elevM, serializer);
     sse_encode_f_64(self.gradePct, serializer);
+    sse_encode_f_64(self.lat, serializer);
+    sse_encode_f_64(self.lon, serializer);
   }
 
   @protected
@@ -2442,6 +2453,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_f_64(self.distanceM, serializer);
     sse_encode_f_64(self.elevGainM, serializer);
     sse_encode_list_elev_sample(self.samples, serializer);
+    sse_encode_String(self.routeKey, serializer);
   }
 
   @protected

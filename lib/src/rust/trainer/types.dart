@@ -177,14 +177,25 @@ class ElevSample {
   final double elevM;
   final double gradePct;
 
+  /// WGS84 position of this sample (for the route map / route identity).
+  final double lat;
+  final double lon;
+
   const ElevSample({
     required this.distanceM,
     required this.elevM,
     required this.gradePct,
+    required this.lat,
+    required this.lon,
   });
 
   @override
-  int get hashCode => distanceM.hashCode ^ elevM.hashCode ^ gradePct.hashCode;
+  int get hashCode =>
+      distanceM.hashCode ^
+      elevM.hashCode ^
+      gradePct.hashCode ^
+      lat.hashCode ^
+      lon.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -193,7 +204,9 @@ class ElevSample {
           runtimeType == other.runtimeType &&
           distanceM == other.distanceM &&
           elevM == other.elevM &&
-          gradePct == other.gradePct;
+          gradePct == other.gradePct &&
+          lat == other.lat &&
+          lon == other.lon;
 }
 
 class GpxProfileInfo {
@@ -202,11 +215,15 @@ class GpxProfileInfo {
   final double elevGainM;
   final List<ElevSample> samples;
 
+  /// Stable route identity, `v2-<16 hex>` (see `gpx::route_key_v2`).
+  final String routeKey;
+
   const GpxProfileInfo({
     required this.name,
     required this.distanceM,
     required this.elevGainM,
     required this.samples,
+    required this.routeKey,
   });
 
   @override
@@ -214,7 +231,8 @@ class GpxProfileInfo {
       name.hashCode ^
       distanceM.hashCode ^
       elevGainM.hashCode ^
-      samples.hashCode;
+      samples.hashCode ^
+      routeKey.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -224,7 +242,8 @@ class GpxProfileInfo {
           name == other.name &&
           distanceM == other.distanceM &&
           elevGainM == other.elevGainM &&
-          samples == other.samples;
+          samples == other.samples &&
+          routeKey == other.routeKey;
 }
 
 /// Separate BLE heart-rate strap link (Heart Rate Service 0x180D).

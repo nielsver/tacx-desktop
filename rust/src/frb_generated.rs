@@ -546,7 +546,9 @@ return crate::trainer::types::DiscoveredDevice{id: var_id, name: var_name, rssi:
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_distanceM = <f64>::sse_decode(deserializer);
 let mut var_elevM = <f64>::sse_decode(deserializer);
 let mut var_gradePct = <f64>::sse_decode(deserializer);
-return crate::trainer::types::ElevSample{distance_m: var_distanceM, elev_m: var_elevM, grade_pct: var_gradePct};}
+let mut var_lat = <f64>::sse_decode(deserializer);
+let mut var_lon = <f64>::sse_decode(deserializer);
+return crate::trainer::types::ElevSample{distance_m: var_distanceM, elev_m: var_elevM, grade_pct: var_gradePct, lat: var_lat, lon: var_lon};}
                 }
                 
                 impl SseDecode for f64 {
@@ -560,7 +562,8 @@ return crate::trainer::types::ElevSample{distance_m: var_distanceM, elev_m: var_
 let mut var_distanceM = <f64>::sse_decode(deserializer);
 let mut var_elevGainM = <f64>::sse_decode(deserializer);
 let mut var_samples = <Vec<crate::trainer::types::ElevSample>>::sse_decode(deserializer);
-return crate::trainer::types::GpxProfileInfo{name: var_name, distance_m: var_distanceM, elev_gain_m: var_elevGainM, samples: var_samples};}
+let mut var_routeKey = <String>::sse_decode(deserializer);
+return crate::trainer::types::GpxProfileInfo{name: var_name, distance_m: var_distanceM, elev_gain_m: var_elevGainM, samples: var_samples, route_key: var_routeKey};}
                 }
                 
                 impl SseDecode for crate::trainer::types::HrStrapState {
@@ -990,7 +993,9 @@ impl flutter_rust_bridge::IntoIntoDart<crate::trainer::types::DiscoveredDevice> 
                     [
                     self.distance_m.into_into_dart().into_dart(),
 self.elev_m.into_into_dart().into_dart(),
-self.grade_pct.into_into_dart().into_dart()
+self.grade_pct.into_into_dart().into_dart(),
+self.lat.into_into_dart().into_dart(),
+self.lon.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -1007,7 +1012,8 @@ impl flutter_rust_bridge::IntoIntoDart<crate::trainer::types::ElevSample> for cr
                     self.name.into_into_dart().into_dart(),
 self.distance_m.into_into_dart().into_dart(),
 self.elev_gain_m.into_into_dart().into_dart(),
-self.samples.into_into_dart().into_dart()
+self.samples.into_into_dart().into_dart(),
+self.route_key.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -1321,7 +1327,9 @@ crate::trainer::types::ControlMode::Simulation => { 3 }
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<f64>::sse_encode(self.distance_m, serializer);
 <f64>::sse_encode(self.elev_m, serializer);
-<f64>::sse_encode(self.grade_pct, serializer);}
+<f64>::sse_encode(self.grade_pct, serializer);
+<f64>::sse_encode(self.lat, serializer);
+<f64>::sse_encode(self.lon, serializer);}
                 }
                 
                 impl SseEncode for f64 {
@@ -1334,7 +1342,8 @@ crate::trainer::types::ControlMode::Simulation => { 3 }
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.name, serializer);
 <f64>::sse_encode(self.distance_m, serializer);
 <f64>::sse_encode(self.elev_gain_m, serializer);
-<Vec<crate::trainer::types::ElevSample>>::sse_encode(self.samples, serializer);}
+<Vec<crate::trainer::types::ElevSample>>::sse_encode(self.samples, serializer);
+<String>::sse_encode(self.route_key, serializer);}
                 }
                 
                 impl SseEncode for crate::trainer::types::HrStrapState {

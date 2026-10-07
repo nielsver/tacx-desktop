@@ -321,6 +321,9 @@ pub struct ElevSample {
     pub distance_m: f64,
     pub elev_m: f64,
     pub grade_pct: f64,
+    /// WGS84 position of this sample (for the route map / route identity).
+    pub lat: f64,
+    pub lon: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -329,6 +332,8 @@ pub struct GpxProfileInfo {
     pub distance_m: f64,
     pub elev_gain_m: f64,
     pub samples: Vec<ElevSample>,
+    /// Stable route identity, `v2-<16 hex>` (see `gpx::route_key_v2`).
+    pub route_key: String,
 }
 
 #[derive(Clone, Debug, Default)]

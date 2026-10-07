@@ -80,8 +80,8 @@ void main() {
 
   test('ElevPainter builds from samples', () {
     final samples = [
-      const ElevSample(distanceM: 0, elevM: 100, gradePct: 0),
-      const ElevSample(distanceM: 100, elevM: 110, gradePct: 5),
+      const ElevSample(distanceM: 0, elevM: 100, gradePct: 0, lat: 50, lon: 4),
+      const ElevSample(distanceM: 100, elevM: 110, gradePct: 5, lat: 50.001, lon: 4),
     ];
     final painter = ElevPainter(samples, progressM: 40);
     expect(painter.progressM, 40);

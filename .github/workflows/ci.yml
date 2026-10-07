@@ -16,10 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install BlueZ / D-Bus build deps
-        timeout-minutes: 5
+        timeout-minutes: 10
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
+          # Azure Ubuntu mirror often Ign/hangs on GHA; prefer archive.ubuntu.com
+          sudo sed -i 's|http://azure.archive.ubuntu.com|https://archive.ubuntu.com|g' \
+            /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           sudo apt-get update -o Acquire::Retries=3
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             libdbus-1-dev pkg-config
@@ -36,10 +39,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install desktop-file-utils + shellcheck + dpkg
-        timeout-minutes: 5
+        timeout-minutes: 10
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
+          # Azure Ubuntu mirror often Ign/hangs on GHA; prefer archive.ubuntu.com
+          sudo sed -i 's|http://azure.archive.ubuntu.com|https://archive.ubuntu.com|g' \
+            /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           sudo apt-get update -o Acquire::Retries=3
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             desktop-file-utils shellcheck dpkg-dev file curl
@@ -66,10 +72,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install BlueZ / D-Bus build deps
-        timeout-minutes: 5
+        timeout-minutes: 10
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
+          # Azure Ubuntu mirror often Ign/hangs on GHA; prefer archive.ubuntu.com
+          sudo sed -i 's|http://azure.archive.ubuntu.com|https://archive.ubuntu.com|g' \
+            /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           sudo apt-get update -o Acquire::Retries=3
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             libdbus-1-dev pkg-config

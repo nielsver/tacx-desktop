@@ -10,8 +10,9 @@ Rules for every step: widget/unit tests, `flutter analyze` clean, CI green on
 **Demo OFF by default** and the existing charts working. Tick the box and record
 the SHA here when a step lands.
 
-**Current step:** 2 — Ghost race (in progress)
-**Last SHA:** `d40f621` (step 1 done, CI 37692811589 green)
+**Current step:** 3 — Pro polish (after the QA fixes on `d40f621`, see
+QA report findings 1–9, which come first)
+**Last SHA:** `155eeba` (step 2 done, CI 37693301137 green)
 
 ## Steps
 
@@ -19,7 +20,7 @@ the SHA here when a step lands.
       (height = target W / %FTP, width = duration), actual power drawn over it,
       "now" cursor, current/next step strip, 3-2-1 countdown before step
       changes. Dashboard + Focus. Flutter only.
-- [ ] **2. Ghost race** — best attempt per GPX route (time vs distance) saved
+- [x] **2. Ghost race** (`155eeba`) — best attempt per GPX route (time vs distance) saved
       locally next to the workouts; live "+/- vs best" chip and a ghost marker
       on the elevation profile.
 - [ ] **3. Pro polish** — design tokens (spacing, radii, zones, tabular
@@ -43,3 +44,4 @@ the SHA here when a step lands.
 |------|--------|-----|--------|
 | 0. Installers + v0.2.1 release | done | `fdb57de` (tag `v0.2.1`) | CI 37675496926, Release 37675940929 |
 | 1. Pro workout view | done | `d40f621` | CI 37692811589 (success) |
+| 2. Ghost race | done | `155eeba` | CI 37693301137 (success) |

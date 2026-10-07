@@ -10,10 +10,12 @@ import 'package:tacx_desktop/src/ride_prefs.dart';
 import 'package:tacx_desktop/src/ui/focus_ride_view.dart';
 import 'package:tacx_desktop/src/ui/hr_strap_bar.dart';
 import 'package:tacx_desktop/src/ui/live_trend_chart.dart';
+import 'package:tacx_desktop/src/ui/workout_panel.dart';
 import 'package:tacx_desktop/src/ui/bluetooth_tips.dart';
 import 'package:tacx_desktop/src/ui/mode_copy.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 import 'package:tacx_desktop/src/ui/window_chrome.dart';
+
 
 class RideDashboard extends StatefulWidget {
   const RideDashboard({super.key});
@@ -89,7 +91,28 @@ class _RideDashboardState extends State<RideDashboard> {
   RideStats get _ride => _rideN.value;
   /// 1 Hz rolling history (last 10 min) for the live power/cadence/HR graph.
   final TrendBuffer _trend = TrendBuffer();
-  final _presets = api.listIntervalPresets();
+  List<WorkoutInfo> _workouts = const [];
+  WorkoutStatus _workout = const WorkoutStatus(
+    running: false,
+    workoutId: '',
+    workoutName: '',
+    stepIndex: 0,
+    stepCount: 0,
+    remainingS: 0,
+    statusText: 'Idle',
+    done: false,
+  );
+  RouteStatus _route = const RouteStatus(
+    running: false,
+    routeName: '',
+    distanceM: 0,
+    progressM: 0,
+    gradePct: 0,
+    complete: false,
+    statusText: '',
+  );
+  GpxProfileInfo? _gpx;
+  bool _ergFromGrade = false;
 
   HrStrapStatus _strap = const HrStrapStatus(
     state: HrStrapState.disconnected,
@@ -137,6 +160,7 @@ class _RideDashboardState extends State<RideDashboard> {
     super.initState();
     // Demo defaults OFF (Rust + prefs). Prefs may re-enable after load.
     api.setDemoMode(enabled: false);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reloadWorkouts());
     _refresh();
     _checkBluetooth();
     _loadPrefs();
@@ -167,6 +191,8 @@ class _RideDashboardState extends State<RideDashboard> {
     final snap = api.getConnectionSnapshot();
     final resRange = api.getResistanceRange();
     final interval = api.getIntervalStatus();
+    final workout = api.getWorkoutStatus();
+    final route = api.getRouteStatus();
     final ride = api.getRideStats();
     final strap = api.getHeartRateStrapStatus();
     final simExpand = snap.mode == ControlMode.simulation && !_simExpanded;
@@ -180,6 +206,8 @@ class _RideDashboardState extends State<RideDashboard> {
         snap != _snap ||
         resRange != _resRange ||
         interval != _interval ||
+        workout != _workout ||
+        route != _route ||
         strap != _strap ||
         metrics.targetPowerW != _metrics.targetPowerW;
     _metricsN.value = metrics;
@@ -193,6 +221,8 @@ class _RideDashboardState extends State<RideDashboard> {
         _snap = snap;
         _resRange = resRange;
         _interval = interval;
+        _workout = workout;
+        _route = route;
         _strap = strap;
         if (simExpand) _simExpanded = true;
       });
@@ -405,6 +435,18 @@ class _RideDashboardState extends State<RideDashboard> {
   /// Restore last session's ride settings (Focus, effects, ERG target/step,
   /// rider weight, resistance auto-apply). Only touches local UI state —
   /// nothing is written to the trainer until the rider presses Apply.
+  void _reloadWorkouts() {
+    List<WorkoutInfo> list = const [];
+    try {
+      list = api.listWorkouts();
+    } catch (_) {}
+    if (!mounted) {
+      _workouts = list;
+      return;
+    }
+    setState(() => _workouts = list);
+  }
+
   Future<void> _loadPrefs() async {
     final p = await RidePrefs.load();
     if (p == null || !mounted) return;
@@ -515,7 +557,8 @@ class _RideDashboardState extends State<RideDashboard> {
     final simSupported = _snap.supportsSimulation || _snap.isDemo;
     final activeMode = _snap.mode;
 
-    final intervalRunning = _interval.running;
+    final intervalRunning =
+        _interval.running || _workout.running || _route.running;
 
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
@@ -575,6 +618,16 @@ class _RideDashboardState extends State<RideDashboard> {
                     ),
                   ),
                 ],
+              ),
+            if (_route.complete && !_focusMode)
+              _StatusStrip(
+                key: const ValueKey('route-complete-strip'),
+                icon: Icons.flag,
+                color: RideColors.bannerInfo,
+                message: _route.statusText.isEmpty
+                    ? 'Route complete — grade set to 0%'
+                    : _route.statusText,
+                actions: const [],
               ),
             if (_error != null)
               _StatusStrip(
@@ -637,7 +690,8 @@ class _RideDashboardState extends State<RideDashboard> {
                       connected: connected,
                       busy: _busy,
                       effects: _focusEffects,
-                      intervalRunning: intervalRunning,
+                      intervalRunning:
+                          intervalRunning || _workout.running || _route.running,
                       onExitFocus: _toggleFocusMode,
                       onDisconnect: () => _run(
                         () => api.disconnectTrainer(),
@@ -645,6 +699,8 @@ class _RideDashboardState extends State<RideDashboard> {
                       ),
                       onStopInterval: () {
                         api.stopInterval();
+                        api.stopWorkout();
+                        api.stopGpxRoute();
                         _refresh();
                       },
                       onNudge: (d) => _setPref(
@@ -742,7 +798,11 @@ class _RideDashboardState extends State<RideDashboard> {
                         ),
                         const SizedBox(height: 8),
                         RepaintBoundary(
-                          child: LiveTrendChart(buffer: _trend),
+                          child: LiveTrendChart(
+                            buffer: _trend,
+                            targetWatts: (_workout.targetWatts?.toDouble() ??
+                                _metrics.targetPowerW),
+                          ),
                         ),
                         const SizedBox(height: 8),
                         HeartRateStrapBar(
@@ -837,18 +897,80 @@ class _RideDashboardState extends State<RideDashboard> {
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: _IntervalPanel(
-                                  presets: _presets,
-                                  status: _interval,
+                                child: WorkoutPanel(
+                                  workouts: _workouts.isEmpty
+                                      ? const []
+                                      : _workouts,
+                                  workoutStatus: _workout,
+                                  routeStatus: _route,
+                                  gpxProfile: _gpx,
+                                  ergFromGrade: _ergFromGrade,
                                   enabled: connected && !_busy,
-                                  onStart: (key) => _run(
-                                    () => api.startInterval(key: key),
-                                    success: 'Interval started',
-                                    successIcon: Icons.timer_outlined,
+                                  supportsSimulation: simSupported,
+                                  onRefreshList: _reloadWorkouts,
+                                  onStartWorkout: (id) => _run(
+                                    () async {
+                                      api.setWorkoutRiderMassKg(
+                                        kg: _userWeightKg,
+                                      );
+                                      await api.startWorkout(id: id);
+                                    },
+                                    success: 'Workout started',
+                                    successIcon: Icons.fitness_center,
                                   ),
-                                  onStop: () {
+                                  onStopWorkout: () {
+                                    api.stopWorkout();
                                     api.stopInterval();
                                     _refresh();
+                                  },
+                                  onImportGpxXml: (xml) {
+                                    try {
+                                      final p = api.parseGpxXml(xml: xml);
+                                      setState(() => _gpx = p);
+                                      _toast(
+                                        'GPX loaded · ${(p.distanceM / 1000).toStringAsFixed(1)} km',
+                                        Icons.terrain,
+                                      );
+                                    } catch (e) {
+                                      _toast('$e', Icons.error_outline);
+                                    }
+                                  },
+                                  onStartRoute: () => _run(
+                                    () async {
+                                      final p = _gpx;
+                                      if (p == null) return;
+                                      api.setErgFromGrade(
+                                        enabled: _ergFromGrade,
+                                      );
+                                      api.setWorkoutRiderMassKg(
+                                        kg: _userWeightKg,
+                                      );
+                                      await api.startGpxRoute(profile: p);
+                                    },
+                                    success: 'GPX route started',
+                                    successIcon: Icons.terrain,
+                                  ),
+                                  onStopRoute: () {
+                                    api.stopGpxRoute();
+                                    _refresh();
+                                  },
+                                  onErgFromGrade: (v) {
+                                    setState(() => _ergFromGrade = v);
+                                    api.setErgFromGrade(enabled: v);
+                                  },
+                                  onSaveAsCopy: (info) {
+                                    try {
+                                      final json =
+                                          api.loadWorkoutJson(id: info.id);
+                                      api.saveWorkoutJson(json: json);
+                                      _reloadWorkouts();
+                                      _toast(
+                                        'Saved copy under Documents/Tacx Desktop/workouts/',
+                                        Icons.save_alt,
+                                      );
+                                    } catch (e) {
+                                      _toast('$e', Icons.error_outline);
+                                    }
                                   },
                                 ),
                               ),
@@ -2423,75 +2545,6 @@ class _ResistancePanel extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _IntervalPanel extends StatelessWidget {
-  const _IntervalPanel({
-    required this.presets,
-    required this.status,
-    required this.enabled,
-    required this.onStart,
-    required this.onStop,
-  });
-
-  final List<IntervalPresetInfo> presets;
-  final IntervalStatus status;
-  final bool enabled;
-  final ValueChanged<String> onStart;
-  final VoidCallback onStop;
-
-  @override
-  Widget build(BuildContext context) {
-    return _Panel(
-      title: 'Intervals',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            status.statusText,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: RideType.label,
-              color: RideColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: ListView(
-              children: [
-                for (final p in presets) ...[
-                  SizedBox(
-                    height: 44,
-                    child: FilledButton.tonal(
-                      onPressed: enabled ? () => onStart(p.key) : null,
-                      child: Text(p.label),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10, top: 4),
-                    child: Text(
-                      '${p.workWatts}W / ${p.restWatts}W — ${p.description}',
-                      style: const TextStyle(
-                        color: RideColors.textSecondary,
-                        fontSize: RideType.caption,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          SizedBox(
-            height: 44,
-            child: OutlinedButton(
-              onPressed: (enabled || status.running) ? onStop : null,
-              child: const Text('Stop intervals'),
-            ),
-          ),
-        ],
       ),
     );
   }

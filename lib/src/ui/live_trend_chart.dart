@@ -70,10 +70,17 @@ class TrendBuffer extends ChangeNotifier {
 /// last minutes. Each series is scaled to its own range so all three stay
 /// readable; the legend shows the latest value in the series colour.
 class LiveTrendChart extends StatelessWidget {
-  const LiveTrendChart({super.key, required this.buffer, this.height = 88});
+  const LiveTrendChart({
+    super.key,
+    required this.buffer,
+    this.height = 88,
+    this.targetWatts,
+  });
 
   final TrendBuffer buffer;
   final double height;
+  /// Optional ERG target overlay (horizontal guideline).
+  final double? targetWatts;
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +136,13 @@ class LiveTrendChart extends StatelessWidget {
                           : '${last!.heartRateBpm} bpm',
                     ),
                   ],
+                  if (targetWatts != null) ...[
+                    const SizedBox(width: 10),
+                    _Legend(
+                      color: RideColors.control,
+                      label: 'ERG ${targetWatts!.round()}',
+                    ),
+                  ],
                   const Spacer(),
                   Text(
                     s.isEmpty ? '' : 'last ${minutes.clamp(1, 10)} min',
@@ -152,7 +166,11 @@ class LiveTrendChart extends StatelessWidget {
                         ),
                       )
                     : CustomPaint(
-                        painter: TrendPainter(s, capacity: buffer.capacity),
+                        painter: TrendPainter(
+                          s,
+                          capacity: buffer.capacity,
+                          targetWatts: targetWatts,
+                        ),
                         size: Size.infinite,
                       ),
               ),
@@ -200,10 +218,11 @@ class _Legend extends StatelessWidget {
 
 @visibleForTesting
 class TrendPainter extends CustomPainter {
-  TrendPainter(this.samples, {required this.capacity});
+  TrendPainter(this.samples, {required this.capacity, this.targetWatts});
 
   final List<TrendSample> samples;
   final int capacity;
+  final double? targetWatts;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -257,6 +276,18 @@ class TrendPainter extends CustomPainter {
         ..strokeWidth = 2
         ..strokeJoin = StrokeJoin.round,
     );
+    final tw = targetWatts;
+    if (tw != null && tw > 0 && pMax > 0) {
+      final y = size.height * (1 - (tw / pMax).clamp(0.0, 1.0));
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        Paint()
+          ..color = RideColors.control.withValues(alpha: 0.85)
+          ..strokeWidth = 1.5
+          ..style = PaintingStyle.stroke,
+      );
+    }
     canvas.drawPath(
       line((e) => e.cadenceRpm / cMax),
       Paint()
@@ -299,5 +330,6 @@ class TrendPainter extends CustomPainter {
   bool shouldRepaint(TrendPainter old) =>
       old.samples.length != samples.length ||
       !identical(old.samples, samples) ||
-      old.capacity != capacity;
+      old.capacity != capacity ||
+      old.targetWatts != targetWatts;
 }

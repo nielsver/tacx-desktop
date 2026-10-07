@@ -7,6 +7,9 @@ use crate::trainer::ftms;
 use crate::trainer::gatt;
 use crate::trainer::scan;
 use crate::trainer::intervals::IntervalEngine;
+use crate::trainer::workouts::{self, WorkoutCommand, WorkoutEngine};
+use crate::trainer::gpx::{self, grade_at_distance, slew_grade};
+use crate::trainer::types::{GpxProfileInfo, RouteStatus, WorkoutStatus};
 use crate::trainer::ride;
 use crate::trainer::reconnect::{
     self, AutoReconnect, BackoffPolicy, LossDecision, NextStep, ReconnectGate, ResumeTarget,
@@ -123,6 +126,22 @@ pub fn try_power_range() -> PowerRange {
     }
 }
 
+pub fn try_workout_status() -> WorkoutStatus {
+    ensure_runtime();
+    match CONTROLLER.get().unwrap().try_lock() {
+        Ok(g) => g.workout_status(),
+        Err(_) => WorkoutStatus::default(),
+    }
+}
+
+pub fn try_route_status() -> RouteStatus {
+    ensure_runtime();
+    match CONTROLLER.get().unwrap().try_lock() {
+        Ok(g) => g.route_status(),
+        Err(_) => RouteStatus::default(),
+    }
+}
+
 pub fn try_interval_status() -> IntervalStatus {
     ensure_runtime();
     match CONTROLLER.get().unwrap().try_lock() {
@@ -194,6 +213,14 @@ pub struct TrainerController {
     snapshot: ConnectionSnapshot,
     intervals: IntervalEngine,
     interval_handle: Option<tokio::task::JoinHandle<()>>,
+    workout_engine: WorkoutEngine,
+    workout_handle: Option<tokio::task::JoinHandle<()>>,
+    route_profile: Option<GpxProfileInfo>,
+    route_status: RouteStatus,
+    route_handle: Option<tokio::task::JoinHandle<()>>,
+    route_grade: f64,
+    erg_from_grade: bool,
+    rider_mass_kg: f64,
     demo_tick_handle: Option<tokio::task::JoinHandle<()>>,
     last_device_id: Option<String>,
     /// Invalidated by user Disconnect / demo switch / manual connect.
@@ -238,6 +265,14 @@ impl TrainerController {
             },
             intervals: IntervalEngine::new(),
             interval_handle: None,
+            workout_engine: WorkoutEngine::new(),
+            workout_handle: None,
+            route_profile: None,
+            route_status: RouteStatus::default(),
+            route_handle: None,
+            route_grade: 0.0,
+            erg_from_grade: false,
+            rider_mass_kg: 75.0,
             demo_tick_handle: None,
             last_device_id: None,
             reconnect_gate: ReconnectGate::default(),
@@ -516,6 +551,8 @@ impl TrainerController {
         // User-initiated: never auto-reconnect after this.
         self.cancel_auto_reconnect();
         self.stop_interval();
+        self.stop_workout();
+        self.stop_gpx_route();
         if let Some(h) = self.demo_tick_handle.take() {
             h.abort();
         }
@@ -1081,6 +1118,236 @@ impl TrainerController {
         if let Some(h) = self.interval_handle.take() {
             h.abort();
         }
+    }
+
+    pub fn workout_status(&self) -> WorkoutStatus {
+        self.workout_engine.status()
+    }
+
+    pub fn stop_workout(&mut self) {
+        self.workout_engine.stop();
+        if let Some(h) = self.workout_handle.take() {
+            h.abort();
+        }
+    }
+
+    pub async fn start_workout(&mut self, id: String) -> Result<(), String> {
+        self.stop_workout();
+        self.stop_interval();
+        self.stop_gpx_route();
+        let workout = workouts::load_workout(&id)?;
+        // Gate sim-only workouts when trainer lacks simulation (demo always OK).
+        let needs_sim = workout
+            .steps
+            .iter()
+            .any(|s| s.kind == "simGrade");
+        if needs_sim && !self.demo_mode && !self.snapshot.supports_simulation {
+            return Err(
+                "This workout needs simulation grade — use an ERG workout or a trainer with sim support"
+                    .into(),
+            );
+        }
+        let ctrl = controller();
+        let engine = self.workout_engine.clone();
+        self.workout_handle = Some(tokio::spawn(async move {
+            let _ = engine
+                .run(workout, |cmd| {
+                    let ctrl = ctrl.clone();
+                    async move {
+                        let mut g = ctrl.lock().await;
+                        let r = match cmd {
+                            WorkoutCommand::Erg(w) => g.set_target_power(w).await,
+                            WorkoutCommand::Resistance(p) => g.set_resistance(p).await,
+                            WorkoutCommand::SimGrade(grade) => {
+                                g.set_indoor_bike_simulation(
+                                    0.0,
+                                    grade,
+                                    ftms::DEFAULT_SIM_CRR,
+                                    ftms::DEFAULT_SIM_CW,
+                                )
+                                .await
+                            }
+                        };
+                        match r {
+                            Err(e) if g.link_down() => {
+                                log::warn!("Workout command deferred — link down ({e})");
+                                Ok(())
+                            }
+                            r => r,
+                        }
+                    }
+                })
+                .await;
+        }));
+        Ok(())
+    }
+
+    pub fn route_status(&self) -> RouteStatus {
+        self.route_status.clone()
+    }
+
+    pub fn set_erg_from_grade(&mut self, enabled: bool) {
+        self.erg_from_grade = enabled;
+    }
+
+    pub fn set_rider_mass_kg(&mut self, kg: f64) {
+        self.rider_mass_kg = kg.clamp(40.0, 120.0);
+    }
+
+    pub fn stop_gpx_route(&mut self) {
+        if let Some(h) = self.route_handle.take() {
+            h.abort();
+        }
+        self.route_profile = None;
+        self.route_grade = 0.0;
+        self.route_status = RouteStatus::default();
+    }
+
+    pub async fn start_gpx_route(&mut self, profile: GpxProfileInfo) -> Result<(), String> {
+        self.stop_gpx_route();
+        self.stop_workout();
+        self.stop_interval();
+        if !self.demo_mode && !self.snapshot.supports_simulation {
+            return Err(
+                "GPX simulation needs trainer sim support — use an ERG workout instead".into(),
+            );
+        }
+        let name = profile.name.clone();
+        let total = profile.distance_m;
+        self.route_profile = Some(profile.clone());
+        self.route_status = RouteStatus {
+            running: true,
+            route_name: name.clone(),
+            distance_m: total,
+            progress_m: 0.0,
+            grade_pct: 0.0,
+            complete: false,
+            status_text: format!("{name} · starting…"),
+        };
+        self.route_grade = 0.0;
+        let ctrl = controller();
+        self.route_handle = Some(tokio::spawn(async move {
+            let mut last = Instant::now();
+            let start_dist = {
+                let s = ride::stats();
+                s.distance_km * 1000.0
+            };
+            loop {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                let dt = last.elapsed().as_secs_f64();
+                last = Instant::now();
+                let mut g = ctrl.lock().await;
+                let Some(profile) = g.route_profile.clone() else {
+                    break;
+                };
+                if !g.route_status.running {
+                    break;
+                }
+                let stats = ride::stats();
+                let progress = (stats.distance_km * 1000.0 - start_dist).max(0.0);
+                // Demo / no-speed fallback: creep ~5 m/s so routes still complete.
+                if progress < 0.5 && g.demo_mode {
+                    // Advance synthetic progress via wall time from route start stored in status.
+                    // Use grade driver elapsed approximation: accumulate in progress_m field.
+                    let prev = g.route_status.progress_m;
+                    let creep = prev + 5.0 * dt; // ~18 km/h
+                    let progress = creep;
+                    if progress >= profile.distance_m {
+                        g.route_grade = 0.0;
+                        let _ = g
+                            .set_indoor_bike_simulation(
+                                0.0,
+                                0.0,
+                                ftms::DEFAULT_SIM_CRR,
+                                ftms::DEFAULT_SIM_CW,
+                            )
+                            .await;
+                        g.route_status.running = false;
+                        g.route_status.complete = true;
+                        g.route_status.grade_pct = 0.0;
+                        g.route_status.progress_m = profile.distance_m;
+                        g.route_status.status_text =
+                            format!("{} · Route complete", profile.name);
+                        break;
+                    }
+                    let target = grade_at_distance(&profile, progress, 25.0);
+                    let grade = slew_grade(g.route_grade, target, dt, 2.0);
+                    g.route_grade = grade;
+                    g.route_status.progress_m = progress;
+                    g.route_status.grade_pct = grade;
+                    g.route_status.status_text = format!(
+                        "{} · {:.1}/{:.1} km · {grade:.1}%",
+                        profile.name,
+                        progress / 1000.0,
+                        profile.distance_m / 1000.0
+                    );
+                    if g.erg_from_grade {
+                        let speed = 5.0;
+                        let w = gpx::watts_from_grade(grade, speed, g.rider_mass_kg);
+                        let _ = g.set_target_power(w).await;
+                    } else {
+                        let _ = g
+                            .set_indoor_bike_simulation(
+                                0.0,
+                                grade,
+                                ftms::DEFAULT_SIM_CRR,
+                                ftms::DEFAULT_SIM_CW,
+                            )
+                            .await;
+                    }
+                    continue;
+                }
+                if progress >= profile.distance_m {
+                    g.route_grade = 0.0;
+                    let _ = g
+                        .set_indoor_bike_simulation(
+                            0.0,
+                            0.0,
+                            ftms::DEFAULT_SIM_CRR,
+                            ftms::DEFAULT_SIM_CW,
+                        )
+                        .await;
+                    g.route_status.running = false;
+                    g.route_status.complete = true;
+                    g.route_status.grade_pct = 0.0;
+                    g.route_status.progress_m = profile.distance_m;
+                    g.route_status.status_text = format!("{} · Route complete", profile.name);
+                    break;
+                }
+                let target = grade_at_distance(&profile, progress, 25.0);
+                let grade = slew_grade(g.route_grade, target, dt, 2.0);
+                g.route_grade = grade;
+                g.route_status.progress_m = progress;
+                g.route_status.grade_pct = grade;
+                g.route_status.status_text = format!(
+                    "{} · {:.1}/{:.1} km · {grade:.1}%",
+                    profile.name,
+                    progress / 1000.0,
+                    profile.distance_m / 1000.0
+                );
+                if g.erg_from_grade {
+                    let speed = (stats.distance_km.max(0.001) / (stats.elapsed_s.max(1) as f64 / 3600.0))
+                        / 3.6;
+                    let speed = if speed.is_finite() && speed > 0.5 {
+                        speed
+                    } else {
+                        5.0
+                    };
+                    let w = gpx::watts_from_grade(grade, speed, g.rider_mass_kg);
+                    let _ = g.set_target_power(w).await;
+                } else {
+                    let _ = g
+                        .set_indoor_bike_simulation(
+                            0.0,
+                            grade,
+                            ftms::DEFAULT_SIM_CRR,
+                            ftms::DEFAULT_SIM_CW,
+                        )
+                        .await;
+                }
+            }
+        }));
+        Ok(())
     }
 }
 

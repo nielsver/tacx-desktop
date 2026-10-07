@@ -38,6 +38,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_box_autoadd_f_64(dynamic raw);
 
   @protected
+  GpxProfileInfo dco_decode_box_autoadd_gpx_profile_info(dynamic raw);
+
+  @protected
   int dco_decode_box_autoadd_i_32(dynamic raw);
 
   @protected
@@ -56,7 +59,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DiscoveredDevice dco_decode_discovered_device(dynamic raw);
 
   @protected
+  ElevSample dco_decode_elev_sample(dynamic raw);
+
+  @protected
   double dco_decode_f_64(dynamic raw);
+
+  @protected
+  GpxProfileInfo dco_decode_gpx_profile_info(dynamic raw);
 
   @protected
   HrStrapState dco_decode_hr_strap_state(dynamic raw);
@@ -77,10 +86,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<DiscoveredDevice> dco_decode_list_discovered_device(dynamic raw);
 
   @protected
+  List<ElevSample> dco_decode_list_elev_sample(dynamic raw);
+
+  @protected
   List<IntervalPresetInfo> dco_decode_list_interval_preset_info(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<WorkoutInfo> dco_decode_list_workout_info(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -107,6 +122,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RideStats dco_decode_ride_stats(dynamic raw);
 
   @protected
+  RouteStatus dco_decode_route_status(dynamic raw);
+
+  @protected
   TrainerMetrics dco_decode_trainer_metrics(dynamic raw);
 
   @protected
@@ -117,6 +135,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void dco_decode_unit(dynamic raw);
+
+  @protected
+  WorkoutInfo dco_decode_workout_info(dynamic raw);
+
+  @protected
+  WorkoutStatus dco_decode_workout_status(dynamic raw);
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
@@ -132,6 +156,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  GpxProfileInfo sse_decode_box_autoadd_gpx_profile_info(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_box_autoadd_i_32(SseDeserializer deserializer);
@@ -154,7 +183,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DiscoveredDevice sse_decode_discovered_device(SseDeserializer deserializer);
 
   @protected
+  ElevSample sse_decode_elev_sample(SseDeserializer deserializer);
+
+  @protected
   double sse_decode_f_64(SseDeserializer deserializer);
+
+  @protected
+  GpxProfileInfo sse_decode_gpx_profile_info(SseDeserializer deserializer);
 
   @protected
   HrStrapState sse_decode_hr_strap_state(SseDeserializer deserializer);
@@ -179,12 +214,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<ElevSample> sse_decode_list_elev_sample(SseDeserializer deserializer);
+
+  @protected
   List<IntervalPresetInfo> sse_decode_list_interval_preset_info(
     SseDeserializer deserializer,
   );
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<WorkoutInfo> sse_decode_list_workout_info(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
@@ -211,6 +252,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RideStats sse_decode_ride_stats(SseDeserializer deserializer);
 
   @protected
+  RouteStatus sse_decode_route_status(SseDeserializer deserializer);
+
+  @protected
   TrainerMetrics sse_decode_trainer_metrics(SseDeserializer deserializer);
 
   @protected
@@ -221,6 +265,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_decode_unit(SseDeserializer deserializer);
+
+  @protected
+  WorkoutInfo sse_decode_workout_info(SseDeserializer deserializer);
+
+  @protected
+  WorkoutStatus sse_decode_workout_status(SseDeserializer deserializer);
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
@@ -242,6 +292,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_gpx_profile_info(
+    GpxProfileInfo self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer);
@@ -271,7 +327,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_elev_sample(ElevSample self, SseSerializer serializer);
+
+  @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_gpx_profile_info(
+    GpxProfileInfo self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_hr_strap_state(HrStrapState self, SseSerializer serializer);
@@ -301,6 +366,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_elev_sample(
+    List<ElevSample> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_interval_preset_info(
     List<IntervalPresetInfo> self,
     SseSerializer serializer,
@@ -309,6 +380,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_workout_info(
+    List<WorkoutInfo> self,
     SseSerializer serializer,
   );
 
@@ -340,6 +417,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_ride_stats(RideStats self, SseSerializer serializer);
 
   @protected
+  void sse_encode_route_status(RouteStatus self, SseSerializer serializer);
+
+  @protected
   void sse_encode_trainer_metrics(
     TrainerMetrics self,
     SseSerializer serializer,
@@ -353,6 +433,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_unit(void self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_workout_info(WorkoutInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_workout_status(WorkoutStatus self, SseSerializer serializer);
 }
 
 // Section: wire_class

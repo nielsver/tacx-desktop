@@ -172,6 +172,61 @@ class DiscoveredDevice {
           protocolHint == other.protocolHint;
 }
 
+class ElevSample {
+  final double distanceM;
+  final double elevM;
+  final double gradePct;
+
+  const ElevSample({
+    required this.distanceM,
+    required this.elevM,
+    required this.gradePct,
+  });
+
+  @override
+  int get hashCode => distanceM.hashCode ^ elevM.hashCode ^ gradePct.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ElevSample &&
+          runtimeType == other.runtimeType &&
+          distanceM == other.distanceM &&
+          elevM == other.elevM &&
+          gradePct == other.gradePct;
+}
+
+class GpxProfileInfo {
+  final String name;
+  final double distanceM;
+  final double elevGainM;
+  final List<ElevSample> samples;
+
+  const GpxProfileInfo({
+    required this.name,
+    required this.distanceM,
+    required this.elevGainM,
+    required this.samples,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      distanceM.hashCode ^
+      elevGainM.hashCode ^
+      samples.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GpxProfileInfo &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          distanceM == other.distanceM &&
+          elevGainM == other.elevGainM &&
+          samples == other.samples;
+}
+
 /// Separate BLE heart-rate strap link (Heart Rate Service 0x180D).
 enum HrStrapState { disconnected, connecting, connected, error }
 
@@ -420,6 +475,49 @@ class RideStats {
           recording == other.recording;
 }
 
+class RouteStatus {
+  final bool running;
+  final String routeName;
+  final double distanceM;
+  final double progressM;
+  final double gradePct;
+  final bool complete;
+  final String statusText;
+
+  const RouteStatus({
+    required this.running,
+    required this.routeName,
+    required this.distanceM,
+    required this.progressM,
+    required this.gradePct,
+    required this.complete,
+    required this.statusText,
+  });
+
+  @override
+  int get hashCode =>
+      running.hashCode ^
+      routeName.hashCode ^
+      distanceM.hashCode ^
+      progressM.hashCode ^
+      gradePct.hashCode ^
+      complete.hashCode ^
+      statusText.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RouteStatus &&
+          runtimeType == other.runtimeType &&
+          running == other.running &&
+          routeName == other.routeName &&
+          distanceM == other.distanceM &&
+          progressM == other.progressM &&
+          gradePct == other.gradePct &&
+          complete == other.complete &&
+          statusText == other.statusText;
+}
+
 class TrainerMetrics {
   final double powerW;
   final double cadenceRpm;
@@ -460,4 +558,98 @@ class TrainerMetrics {
           targetPowerW == other.targetPowerW &&
           resistancePct == other.resistancePct &&
           heartRateBpm == other.heartRateBpm;
+}
+
+class WorkoutInfo {
+  final String id;
+  final String name;
+  final String description;
+  final bool builtin;
+  final int stepCount;
+  final int totalDurationS;
+
+  const WorkoutInfo({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.builtin,
+    required this.stepCount,
+    required this.totalDurationS,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      description.hashCode ^
+      builtin.hashCode ^
+      stepCount.hashCode ^
+      totalDurationS.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WorkoutInfo &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          description == other.description &&
+          builtin == other.builtin &&
+          stepCount == other.stepCount &&
+          totalDurationS == other.totalDurationS;
+}
+
+class WorkoutStatus {
+  final bool running;
+  final String workoutId;
+  final String workoutName;
+  final int stepIndex;
+  final int stepCount;
+  final double remainingS;
+  final int? targetWatts;
+  final double? targetGradePct;
+  final String statusText;
+  final bool done;
+
+  const WorkoutStatus({
+    required this.running,
+    required this.workoutId,
+    required this.workoutName,
+    required this.stepIndex,
+    required this.stepCount,
+    required this.remainingS,
+    this.targetWatts,
+    this.targetGradePct,
+    required this.statusText,
+    required this.done,
+  });
+
+  @override
+  int get hashCode =>
+      running.hashCode ^
+      workoutId.hashCode ^
+      workoutName.hashCode ^
+      stepIndex.hashCode ^
+      stepCount.hashCode ^
+      remainingS.hashCode ^
+      targetWatts.hashCode ^
+      targetGradePct.hashCode ^
+      statusText.hashCode ^
+      done.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WorkoutStatus &&
+          runtimeType == other.runtimeType &&
+          running == other.running &&
+          workoutId == other.workoutId &&
+          workoutName == other.workoutName &&
+          stepIndex == other.stepIndex &&
+          stepCount == other.stepCount &&
+          remainingS == other.remainingS &&
+          targetWatts == other.targetWatts &&
+          targetGradePct == other.targetGradePct &&
+          statusText == other.statusText &&
+          done == other.done;
 }

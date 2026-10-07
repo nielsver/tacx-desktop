@@ -300,3 +300,54 @@ pub struct RideStats {
     /// True while samples are being added (trainer connected).
     pub recording: bool,
 }
+
+
+#[derive(Clone, Debug)]
+pub struct WorkoutInfo {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub builtin: bool,
+    pub step_count: u32,
+    pub total_duration_s: u32,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct WorkoutStatus {
+    pub running: bool,
+    pub workout_id: String,
+    pub workout_name: String,
+    pub step_index: u32,
+    pub step_count: u32,
+    pub remaining_s: f64,
+    pub target_watts: Option<u32>,
+    pub target_grade_pct: Option<f64>,
+    pub status_text: String,
+    pub done: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ElevSample {
+    pub distance_m: f64,
+    pub elev_m: f64,
+    pub grade_pct: f64,
+}
+
+#[derive(Clone, Debug)]
+pub struct GpxProfileInfo {
+    pub name: String,
+    pub distance_m: f64,
+    pub elev_gain_m: f64,
+    pub samples: Vec<ElevSample>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RouteStatus {
+    pub running: bool,
+    pub route_name: String,
+    pub distance_m: f64,
+    pub progress_m: f64,
+    pub grade_pct: f64,
+    pub complete: bool,
+    pub status_text: String,
+}

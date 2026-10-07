@@ -140,6 +140,48 @@ Future<void> disconnectHeartRateStrap() =>
 HrStrapStatus getHeartRateStrapStatus() =>
     RustLib.instance.api.crateApiTrainerGetHeartRateStrapStatus();
 
+List<WorkoutInfo> listWorkouts() =>
+    RustLib.instance.api.crateApiTrainerListWorkouts();
+
+String loadWorkoutJson({required String id}) =>
+    RustLib.instance.api.crateApiTrainerLoadWorkoutJson(id: id);
+
+String saveWorkoutJson({required String json}) =>
+    RustLib.instance.api.crateApiTrainerSaveWorkoutJson(json: json);
+
+void deleteWorkout({required String id}) =>
+    RustLib.instance.api.crateApiTrainerDeleteWorkout(id: id);
+
+String workoutsDir() => RustLib.instance.api.crateApiTrainerWorkoutsDir();
+
+Future<void> startWorkout({required String id}) =>
+    RustLib.instance.api.crateApiTrainerStartWorkout(id: id);
+
+void stopWorkout() => RustLib.instance.api.crateApiTrainerStopWorkout();
+
+WorkoutStatus getWorkoutStatus() =>
+    RustLib.instance.api.crateApiTrainerGetWorkoutStatus();
+
+GpxProfileInfo parseGpxXml({required String xml}) =>
+    RustLib.instance.api.crateApiTrainerParseGpxXml(xml: xml);
+
+GpxProfileInfo importGpxFile({required String path}) =>
+    RustLib.instance.api.crateApiTrainerImportGpxFile(path: path);
+
+Future<void> startGpxRoute({required GpxProfileInfo profile}) =>
+    RustLib.instance.api.crateApiTrainerStartGpxRoute(profile: profile);
+
+void stopGpxRoute() => RustLib.instance.api.crateApiTrainerStopGpxRoute();
+
+RouteStatus getRouteStatus() =>
+    RustLib.instance.api.crateApiTrainerGetRouteStatus();
+
+void setErgFromGrade({required bool enabled}) =>
+    RustLib.instance.api.crateApiTrainerSetErgFromGrade(enabled: enabled);
+
+void setWorkoutRiderMassKg({required double kg}) =>
+    RustLib.instance.api.crateApiTrainerSetWorkoutRiderMassKg(kg: kg);
+
 /// Headless smoke test used by CI / README.
 Future<String> runHeadlessDemoSmoke() =>
     RustLib.instance.api.crateApiTrainerRunHeadlessDemoSmoke();

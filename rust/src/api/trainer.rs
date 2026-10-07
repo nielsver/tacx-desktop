@@ -222,6 +222,113 @@ pub fn get_heart_rate_strap_status() -> HrStrapStatus {
     crate::trainer::hr_strap::status()
 }
 
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn list_workouts() -> Result<Vec<WorkoutInfo>, String> {
+    crate::trainer::workouts::list_workouts()
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn load_workout_json(id: String) -> Result<String, String> {
+    let w = crate::trainer::workouts::load_workout(&id)?;
+    crate::trainer::workouts::workout_to_json(&w)
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn save_workout_json(json: String) -> Result<String, String> {
+    let w = crate::trainer::workouts::workout_from_json(&json)?;
+    crate::trainer::workouts::save_workout(w)
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn delete_workout(id: String) -> Result<(), String> {
+    crate::trainer::workouts::delete_workout(&id)
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn workouts_dir() -> String {
+    let _ = crate::trainer::workouts::ensure_dirs();
+    crate::trainer::workouts::workouts_dir().display().to_string()
+}
+
+pub async fn start_workout(id: String) -> Result<(), String> {
+    let ctrl = controller();
+    let mut g = ctrl.lock().await;
+    g.start_workout(id).await
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn stop_workout() {
+    block_on(async {
+        let ctrl = controller();
+        let mut g = ctrl.lock().await;
+        g.stop_workout();
+    });
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_workout_status() -> WorkoutStatus {
+    crate::trainer::controller::try_workout_status()
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn parse_gpx_xml(xml: String) -> Result<GpxProfileInfo, String> {
+    crate::trainer::gpx::parse_gpx(&xml)
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn import_gpx_file(path: String) -> Result<GpxProfileInfo, String> {
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Could not read GPX: {e}"))?;
+    let profile = crate::trainer::gpx::parse_gpx(&raw)?;
+    let _ = crate::trainer::workouts::ensure_dirs();
+    let dest = crate::trainer::workouts::routes_dir().join(
+        std::path::Path::new(&path)
+            .file_name()
+            .unwrap_or_default(),
+    );
+    let _ = std::fs::copy(&path, &dest);
+    Ok(profile)
+}
+
+pub async fn start_gpx_route(profile: GpxProfileInfo) -> Result<(), String> {
+    let ctrl = controller();
+    let mut g = ctrl.lock().await;
+    g.start_gpx_route(profile).await
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn stop_gpx_route() {
+    block_on(async {
+        let ctrl = controller();
+        let mut g = ctrl.lock().await;
+        g.stop_gpx_route();
+    });
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_route_status() -> RouteStatus {
+    crate::trainer::controller::try_route_status()
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn set_erg_from_grade(enabled: bool) {
+    block_on(async {
+        let ctrl = controller();
+        let mut g = ctrl.lock().await;
+        g.set_erg_from_grade(enabled);
+    });
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn set_workout_rider_mass_kg(kg: f64) {
+    block_on(async {
+        let ctrl = controller();
+        let mut g = ctrl.lock().await;
+        g.set_rider_mass_kg(kg);
+    });
+}
+
 /// Headless smoke test used by CI / README.
 pub async fn run_headless_demo_smoke() -> Result<String, String> {
     {

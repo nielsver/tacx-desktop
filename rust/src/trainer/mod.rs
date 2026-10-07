@@ -7,6 +7,8 @@ mod scan;
 pub mod hr_strap;
 pub mod ftms;
 pub mod intervals;
+pub mod workouts;
+pub mod gpx;
 pub mod reconnect;
 pub mod ride;
 pub mod tcx;

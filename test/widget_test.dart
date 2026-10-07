@@ -34,7 +34,7 @@ void main() {
     expect(find.byKey(const ValueKey('demo-switch')), findsOneWidget);
     expect(find.text('ERG mode'), findsOneWidget);
     expect(find.text('Resistance'), findsOneWidget);
-    expect(find.text('Intervals'), findsOneWidget);
+    expect(find.text('Workouts'), findsOneWidget);
     expect(find.text('Simulation'), findsOneWidget);
     expect(find.text('Reconnect'), findsOneWidget);
     for (final w in [100, 150, 200, 250]) {

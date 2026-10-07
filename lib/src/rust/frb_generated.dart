@@ -68,7 +68,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1882571840;
+  int get rustContentHash => 15907731;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -87,6 +87,8 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiTrainerConnectTrainer({String? deviceId});
 
   String crateApiTrainerDefaultRideExportDir();
+
+  void crateApiTrainerDeleteWorkout({required String id});
 
   Future<void> crateApiTrainerDisconnectHeartRateStrap();
 
@@ -108,7 +110,13 @@ abstract class RustLibApi extends BaseApi {
 
   RideStats crateApiTrainerGetRideStats();
 
+  RouteStatus crateApiTrainerGetRouteStatus();
+
+  WorkoutStatus crateApiTrainerGetWorkoutStatus();
+
   String crateApiSimpleGreet({required String name});
+
+  GpxProfileInfo crateApiTrainerImportGpxFile({required String path});
 
   Future<void> crateApiSimpleInitApp();
 
@@ -116,11 +124,19 @@ abstract class RustLibApi extends BaseApi {
 
   List<IntervalPresetInfo> crateApiTrainerListIntervalPresets();
 
+  List<WorkoutInfo> crateApiTrainerListWorkouts();
+
+  String crateApiTrainerLoadWorkoutJson({required String id});
+
+  GpxProfileInfo crateApiTrainerParseGpxXml({required String xml});
+
   Future<void> crateApiTrainerReconnectTrainer();
 
   void crateApiTrainerResetRideStats();
 
   Future<String> crateApiTrainerRunHeadlessDemoSmoke();
+
+  String crateApiTrainerSaveWorkoutJson({required String json});
 
   Future<List<DiscoveredDevice>> crateApiTrainerScanHeartRateStraps({
     required int timeoutMs,
@@ -131,6 +147,8 @@ abstract class RustLibApi extends BaseApi {
   });
 
   void crateApiTrainerSetDemoMode({required bool enabled});
+
+  void crateApiTrainerSetErgFromGrade({required bool enabled});
 
   Future<void> crateApiTrainerSetIndoorBikeSimulation({
     required double windSpeedMps,
@@ -161,9 +179,21 @@ abstract class RustLibApi extends BaseApi {
     required double draftingFactor,
   });
 
+  void crateApiTrainerSetWorkoutRiderMassKg({required double kg});
+
+  Future<void> crateApiTrainerStartGpxRoute({required GpxProfileInfo profile});
+
   Future<void> crateApiTrainerStartInterval({required String key});
 
+  Future<void> crateApiTrainerStartWorkout({required String id});
+
+  void crateApiTrainerStopGpxRoute();
+
   void crateApiTrainerStopInterval();
+
+  void crateApiTrainerStopWorkout();
+
+  String crateApiTrainerWorkoutsDir();
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -285,6 +315,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "default_ride_export_dir", argNames: []);
 
   @override
+  void crateApiTrainerDeleteWorkout({required String id}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(id, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiTrainerDeleteWorkoutConstMeta,
+        argValues: [id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerDeleteWorkoutConstMeta =>
+      const TaskConstMeta(debugName: "delete_workout", argNames: ["id"]);
+
+  @override
   Future<void> crateApiTrainerDisconnectHeartRateStrap() {
     return handler.executeNormal(
       NormalTask(
@@ -293,7 +346,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 6,
             port: port_,
           );
         },
@@ -323,7 +376,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 7,
             port: port_,
           );
         },
@@ -351,7 +404,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 8,
             port: port_,
           );
         },
@@ -375,7 +428,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_connection_snapshot,
@@ -397,7 +450,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_hr_strap_status,
@@ -422,7 +475,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_interval_status,
@@ -444,7 +497,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_trainer_metrics,
@@ -466,7 +519,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_power_range,
@@ -488,7 +541,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_resistance_range,
@@ -510,7 +563,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 15)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_ride_stats,
@@ -527,13 +580,57 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "get_ride_stats", argNames: []);
 
   @override
+  RouteStatus crateApiTrainerGetRouteStatus() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_route_status,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTrainerGetRouteStatusConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerGetRouteStatusConstMeta =>
+      const TaskConstMeta(debugName: "get_route_status", argNames: []);
+
+  @override
+  WorkoutStatus crateApiTrainerGetWorkoutStatus() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_workout_status,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTrainerGetWorkoutStatusConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerGetWorkoutStatusConstMeta =>
+      const TaskConstMeta(debugName: "get_workout_status", argNames: []);
+
+  @override
   String crateApiSimpleGreet({required String name}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 15)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -550,6 +647,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "greet", argNames: ["name"]);
 
   @override
+  GpxProfileInfo crateApiTrainerImportGpxFile({required String path}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_gpx_profile_info,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiTrainerImportGpxFileConstMeta,
+        argValues: [path],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerImportGpxFileConstMeta =>
+      const TaskConstMeta(debugName: "import_gpx_file", argNames: ["path"]);
+
+  @override
   Future<void> crateApiSimpleInitApp() {
     return handler.executeNormal(
       NormalTask(
@@ -558,7 +678,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 16,
+            funcId: 20,
             port: port_,
           );
         },
@@ -582,7 +702,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 21)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -604,7 +724,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 22)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_interval_preset_info,
@@ -621,6 +741,74 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "list_interval_presets", argNames: []);
 
   @override
+  List<WorkoutInfo> crateApiTrainerListWorkouts() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 23)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_workout_info,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiTrainerListWorkoutsConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerListWorkoutsConstMeta =>
+      const TaskConstMeta(debugName: "list_workouts", argNames: []);
+
+  @override
+  String crateApiTrainerLoadWorkoutJson({required String id}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(id, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 24)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiTrainerLoadWorkoutJsonConstMeta,
+        argValues: [id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerLoadWorkoutJsonConstMeta =>
+      const TaskConstMeta(debugName: "load_workout_json", argNames: ["id"]);
+
+  @override
+  GpxProfileInfo crateApiTrainerParseGpxXml({required String xml}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(xml, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 25)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_gpx_profile_info,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiTrainerParseGpxXmlConstMeta,
+        argValues: [xml],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerParseGpxXmlConstMeta =>
+      const TaskConstMeta(debugName: "parse_gpx_xml", argNames: ["xml"]);
+
+  @override
   Future<void> crateApiTrainerReconnectTrainer() {
     return handler.executeNormal(
       NormalTask(
@@ -629,7 +817,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 19,
+            funcId: 26,
             port: port_,
           );
         },
@@ -653,7 +841,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 20)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 27)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -678,7 +866,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 21,
+            funcId: 28,
             port: port_,
           );
         },
@@ -697,6 +885,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "run_headless_demo_smoke", argNames: []);
 
   @override
+  String crateApiTrainerSaveWorkoutJson({required String json}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(json, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 29)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiTrainerSaveWorkoutJsonConstMeta,
+        argValues: [json],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerSaveWorkoutJsonConstMeta =>
+      const TaskConstMeta(debugName: "save_workout_json", argNames: ["json"]);
+
+  @override
   Future<List<DiscoveredDevice>> crateApiTrainerScanHeartRateStraps({
     required int timeoutMs,
   }) {
@@ -708,7 +919,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 22,
+            funcId: 30,
             port: port_,
           );
         },
@@ -741,7 +952,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 23,
+            funcId: 31,
             port: port_,
           );
         },
@@ -766,7 +977,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_bool(enabled, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 24)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 32)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -781,6 +992,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiTrainerSetDemoModeConstMeta =>
       const TaskConstMeta(debugName: "set_demo_mode", argNames: ["enabled"]);
+
+  @override
+  void crateApiTrainerSetErgFromGrade({required bool enabled}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 33)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTrainerSetErgFromGradeConstMeta,
+        argValues: [enabled],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerSetErgFromGradeConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_erg_from_grade",
+        argNames: ["enabled"],
+      );
 
   @override
   Future<void> crateApiTrainerSetIndoorBikeSimulation({
@@ -800,7 +1037,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 25,
+            funcId: 34,
             port: port_,
           );
         },
@@ -831,7 +1068,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 35,
             port: port_,
           );
         },
@@ -862,7 +1099,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 27,
+            funcId: 36,
             port: port_,
           );
         },
@@ -894,7 +1131,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 28,
+            funcId: 37,
             port: port_,
           );
         },
@@ -933,7 +1170,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 29,
+            funcId: 38,
             port: port_,
           );
         },
@@ -975,7 +1212,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 30,
+            funcId: 39,
             port: port_,
           );
         },
@@ -1001,6 +1238,60 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  void crateApiTrainerSetWorkoutRiderMassKg({required double kg}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_f_64(kg, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTrainerSetWorkoutRiderMassKgConstMeta,
+        argValues: [kg],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerSetWorkoutRiderMassKgConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_workout_rider_mass_kg",
+        argNames: ["kg"],
+      );
+
+  @override
+  Future<void> crateApiTrainerStartGpxRoute({required GpxProfileInfo profile}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_gpx_profile_info(profile, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 41,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiTrainerStartGpxRouteConstMeta,
+        argValues: [profile],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerStartGpxRouteConstMeta =>
+      const TaskConstMeta(debugName: "start_gpx_route", argNames: ["profile"]);
+
+  @override
   Future<void> crateApiTrainerStartInterval({required String key}) {
     return handler.executeNormal(
       NormalTask(
@@ -1010,7 +1301,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 31,
+            funcId: 42,
             port: port_,
           );
         },
@@ -1029,12 +1320,62 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "start_interval", argNames: ["key"]);
 
   @override
+  Future<void> crateApiTrainerStartWorkout({required String id}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 43,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiTrainerStartWorkoutConstMeta,
+        argValues: [id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerStartWorkoutConstMeta =>
+      const TaskConstMeta(debugName: "start_workout", argNames: ["id"]);
+
+  @override
+  void crateApiTrainerStopGpxRoute() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 44)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTrainerStopGpxRouteConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerStopGpxRouteConstMeta =>
+      const TaskConstMeta(debugName: "stop_gpx_route", argNames: []);
+
+  @override
   void crateApiTrainerStopInterval() {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 32)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 45)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1049,6 +1390,50 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiTrainerStopIntervalConstMeta =>
       const TaskConstMeta(debugName: "stop_interval", argNames: []);
+
+  @override
+  void crateApiTrainerStopWorkout() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 46)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTrainerStopWorkoutConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerStopWorkoutConstMeta =>
+      const TaskConstMeta(debugName: "stop_workout", argNames: []);
+
+  @override
+  String crateApiTrainerWorkoutsDir() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 47)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTrainerWorkoutsDirConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerWorkoutsDirConstMeta =>
+      const TaskConstMeta(debugName: "workouts_dir", argNames: []);
 
   @protected
   String dco_decode_String(dynamic raw) {
@@ -1085,6 +1470,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   double dco_decode_box_autoadd_f_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as double;
+  }
+
+  @protected
+  GpxProfileInfo dco_decode_box_autoadd_gpx_profile_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_gpx_profile_info(raw);
   }
 
   @protected
@@ -1147,9 +1538,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ElevSample dco_decode_elev_sample(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ElevSample(
+      distanceM: dco_decode_f_64(arr[0]),
+      elevM: dco_decode_f_64(arr[1]),
+      gradePct: dco_decode_f_64(arr[2]),
+    );
+  }
+
+  @protected
   double dco_decode_f_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as double;
+  }
+
+  @protected
+  GpxProfileInfo dco_decode_gpx_profile_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return GpxProfileInfo(
+      name: dco_decode_String(arr[0]),
+      distanceM: dco_decode_f_64(arr[1]),
+      elevGainM: dco_decode_f_64(arr[2]),
+      samples: dco_decode_list_elev_sample(arr[3]),
+    );
   }
 
   @protected
@@ -1219,6 +1637,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<ElevSample> dco_decode_list_elev_sample(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_elev_sample).toList();
+  }
+
+  @protected
   List<IntervalPresetInfo> dco_decode_list_interval_preset_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_interval_preset_info).toList();
@@ -1228,6 +1652,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
+  }
+
+  @protected
+  List<WorkoutInfo> dco_decode_list_workout_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_workout_info).toList();
   }
 
   @protected
@@ -1307,6 +1737,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RouteStatus dco_decode_route_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return RouteStatus(
+      running: dco_decode_bool(arr[0]),
+      routeName: dco_decode_String(arr[1]),
+      distanceM: dco_decode_f_64(arr[2]),
+      progressM: dco_decode_f_64(arr[3]),
+      gradePct: dco_decode_f_64(arr[4]),
+      complete: dco_decode_bool(arr[5]),
+      statusText: dco_decode_String(arr[6]),
+    );
+  }
+
+  @protected
   TrainerMetrics dco_decode_trainer_metrics(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -1338,6 +1785,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void dco_decode_unit(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return;
+  }
+
+  @protected
+  WorkoutInfo dco_decode_workout_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return WorkoutInfo(
+      id: dco_decode_String(arr[0]),
+      name: dco_decode_String(arr[1]),
+      description: dco_decode_String(arr[2]),
+      builtin: dco_decode_bool(arr[3]),
+      stepCount: dco_decode_u_32(arr[4]),
+      totalDurationS: dco_decode_u_32(arr[5]),
+    );
+  }
+
+  @protected
+  WorkoutStatus dco_decode_workout_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    return WorkoutStatus(
+      running: dco_decode_bool(arr[0]),
+      workoutId: dco_decode_String(arr[1]),
+      workoutName: dco_decode_String(arr[2]),
+      stepIndex: dco_decode_u_32(arr[3]),
+      stepCount: dco_decode_u_32(arr[4]),
+      remainingS: dco_decode_f_64(arr[5]),
+      targetWatts: dco_decode_opt_box_autoadd_u_32(arr[6]),
+      targetGradePct: dco_decode_opt_box_autoadd_f_64(arr[7]),
+      statusText: dco_decode_String(arr[8]),
+      done: dco_decode_bool(arr[9]),
+    );
   }
 
   @protected
@@ -1377,6 +1860,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_f_64(deserializer));
+  }
+
+  @protected
+  GpxProfileInfo sse_decode_box_autoadd_gpx_profile_info(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_gpx_profile_info(deserializer));
   }
 
   @protected
@@ -1452,9 +1943,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ElevSample sse_decode_elev_sample(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_distanceM = sse_decode_f_64(deserializer);
+    var var_elevM = sse_decode_f_64(deserializer);
+    var var_gradePct = sse_decode_f_64(deserializer);
+    return ElevSample(
+      distanceM: var_distanceM,
+      elevM: var_elevM,
+      gradePct: var_gradePct,
+    );
+  }
+
+  @protected
   double sse_decode_f_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getFloat64();
+  }
+
+  @protected
+  GpxProfileInfo sse_decode_gpx_profile_info(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_name = sse_decode_String(deserializer);
+    var var_distanceM = sse_decode_f_64(deserializer);
+    var var_elevGainM = sse_decode_f_64(deserializer);
+    var var_samples = sse_decode_list_elev_sample(deserializer);
+    return GpxProfileInfo(
+      name: var_name,
+      distanceM: var_distanceM,
+      elevGainM: var_elevGainM,
+      samples: var_samples,
+    );
   }
 
   @protected
@@ -1544,6 +2063,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<ElevSample> sse_decode_list_elev_sample(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ElevSample>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_elev_sample(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<IntervalPresetInfo> sse_decode_list_interval_preset_info(
     SseDeserializer deserializer,
   ) {
@@ -1562,6 +2093,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  List<WorkoutInfo> sse_decode_list_workout_info(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <WorkoutInfo>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_workout_info(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -1665,6 +2208,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RouteStatus sse_decode_route_status(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_running = sse_decode_bool(deserializer);
+    var var_routeName = sse_decode_String(deserializer);
+    var var_distanceM = sse_decode_f_64(deserializer);
+    var var_progressM = sse_decode_f_64(deserializer);
+    var var_gradePct = sse_decode_f_64(deserializer);
+    var var_complete = sse_decode_bool(deserializer);
+    var var_statusText = sse_decode_String(deserializer);
+    return RouteStatus(
+      running: var_running,
+      routeName: var_routeName,
+      distanceM: var_distanceM,
+      progressM: var_progressM,
+      gradePct: var_gradePct,
+      complete: var_complete,
+      statusText: var_statusText,
+    );
+  }
+
+  @protected
   TrainerMetrics sse_decode_trainer_metrics(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_powerW = sse_decode_f_64(deserializer);
@@ -1698,6 +2262,52 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   void sse_decode_unit(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+  }
+
+  @protected
+  WorkoutInfo sse_decode_workout_info(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_name = sse_decode_String(deserializer);
+    var var_description = sse_decode_String(deserializer);
+    var var_builtin = sse_decode_bool(deserializer);
+    var var_stepCount = sse_decode_u_32(deserializer);
+    var var_totalDurationS = sse_decode_u_32(deserializer);
+    return WorkoutInfo(
+      id: var_id,
+      name: var_name,
+      description: var_description,
+      builtin: var_builtin,
+      stepCount: var_stepCount,
+      totalDurationS: var_totalDurationS,
+    );
+  }
+
+  @protected
+  WorkoutStatus sse_decode_workout_status(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_running = sse_decode_bool(deserializer);
+    var var_workoutId = sse_decode_String(deserializer);
+    var var_workoutName = sse_decode_String(deserializer);
+    var var_stepIndex = sse_decode_u_32(deserializer);
+    var var_stepCount = sse_decode_u_32(deserializer);
+    var var_remainingS = sse_decode_f_64(deserializer);
+    var var_targetWatts = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_targetGradePct = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_statusText = sse_decode_String(deserializer);
+    var var_done = sse_decode_bool(deserializer);
+    return WorkoutStatus(
+      running: var_running,
+      workoutId: var_workoutId,
+      workoutName: var_workoutName,
+      stepIndex: var_stepIndex,
+      stepCount: var_stepCount,
+      remainingS: var_remainingS,
+      targetWatts: var_targetWatts,
+      targetGradePct: var_targetGradePct,
+      statusText: var_statusText,
+      done: var_done,
+    );
   }
 
   @protected
@@ -1736,6 +2346,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_f_64(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_gpx_profile_info(
+    GpxProfileInfo self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_gpx_profile_info(self, serializer);
   }
 
   @protected
@@ -1797,9 +2416,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_elev_sample(ElevSample self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_64(self.distanceM, serializer);
+    sse_encode_f_64(self.elevM, serializer);
+    sse_encode_f_64(self.gradePct, serializer);
+  }
+
+  @protected
   void sse_encode_f_64(double self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putFloat64(self);
+  }
+
+  @protected
+  void sse_encode_gpx_profile_info(
+    GpxProfileInfo self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.name, serializer);
+    sse_encode_f_64(self.distanceM, serializer);
+    sse_encode_f_64(self.elevGainM, serializer);
+    sse_encode_list_elev_sample(self.samples, serializer);
   }
 
   @protected
@@ -1869,6 +2508,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_elev_sample(
+    List<ElevSample> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_elev_sample(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_interval_preset_info(
     List<IntervalPresetInfo> self,
     SseSerializer serializer,
@@ -1888,6 +2539,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putUint8List(self);
+  }
+
+  @protected
+  void sse_encode_list_workout_info(
+    List<WorkoutInfo> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_workout_info(item, serializer);
+    }
   }
 
   @protected
@@ -1971,6 +2634,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_route_status(RouteStatus self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.running, serializer);
+    sse_encode_String(self.routeName, serializer);
+    sse_encode_f_64(self.distanceM, serializer);
+    sse_encode_f_64(self.progressM, serializer);
+    sse_encode_f_64(self.gradePct, serializer);
+    sse_encode_bool(self.complete, serializer);
+    sse_encode_String(self.statusText, serializer);
+  }
+
+  @protected
   void sse_encode_trainer_metrics(
     TrainerMetrics self,
     SseSerializer serializer,
@@ -1999,5 +2674,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   void sse_encode_unit(void self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+  }
+
+  @protected
+  void sse_encode_workout_info(WorkoutInfo self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_String(self.name, serializer);
+    sse_encode_String(self.description, serializer);
+    sse_encode_bool(self.builtin, serializer);
+    sse_encode_u_32(self.stepCount, serializer);
+    sse_encode_u_32(self.totalDurationS, serializer);
+  }
+
+  @protected
+  void sse_encode_workout_status(WorkoutStatus self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.running, serializer);
+    sse_encode_String(self.workoutId, serializer);
+    sse_encode_String(self.workoutName, serializer);
+    sse_encode_u_32(self.stepIndex, serializer);
+    sse_encode_u_32(self.stepCount, serializer);
+    sse_encode_f_64(self.remainingS, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.targetWatts, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.targetGradePct, serializer);
+    sse_encode_String(self.statusText, serializer);
+    sse_encode_bool(self.done, serializer);
   }
 }

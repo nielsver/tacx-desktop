@@ -6,6 +6,7 @@ import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
 import 'package:flutter/services.dart';
+import 'package:tacx_desktop/src/ride_prefs.dart';
 import 'package:tacx_desktop/src/ui/focus_ride_view.dart';
 import 'package:tacx_desktop/src/ui/hr_strap_bar.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
@@ -103,10 +104,11 @@ class _RideDashboardState extends State<RideDashboard> {
   BluetoothStatus? _bt;
   bool _simExpanded = false;
   bool _simAdvanced = false;
-  /// Focus / game-mode ride view (P0-F1). Memory-only for MVP.
+  /// Focus / game-mode ride view (P0-F1). Persisted via [RidePrefs].
   bool _focusMode = false;
   /// Zone wash / cadence pulse — off by default (P0-V3).
   FocusEffects _focusEffects = FocusEffects.off;
+  Timer? _prefsSave;
 
   @override
   void initState() {
@@ -114,6 +116,7 @@ class _RideDashboardState extends State<RideDashboard> {
     api.setDemoMode(enabled: true);
     _refresh();
     _checkBluetooth();
+    _loadPrefs();
     _poll = Timer.periodic(
       const Duration(milliseconds: 250),
       (_) => _refresh(),
@@ -123,6 +126,10 @@ class _RideDashboardState extends State<RideDashboard> {
   @override
   void dispose() {
     _poll?.cancel();
+    if (_prefsSave?.isActive ?? false) {
+      _prefsSave!.cancel();
+      _currentPrefs().save();
+    }
     _scroll.dispose();
     super.dispose();
   }
@@ -346,8 +353,48 @@ class _RideDashboardState extends State<RideDashboard> {
   }
 
 
+  /// Restore last session's ride settings (Focus, effects, ERG target/step,
+  /// rider weight, resistance auto-apply). Only touches local UI state —
+  /// nothing is written to the trainer until the rider presses Apply.
+  Future<void> _loadPrefs() async {
+    final p = await RidePrefs.load();
+    if (p == null || !mounted) return;
+    setState(() {
+      _focusMode = p.focusMode;
+      _focusEffects =
+          p.focusEffectsSubtle ? FocusEffects.subtle : FocusEffects.off;
+      _targetWatts = p.targetWatts;
+      _ergStep = p.ergStep;
+      _userWeightKg = p.userWeightKg;
+      _resAutoApply = p.resAutoApply;
+    });
+  }
+
+  RidePrefs _currentPrefs() => RidePrefs(
+    focusMode: _focusMode,
+    focusEffectsSubtle: _focusEffects == FocusEffects.subtle,
+    targetWatts: _targetWatts,
+    ergStep: _ergStep,
+    userWeightKg: _userWeightKg,
+    resAutoApply: _resAutoApply,
+  );
+
+  /// Debounced so slider drags / rapid −/+ taps write once.
+  void _savePrefsSoon() {
+    _prefsSave?.cancel();
+    _prefsSave = Timer(const Duration(milliseconds: 600), () {
+      _currentPrefs().save();
+    });
+  }
+
+  /// setState + persist ride settings.
+  void _setPref(VoidCallback fn) {
+    setState(fn);
+    _savePrefsSoon();
+  }
+
   void _toggleFocusMode() {
-    setState(() => _focusMode = !_focusMode);
+    _setPref(() => _focusMode = !_focusMode);
   }
 
   Future<void> _toggleFullScreen() async {
@@ -363,7 +410,7 @@ class _RideDashboardState extends State<RideDashboard> {
   }
 
   Future<void> _enterImmersive() async {
-    setState(() => _focusMode = true);
+    _setPref(() => _focusMode = true);
     await WindowChrome.setFullScreen(true);
     if (mounted) setState(() {});
   }
@@ -403,7 +450,7 @@ class _RideDashboardState extends State<RideDashboard> {
                     onImmersive: _enterImmersive,
                     onFullScreen: _toggleFullScreen,
                     onEffectsChanged: (e) =>
-                        setState(() => _focusEffects = e),
+                        _setPref(() => _focusEffects = e),
                     onDemoChanged: (v) {
                       api.setDemoMode(enabled: v);
                       setState(() {
@@ -512,7 +559,7 @@ class _RideDashboardState extends State<RideDashboard> {
                         api.stopInterval();
                         _refresh();
                       },
-                      onNudge: (d) => setState(
+                      onNudge: (d) => _setPref(
                         () => _targetWatts =
                             (_targetWatts + d * _ergStep).clamp(0, 2000),
                       ),
@@ -522,7 +569,7 @@ class _RideDashboardState extends State<RideDashboard> {
                             'ERG $_targetWatts W sent — allow 3–5 s to settle (Kickr)',
                         successIcon: Icons.bolt,
                       ),
-                      onStepChanged: (s) => setState(() => _ergStep = s),
+                      onStepChanged: (s) => _setPref(() => _ergStep = s),
                     )
                   : Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -625,8 +672,8 @@ class _RideDashboardState extends State<RideDashboard> {
                                     liveTargetW: _metrics.targetPowerW,
                                     step: _ergStep,
                                     enabled: connected && !_busy,
-                                    onStep: (s) => setState(() => _ergStep = s),
-                                    onNudge: (d) => setState(
+                                    onStep: (s) => _setPref(() => _ergStep = s),
+                                    onNudge: (d) => _setPref(
                                       () => _targetWatts =
                                           (_targetWatts + d * _ergStep).clamp(
                                             0,
@@ -642,7 +689,7 @@ class _RideDashboardState extends State<RideDashboard> {
                                       successIcon: Icons.bolt,
                                     ),
                                     onSetExact: (w) {
-                                      setState(() => _targetWatts = w);
+                                      _setPref(() => _targetWatts = w);
                                       _run(
                                         () => api.setTargetPower(watts: w),
                                         success:
@@ -674,7 +721,7 @@ class _RideDashboardState extends State<RideDashboard> {
                                     onApply: _applyResistance,
                                     autoApply: _resAutoApply,
                                     onAutoApplyChanged: (v) =>
-                                        setState(() => _resAutoApply = v),
+                                        _setPref(() => _resAutoApply = v),
                                     onChangeEnd: (v) {
                                       _resistancePct = v;
                                       if (_resAutoApply && _resRange.maxPct > 0) {
@@ -726,7 +773,7 @@ class _RideDashboardState extends State<RideDashboard> {
                           onWind: (v) => setState(() => _windKmh = v),
                           onCrr: (v) => setState(() => _crr = v),
                           onCw: (v) => setState(() => _cw = v),
-                          onWeight: (v) => setState(() => _userWeightKg = v),
+                          onWeight: (v) => _setPref(() => _userWeightKg = v),
                           onApplySim: () => _run(
                             () async {
                               await api.setIndoorBikeSimulation(

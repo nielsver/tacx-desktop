@@ -137,17 +137,34 @@ class _RideDashboardState extends State<RideDashboard> {
   void _refresh() {
     if (!mounted) return;
     final wasReconnecting = _snap.state == ConnectionState.reconnecting;
-    setState(() {
-      _metrics = api.getMetrics();
-      _snap = api.getConnectionSnapshot();
-      _resRange = api.getResistanceRange();
-      _interval = api.getIntervalStatus();
-      _ride = api.getRideStats();
-      _strap = api.getHeartRateStrapStatus();
-      if (_snap.mode == ControlMode.simulation) {
-        _simExpanded = true;
-      }
-    });
+    final metrics = api.getMetrics();
+    final snap = api.getConnectionSnapshot();
+    final resRange = api.getResistanceRange();
+    final interval = api.getIntervalStatus();
+    final ride = api.getRideStats();
+    final strap = api.getHeartRateStrapStatus();
+    final simExpand = snap.mode == ControlMode.simulation && !_simExpanded;
+    // P0-P2: skip the 250 ms rebuild of the whole dashboard (header,
+    // connection bar, controls) when the trainer reported nothing new —
+    // idle/disconnected/paused rides stay at zero rebuilds per poll.
+    final changed = simExpand ||
+        metrics != _metrics ||
+        snap != _snap ||
+        resRange != _resRange ||
+        interval != _interval ||
+        ride != _ride ||
+        strap != _strap;
+    if (changed) {
+      setState(() {
+        _metrics = metrics;
+        _snap = snap;
+        _resRange = resRange;
+        _interval = interval;
+        _ride = ride;
+        _strap = strap;
+        if (simExpand) _simExpanded = true;
+      });
+    }
     if (wasReconnecting && _snap.state == ConnectionState.connected) {
       _toast('Trainer reconnected — previous target restored', Icons.link);
     }

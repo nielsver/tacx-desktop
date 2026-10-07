@@ -202,8 +202,9 @@ ThemeData buildRideTheme() {
         return RideColors.textMuted;
       }),
       trackColor: WidgetStateProperty.resolveWith((s) {
-        if (s.contains(WidgetState.selected))
+        if (s.contains(WidgetState.selected)) {
           return RideColors.accent.withValues(alpha: 0.45);
+        }
         return RideColors.border;
       }),
     ),

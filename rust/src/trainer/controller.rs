@@ -36,7 +36,7 @@ static PUBLISHED_SNAPSHOT: OnceCell<Arc<Mutex<ConnectionSnapshot>>> = OnceCell::
 
 pub fn ensure_runtime() {
     RUNTIME.get_or_init(|| Runtime::new().expect("tokio runtime"));
-    CONTROLLER.get_or_init(|| Arc::new(AsyncMutex::new(TrainerController::new())));
+    CONTROLLER.get_or_init(|| Arc::new(AsyncMutex::new(TrainerController::new_global())));
     PUBLISHED_SNAPSHOT.get_or_init(|| {
         Arc::new(Mutex::new(ConnectionSnapshot {
             is_demo: true,
@@ -172,9 +172,26 @@ pub struct TrainerController {
     last_auto_success: Option<(Instant, u32)>,
     /// Last simulation parameters sent (restored after reconnect).
     last_sim: Option<SimParams>,
+    /// Only the process-wide controller publishes to [`PUBLISHED_SNAPSHOT`];
+    /// scratch instances (tests, tools) must not clobber the UI's fallback copy.
+    publishes: bool,
 }
 
 impl TrainerController {
+    /// The singleton behind [`controller`]; mirrors state into [`PUBLISHED_SNAPSHOT`].
+    fn new_global() -> Self {
+        Self {
+            publishes: true,
+            ..Self::new()
+        }
+    }
+
+    fn publish(&self) {
+        if self.publishes {
+            publish_snapshot(&self.snapshot);
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             demo_mode: true,
@@ -194,6 +211,7 @@ impl TrainerController {
             link_watch_handle: None,
             last_auto_success: None,
             last_sim: None,
+            publishes: false,
         }
     }
 
@@ -215,7 +233,7 @@ impl TrainerController {
             },
             ..Default::default()
         };
-        publish_snapshot(&self.snapshot);
+        self.publish();
     }
 
     pub fn is_demo(&self) -> bool {
@@ -333,19 +351,19 @@ impl TrainerController {
         }
         self.snapshot.state = ConnectionState::Scanning;
         self.snapshot.detail = "Scanning for FTMS / Tacx FE-C…".into();
-        publish_snapshot(&self.snapshot);
+        self.publish();
         match scan_ble(timeout_ms).await {
             Ok(v) => {
                 self.snapshot.state = ConnectionState::Disconnected;
                 self.snapshot.detail = format!("Found {} device(s)", v.len());
-                publish_snapshot(&self.snapshot);
+                self.publish();
                 Ok(v)
             }
             Err(e) => {
                 let msg = friendly_ble_error(&e);
                 self.snapshot.state = ConnectionState::Error;
                 self.snapshot.detail = msg.clone();
-                publish_snapshot(&self.snapshot);
+                self.publish();
                 Err(msg)
             }
         }
@@ -401,7 +419,7 @@ impl TrainerController {
                 d.connect(device_id).await?;
                 self.snapshot = d.snapshot.lock().clone();
                 self.last_device_id = id.or_else(|| Some(self.snapshot.device_name.clone()));
-                publish_snapshot(&self.snapshot);
+                self.publish();
             }
             let ctrl = controller();
             self.demo_tick_handle = Some(tokio::spawn(async move {
@@ -426,7 +444,7 @@ impl TrainerController {
         self.snapshot.state = ConnectionState::Connecting;
         self.snapshot.detail = format!("Connecting to {id}…");
         self.snapshot.is_demo = false;
-        publish_snapshot(&self.snapshot);
+        self.publish();
         Ok(ConnectPrep::Ble(id))
     }
 
@@ -439,7 +457,7 @@ impl TrainerController {
         self.snapshot.supports_simulation = session.simulation_supported;
         self.last_device_id = Some(id);
         self.backend = Backend::Ble(session);
-        publish_snapshot(&self.snapshot);
+        self.publish();
         self.arm_link_watch();
     }
 
@@ -447,7 +465,7 @@ impl TrainerController {
         let msg = friendly_ble_error(&e);
         self.snapshot.state = ConnectionState::Error;
         self.snapshot.detail = msg.clone();
-        publish_snapshot(&self.snapshot);
+        self.publish();
         msg
     }
 
@@ -897,7 +915,7 @@ impl TrainerController {
         self.snapshot.state = ConnectionState::Connecting;
         self.snapshot.detail = format!("Reconnecting to {id}…");
         self.snapshot.is_demo = false;
-        publish_snapshot(&self.snapshot);
+        self.publish();
         Ok((id, resume, preserve))
     }
 
@@ -1974,6 +1992,13 @@ mod ui_poll_freeze_tests {
         }
         // Unlocked again — live snapshot still readable.
         let _ = try_snapshot();
+    }
+
+    #[test]
+    fn scratch_controller_does_not_publish() {
+        let c = TrainerController::new();
+        assert!(!c.publishes);
+        assert!(TrainerController::new_global().publishes);
     }
 
     #[tokio::test]

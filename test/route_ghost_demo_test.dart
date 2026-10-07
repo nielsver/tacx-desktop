@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -20,32 +19,46 @@ const _gpx = '''<?xml version="1.0"?>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  late Directory tmp;
+  late GhostStore store;
+
   setUpAll(() async {
     await RustLib.init();
   });
 
-  testWidgets('Demo GPX ride shows ghost chip and stores a new best', (
+  setUp(() {
+    tmp = Directory.systemTemp.createTempSync('ghost_demo');
+    store = GhostStore(Directory('${tmp.path}/ghosts'));
+    GhostStore.debugDirOverride = store.dir;
+  });
+
+  tearDown(() {
+    GhostStore.debugDirOverride = null;
+    tmp.deleteSync(recursive: true);
+  });
+
+  testWidgets('Demo GPX ride shows ghost chip and never saves a best (G2)', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     final profile = api.parseGpxXml(xml: _gpx);
-    final key = routeKey(profile);
-    final store = GhostStore.besideWorkouts(api.workoutsDir());
-    final file = File('${store.dir.path}/$key.best.json');
-    addTearDown(() {
-      if (file.existsSync()) file.deleteSync();
-    });
-    // Seed a slow previous best (10 minutes) so the ghost is behind us.
-    if (file.existsSync()) file.deleteSync();
-    final slow = AttemptRecorder()
-      ..offer(0, 0)
-      ..finish(600, profile.distanceM);
+    final key = profile.routeKey;
+    final file = store.bestFile(key);
+    // Seed a slow previous best (10 minutes) so the ghost is behind us —
+    // this is written directly so Demo mode never has to.
     expect(
-      store.saveIfBest(key, profile.name, profile.distanceM, slow.toTrack()),
+      store.saveIfBest(key, profile.name, profile.distanceM, (() {
+        final r = AttemptRecorder()
+          ..offer(0, 0)
+          ..finish(600, profile.distanceM);
+        return r.toTrack();
+      })()),
       isTrue,
     );
+    expect(file.existsSync(), isTrue);
+    final before = file.readAsStringSync();
 
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
@@ -107,10 +120,8 @@ void main() {
     expect(api.getRouteStatus().running, isTrue);
     expect(find.byKey(const ValueKey('ghost-delta-chip')), findsOneWidget);
     expect(find.textContaining('vs best'), findsOneWidget);
-    // Way ahead of a 10-minute ghost.
     expect(find.textContaining('−'), findsWidgets);
 
-    // Ride to the finish (Demo ≥ 5 m/s over ~45 m).
     for (var i = 0; i < 40 && !api.getRouteStatus().complete; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 500)),
@@ -121,9 +132,14 @@ void main() {
     expect(api.getRouteStatus().complete, isTrue);
     expect(find.byKey(const ValueKey('ghost-delta-chip')), findsNothing);
 
-    final saved = jsonDecode(file.readAsStringSync()) as Map;
-    expect((saved['totalS'] as num).toDouble(), lessThan(600));
-    expect(saved['routeName'], 'Ghost Test Hill');
+    // Demo must never overwrite the seeded best (G2).
+    expect(file.readAsStringSync(), before);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('ghost-reset-best')),
+      120,
+      scrollable: panelScroll.first,
+    );
+    expect(find.textContaining('Best 10:00'), findsOneWidget);
 
     await tester.runAsync(() async {
       api.stopGpxRoute();

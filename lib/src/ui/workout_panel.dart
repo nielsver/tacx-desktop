@@ -28,6 +28,10 @@ class WorkoutPanel extends StatelessWidget {
     this.ghostM,
     this.ghostDeltaS,
     this.bestS,
+    this.queuedGpxName,
+    this.onResetBest,
+    this.onExportGhost,
+    this.onImportGhost,
   });
 
   final List<WorkoutInfo> workouts;
@@ -54,6 +58,14 @@ class WorkoutPanel extends StatelessWidget {
 
   /// Best time on the loaded route, seconds (null = no attempt yet).
   final double? bestS;
+
+  /// A GPX pasted while another route runs (starts after it).
+  final String? queuedGpxName;
+
+  /// Ghost actions (null = unavailable / disabled).
+  final VoidCallback? onResetBest;
+  final VoidCallback? onExportGhost;
+  final VoidCallback? onImportGhost;
 
   @override
   Widget build(BuildContext context) {
@@ -230,8 +242,44 @@ class WorkoutPanel extends StatelessWidget {
                         style: const TextStyle(
                           color: RideColors.textMuted,
                           fontSize: RideType.caption,
+                          fontFeatures: [FontFeature.tabularFigures()],
                         ),
                       ),
+                    ),
+                    if (queuedGpxName != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          'Queued: $queuedGpxName (after this route)',
+                          key: const ValueKey('route-queued'),
+                          style: const TextStyle(
+                            color: RideColors.textSecondary,
+                            fontSize: RideType.caption,
+                          ),
+                        ),
+                      ),
+                    Wrap(
+                      spacing: 4,
+                      children: [
+                        TextButton.icon(
+                          key: const ValueKey('ghost-reset-best'),
+                          onPressed: routeStatus.running ? null : onResetBest,
+                          icon: const Icon(Icons.restart_alt, size: 18),
+                          label: const Text('Reset best'),
+                        ),
+                        TextButton.icon(
+                          key: const ValueKey('ghost-export'),
+                          onPressed: onExportGhost,
+                          icon: const Icon(Icons.ios_share, size: 18),
+                          label: const Text('Export ghost'),
+                        ),
+                        TextButton.icon(
+                          key: const ValueKey('ghost-import'),
+                          onPressed: routeStatus.running ? null : onImportGhost,
+                          icon: const Icon(Icons.group_add_outlined, size: 18),
+                          label: const Text('Import ghost'),
+                        ),
+                      ],
                     ),
                   ],
                 ],
@@ -256,7 +304,8 @@ class WorkoutPanel extends StatelessWidget {
   Future<void> _pasteGpx(BuildContext context) async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final text = data?.text?.trim() ?? '';
-    if (text.isEmpty || !text.contains('<trkpt')) {
+    if (text.isEmpty ||
+        !(text.contains('<trkpt') || text.contains('<rtept'))) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

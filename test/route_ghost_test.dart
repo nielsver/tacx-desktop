@@ -8,20 +8,27 @@ import 'package:tacx_desktop/src/ui/elev_profile_chart.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 import 'package:tacx_desktop/src/workout/route_ghost.dart';
 
-GpxProfileInfo _profile({String name = 'Climb', double bump = 0}) =>
-    GpxProfileInfo(
-      name: name,
-      distanceM: 1000,
-      elevGainM: 50,
-      samples: [
-        for (var i = 0; i <= 10; i++)
-          ElevSample(
-            distanceM: i * 100.0,
-            elevM: 100 + i * 5.0 + (i == 5 ? bump : 0),
-            gradePct: 5,
-          ),
-      ],
-    );
+GpxProfileInfo _profile({
+  String name = 'Climb',
+  double bump = 0,
+  double lat0 = 50,
+  String routeKey = 'v2-0000000000000001',
+}) => GpxProfileInfo(
+  name: name,
+  distanceM: 1000,
+  elevGainM: 50,
+  routeKey: routeKey,
+  samples: [
+    for (var i = 0; i <= 10; i++)
+      ElevSample(
+        distanceM: i * 100.0,
+        elevM: 100 + i * 5.0 + (i == 5 ? bump : 0),
+        gradePct: 5,
+        lat: lat0 + i * 0.0009,
+        lon: 4,
+      ),
+  ],
+);
 
 /// Constant-speed attempt: [speed] m/s over 1000 m.
 GhostTrack _steady(double speed) {
@@ -34,13 +41,17 @@ GhostTrack _steady(double speed) {
 }
 
 void main() {
-  group('routeKey', () {
+  group('legacyRouteKey (v1 fallback only)', () {
     test('stable for the same profile, ignores the track name', () {
-      expect(routeKey(_profile()), routeKey(_profile(name: 'Other name')));
-      expect(routeKey(_profile()).length, 16);
+      expect(legacyRouteKey(_profile()), legacyRouteKey(_profile(name: 'Other')));
+      expect(legacyRouteKey(_profile()).length, 16);
     });
-    test('changes when the elevation profile changes', () {
-      expect(routeKey(_profile()), isNot(routeKey(_profile(bump: 3))));
+    test('the v1 flaw: two flat routes in different places collide', () {
+      // Why v2 (Rust, lat/lon) exists — see gpx.rs route_key_v2 tests.
+      expect(
+        legacyRouteKey(_profile(lat0: 50)),
+        legacyRouteKey(_profile(lat0: 10)),
+      );
     });
   });
 
@@ -106,6 +117,15 @@ void main() {
       expect(r.toTrack().points.last.t, 2);
       expect(r.toTrack().points.last.d, 100);
     });
+
+    test('finish keeps the reported distance (G4 / QA Q8)', () {
+      final r = AttemptRecorder()
+        ..offer(0, 0)
+        ..offer(1, 10)
+        ..finish(2, 10); // stopped short: not stretched to the route length
+      expect(r.toTrack().distanceM, 10);
+      expect(ghostProblem(r.toTrack(), 5000), 'incomplete');
+    });
   });
 
   group('delta + formatting', () {
@@ -119,37 +139,199 @@ void main() {
     });
   });
 
+  group('ghostProblem', () {
+    test('start offset, coverage and plausibility', () {
+      expect(ghostProblem(_steady(4), 1000), isNull);
+      // QA: 200 s attempt that started at 4000 m of a 5000 m route.
+      final late = GhostTrack([(d: 4000.0, t: 0.0), (d: 5000.0, t: 200.0)]);
+      expect(ghostProblem(late, 5000), contains('starts'));
+      // Within max(50 m, 1 %) of the start is fine.
+      final ok = GhostTrack([(d: 40.0, t: 0.0), (d: 5000.0, t: 900.0)]);
+      expect(ghostProblem(ok, 5000), isNull);
+      // 1000 m in 10 s = 100 m/s.
+      final fast = GhostTrack([(d: 0.0, t: 0.0), (d: 1000.0, t: 10.0)]);
+      expect(ghostProblem(fast, 1000), 'implausibly fast');
+    });
+  });
+
   group('GhostStore', () {
     late Directory tmp;
-    setUp(() => tmp = Directory.systemTemp.createTempSync('ghost_test'));
+    late GhostStore store;
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('ghost_test');
+      store = GhostStore(Directory('${tmp.path}/routes/ghosts'));
+    });
     tearDown(() => tmp.deleteSync(recursive: true));
 
     test('saves only complete attempts that beat the best', () {
-      final store = GhostStore(Directory('${tmp.path}/routes/ghosts'));
       expect(store.load('k'), isNull);
-      // Incomplete (stopped half-way) → not saved.
       final half = AttemptRecorder()
         ..offer(0, 0)
         ..offer(50, 500);
       expect(store.saveIfBest('k', 'Climb', 1000, half.toTrack()), isFalse);
       expect(store.saveIfBest('k', 'Climb', 1000, _steady(4)), isTrue);
       expect(store.load('k')!.totalS, closeTo(250, 0.05));
-      // Slower → kept old best.
       expect(store.saveIfBest('k', 'Climb', 1000, _steady(3)), isFalse);
-      // Faster → replaces.
       expect(store.saveIfBest('k', 'Climb', 1000, _steady(5)), isTrue);
       expect(store.load('k')!.totalS, closeTo(200, 0.05));
-      // Zero-distance route never saves.
       expect(store.saveIfBest('z', 'Flat', 0, _steady(5)), isFalse);
     });
 
-    test('corrupt file is ignored and then overwritten', () {
-      final dir = Directory('${tmp.path}/g')..createSync();
-      File('${dir.path}/k.best.json').writeAsStringSync('{not json');
-      final store = GhostStore(dir);
-      expect(store.load('k'), isNull);
+    test('a partial mid-route attempt is never saved (G1)', () {
+      expect(store.saveIfBest('k', 'Climb', 1000, _steady(2)), isTrue); // 500 s
+      final partial = GhostTrack([(d: 800.0, t: 0.0), (d: 1000.0, t: 40.0)]);
+      expect(store.saveIfBest('k', 'Climb', 1000, partial), isFalse);
+      expect(store.load('k')!.totalS, closeTo(500, 0.05));
+    });
+
+    test('Demo rides never save (G2)', () {
+      expect(store.saveIfBest('k', 'Climb', 1000, _steady(5), isDemo: true), isFalse);
+      expect(store.bestFile('k').existsSync(), isFalse);
+    });
+
+    test('a bogus stored best does not block real attempts (G4 / Q9)', () {
+      store.dir.createSync(recursive: true);
+      store.bestFile('k').writeAsStringSync(jsonEncode({
+        'v': 2, 'kind': 'ghost', 'routeKeyV2': 'k', 'routeName': 'Climb',
+        'distanceM': 1000, 'totalS': 5,
+        'track': {'d': [0, 20], 't': [0, 5]}, // covers 2 %
+      }));
+      expect(store.load('k', routeDistanceM: 1000), isNull);
       expect(store.saveIfBest('k', 'Climb', 1000, _steady(4)), isTrue);
-      expect(store.load('k'), isNotNull);
+    });
+
+    test('load validates route key and distance (G4)', () {
+      expect(store.saveIfBest('k', 'Climb', 1000, _steady(4)), isTrue);
+      expect(store.load('k', routeDistanceM: 1000), isNotNull);
+      expect(store.load('k', routeDistanceM: 1200), isNull); // > 1 % off
+      // File renamed to another key → ignored (and moved aside as foreign).
+      store.bestFile('k').renameSync(store.bestFile('other').path);
+      expect(store.load('other'), isNull);
+    });
+
+    test('corrupt file is moved aside, never silently overwritten (G6)', () {
+      store.dir.createSync(recursive: true);
+      store.bestFile('k').writeAsStringSync('{not json');
+      store.now = () => DateTime.utc(2026, 10, 8);
+      expect(store.load('k'), isNull);
+      final aside = store.dir.listSync().whereType<File>().where(
+        (f) => f.path.contains('.corrupt-'),
+      );
+      expect(aside, hasLength(1));
+      expect(store.saveIfBest('k', 'Climb', 1000, _steady(4)), isTrue);
+    });
+
+    test('unreadable best (e.g. a directory / locked) is never overwritten (G6)', () {
+      Directory(store.bestFile('k').path).createSync(recursive: true);
+      expect(store.read('k'), isA<GhostUnreadable>());
+      expect(store.saveIfBest('k', 'Climb', 1000, _steady(5)), isFalse);
+    });
+
+    test('v2 file is self-describing; reset best deletes it', () {
+      expect(store.saveIfBest('k', 'Climb', 1000, _steady(4), legacyKey: 'old'), isTrue);
+      final m = jsonDecode(store.bestFile('k').readAsStringSync()) as Map;
+      expect(m['v'], 2);
+      expect(m['kind'], 'ghost');
+      expect(m['routeKeyV2'], 'k');
+      expect(m['routeKeyV1'], 'old');
+      expect(m['sampleIntervalS'], 1);
+      expect((m['rider'] as Map)['displayName'], '');
+      expect(m['demo'], false);
+      expect(m['createdDate'], matches(RegExp(r'^\d{4}-\d{2}-\d{2}$')));
+      expect(m.containsKey('savedAt'), isFalse); // date only, no clock time
+      expect(store.resetBest('k'), isTrue);
+      expect(store.load('k'), isNull);
+      expect(store.resetBest('k'), isFalse);
+    });
+
+    test('an old (155eeba, v1) best is still found and migrated', () {
+      final p = _profile();
+      final legacy = legacyRouteKey(p);
+      store.dir.createSync(recursive: true);
+      store.bestFile(legacy).writeAsStringSync(jsonEncode({
+        'version': 1, 'routeKey': legacy, 'routeName': p.name,
+        'distanceM': p.distanceM, 'totalS': 250,
+        'savedAt': '2026-10-07T21:00:00Z', 'track': _steady(4).toJson(),
+      }));
+      final f = store.loadForRoute(
+        key: p.routeKey, legacyKey: legacy, routeName: p.name, distanceM: p.distanceM,
+      );
+      expect(f, isNotNull);
+      expect(f!.totalS, closeTo(250, 0.05));
+      expect(store.bestFile(p.routeKey).existsSync(), isTrue); // migrated
+      expect(store.bestFile(legacy).existsSync(), isTrue); // old kept
+    });
+
+    test('legacy best with another name (flat-route collision) is not migrated', () {
+      final p = _profile();
+      final legacy = legacyRouteKey(p);
+      store.dir.createSync(recursive: true);
+      store.bestFile(legacy).writeAsStringSync(jsonEncode({
+        'version': 1, 'routeKey': legacy, 'routeName': 'Some other flat route',
+        'distanceM': p.distanceM, 'totalS': 250, 'track': _steady(4).toJson(),
+      }));
+      expect(
+        store.loadForRoute(
+          key: p.routeKey, legacyKey: legacy, routeName: p.name, distanceM: p.distanceM,
+        ),
+        isNull,
+      );
+      expect(store.bestFile(p.routeKey).existsSync(), isFalse);
+    });
+
+    test('.tdshare export → import round-trip as a friend ghost', () {
+      expect(store.saveIfBest('k', 'Climb', 1000, _steady(4)), isTrue);
+      final share = File('${tmp.path}/out/climb.tdshare');
+      expect(store.exportShare('k', share, riderName: 'Jan'), isNotNull);
+      final friendStore = GhostStore(Directory('${tmp.path}/friend/ghosts'));
+      final g = friendStore.importShare(share, key: 'k', routeDistanceM: 1000);
+      expect(g.riderName, 'Jan');
+      expect(g.totalS, closeTo(250, 0.05));
+      expect(g.verified, isFalse);
+      expect(File('${friendStore.dir.path}/k.friend-jan.json').existsSync(), isTrue);
+      // No HR / weight / clock time in the bundle.
+      final raw = utf8.decode(gzip.decode(share.readAsBytesSync()));
+      expect(raw, isNot(contains('heart')));
+      expect(raw, isNot(contains('savedAt')));
+    });
+
+    test('import rejects a version or route-hash mismatch', () {
+      expect(store.saveIfBest('k', 'Climb', 1000, _steady(4)), isTrue);
+      final share = File('${tmp.path}/climb.tdshare');
+      store.exportShare('k', share);
+      expect(
+        () => store.importShare(share, key: 'another-route', routeDistanceM: 1000),
+        throwsA(isA<FormatException>().having((e) => e.message, 'msg', contains('different route'))),
+      );
+      expect(
+        () => store.importShare(share, key: 'k', routeDistanceM: 3000),
+        throwsFormatException,
+      );
+      final m = jsonDecode(utf8.decode(gzip.decode(share.readAsBytesSync()))) as Map;
+      m['v'] = 99;
+      final v99 = File('${tmp.path}/v99.tdshare')
+        ..writeAsBytesSync(gzip.encode(utf8.encode(jsonEncode(m))));
+      expect(
+        () => store.importShare(v99, key: 'k', routeDistanceM: 1000),
+        throwsA(isA<FormatException>().having((e) => e.message, 'msg', contains('version'))),
+      );
+      final junk = File('${tmp.path}/junk.tdshare')..writeAsStringSync('hello');
+      expect(() => store.importShare(junk, key: 'k', routeDistanceM: 1000), throwsFormatException);
+    });
+
+    test('demo ghosts are never exported or imported (G2)', () {
+      store.dir.createSync(recursive: true);
+      final demo = GhostFile(
+        routeKey: 'k', routeName: 'Climb', distanceM: 1000, track: _steady(4), demo: true,
+      );
+      store.bestFile('k').writeAsStringSync(jsonEncode(demo.toJson()));
+      expect(store.exportShare('k', File('${tmp.path}/d.tdshare')), isNull);
+      final forged = File('${tmp.path}/forged.tdshare')
+        ..writeAsBytesSync(gzip.encode(utf8.encode(jsonEncode(demo.toJson()))));
+      expect(
+        () => store.importShare(forged, key: 'k', routeDistanceM: 1000),
+        throwsFormatException,
+      );
     });
 
     test('lives next to the workouts folder', () {

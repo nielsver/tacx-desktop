@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
@@ -129,10 +130,18 @@ class _RideDashboardState extends State<RideDashboard> {
 
   /// Ghost race on a repeated GPX route (best attempt, live attempt).
   GhostStore? _ghostStore;
+  /// Route being ridden (markers, best, save target). The loaded [_gpx] may
+  /// differ while a route runs: it is shown as queued (QA G3).
+  GpxProfileInfo? _ridingGpx;
   String? _routeKey;
+  String? _legacyKey;
   GhostTrack? _best;
   final AttemptRecorder _attempt = AttemptRecorder();
-  DateTime? _routeStartedAt;
+  /// Monotonic clocks (no NTP / suspend jumps, G8).
+  final Stopwatch _routeClock = Stopwatch();
+  final Stopwatch _mono = Stopwatch()..start();
+  bool _attemptLive = false;
+  double? _notRunningSinceS;
   double? _ghostM;
   double? _ghostDeltaS;
   bool _ergFromGrade = false;
@@ -223,7 +232,7 @@ class _RideDashboardState extends State<RideDashboard> {
     final route = api.getRouteStatus();
     final ride = api.getRideStats();
     final strap = api.getHeartRateStrapStatus();
-    final ghostChanged = _trackGhost(route, DateTime.now());
+    final ghostChanged = _trackGhost(route);
     final plan = _planFor(workout);
     // Only real samples go on the trace: no default / disconnected zeros.
     if (plan != null &&
@@ -286,6 +295,8 @@ class _RideDashboardState extends State<RideDashboard> {
 
   GhostStore? get _ghosts {
     if (_ghostStore != null) return _ghostStore;
+    final override = GhostStore.debugDirOverride;
+    if (override != null) return _ghostStore = GhostStore(override);
     try {
       return _ghostStore = GhostStore.besideWorkouts(api.workoutsDir());
     } catch (_) {
@@ -293,65 +304,175 @@ class _RideDashboardState extends State<RideDashboard> {
     }
   }
 
-  /// Loads the stored best for the current GPX (if any).
+  /// The route whose best / markers are shown: the one being ridden, else
+  /// the loaded GPX.
+  GpxProfileInfo? get _shownGpx => _ridingGpx ?? _gpx;
+
+  /// Loads the stored best (v2 key, legacy fallback) for [_shownGpx].
   void _loadBestForGpx() {
-    final p = _gpx;
-    _routeKey = p == null || p.samples.length < 2 ? null : routeKey(p);
-    final key = _routeKey;
-    _best = key == null ? null : _ghosts?.load(key);
+    final p = _shownGpx;
+    if (p == null || p.samples.length < 2) {
+      _routeKey = _legacyKey = null;
+      _best = null;
+      return;
+    }
+    _routeKey = p.routeKey;
+    _legacyKey = legacyRouteKey(p);
+    _best = _ghosts
+        ?.loadForRoute(
+          key: p.routeKey,
+          legacyKey: _legacyKey!,
+          routeName: p.name,
+          distanceM: p.distanceM,
+        )
+        ?.track;
+  }
+
+  double get _routeT => _routeClock.elapsedMicroseconds / 1e6;
+
+  /// Ends the live attempt (finish, stop, or confirmed dropout).
+  void _endAttempt() {
+    _attemptLive = false;
+    _routeClock.stop();
+    _notRunningSinceS = null;
+    _ghostM = null;
+    _ghostDeltaS = null;
+    _ridingGpx = null;
+    _loadBestForGpx(); // the queued / loaded GPX becomes current again
   }
 
   /// Ghost race bookkeeping for one poll. Returns true when the visible
   /// ghost state (marker / delta) changed.
-  bool _trackGhost(RouteStatus route, DateTime now) {
-    final oldM = _ghostM, oldD = _ghostDeltaS;
-    final started = route.running && !_route.running;
-    final finished = route.complete && !_route.complete;
-    final stopped = !route.running && !route.complete && _route.running;
-    if (started) {
-      _attempt.reset();
-      _routeStartedAt = now;
-      _loadBestForGpx();
-    }
-    final t0 = _routeStartedAt;
-    if (route.running && t0 != null) {
-      final t = now.difference(t0).inMilliseconds / 1000.0;
+  bool _trackGhost(RouteStatus route) {
+    final oldM = _ghostM, oldD = _ghostDeltaS, oldKey = _routeKey;
+    final nowS = _mono.elapsedMicroseconds / 1e6;
+    if (route.running) {
+      _notRunningSinceS = null;
+      if (!_attemptLive) {
+        _attemptLive = true;
+        _attempt.reset();
+        _routeClock
+          ..reset()
+          ..start();
+        _ridingGpx ??= _gpx;
+        _loadBestForGpx();
+      }
+      final t = _routeT;
       _attempt.offer(t, route.progressM);
       final best = _best;
       if (best != null && !best.isEmpty) {
         _ghostM = best.distanceAt(t);
-        _ghostDeltaS = ghostDeltaS(best, route.progressM, t);
+        // Monotonic distance from the recorder: a glitchy progress read
+        // can't show a fake "+" (G7).
+        _ghostDeltaS = ghostDeltaS(best, _attempt.lastD, t);
       } else {
         _ghostM = null;
         _ghostDeltaS = null;
       }
-    }
-    if (finished && t0 != null) {
-      final t = now.difference(t0).inMilliseconds / 1000.0;
-      _attempt.finish(t, route.distanceM);
-      final key = _routeKey;
-      final store = _ghosts;
-      if (key != null && store != null) {
-        final prev = _best;
-        if (store.saveIfBest(
-          key,
-          route.routeName,
-          route.distanceM,
-          _attempt.toTrack(),
-        )) {
-          _best = store.load(key);
-          final gain = prev == null ? '' : ' (${fmtDelta(t - prev.totalS)})';
-          _toast('New best on ${route.routeName}: ${fmtClock(t)}$gain',
-              Icons.emoji_events_outlined);
+    } else if (_attemptLive) {
+      if (route.complete) {
+        final t = _routeT;
+        _attempt.finish(t, route.progressM);
+        final key = _routeKey;
+        final store = _ghosts;
+        final riding = _ridingGpx;
+        if (key != null && store != null && riding != null) {
+          final prev = _best;
+          if (store.saveIfBest(
+            key,
+            riding.name,
+            riding.distanceM,
+            _attempt.toTrack(),
+            legacyKey: _legacyKey,
+            isDemo: _snap.isDemo, // Demo speed is synthetic (G2)
+          )) {
+            final gain = prev == null ? '' : ' (${fmtDelta(t - prev.totalS)})';
+            _toast(
+              'New best on ${riding.name}: ${fmtClock(t)}$gain',
+              Icons.emoji_events_outlined,
+            );
+          } else if (_snap.isDemo) {
+            _toast('Demo ride — not saved as your best', Icons.info_outline);
+          }
         }
+        _endAttempt();
+      } else {
+        // Only a sustained "not running" ends the attempt: one odd poll
+        // must never restart it mid-route (G1).
+        _notRunningSinceS ??= nowS;
+        if (nowS - _notRunningSinceS! >= 1.0) _endAttempt();
       }
     }
-    if (finished || stopped) {
-      _routeStartedAt = null;
-      _ghostM = null;
-      _ghostDeltaS = null;
+    return oldM != _ghostM ||
+        oldD?.round() != _ghostDeltaS?.round() ||
+        oldKey != _routeKey;
+  }
+
+  /// "Reset best" for the shown route.
+  void _resetBest() {
+    final key = _routeKey;
+    if (key == null) return;
+    final store = _ghosts;
+    var removed = store?.resetBest(key) ?? false;
+    final legacy = _legacyKey;
+    if (legacy != null) removed = (store?.resetBest(legacy) ?? false) || removed;
+    setState(() => _best = null);
+    _toast(removed ? 'Best cleared' : 'No best to clear', Icons.restart_alt);
+  }
+
+  /// Export the best for the shown route as a `.tdshare` file next to the
+  /// ghosts (no file picker dependency yet).
+  void _exportGhost() {
+    final key = _routeKey, store = _ghosts, p = _shownGpx;
+    if (key == null || store == null || p == null) return;
+    final safe = p.name.replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_');
+    final dest = File(
+      '${store.dir.parent.path}${Platform.pathSeparator}shared'
+      '${Platform.pathSeparator}$safe-${key.replaceAll('v2-', '')}.tdshare',
+    );
+    final out = store.exportShare(key, dest);
+    _toast(
+      out == null ? 'No (non-demo) best to export' : 'Ghost exported: ${out.path}',
+      out == null ? Icons.info_outline : Icons.ios_share,
+    );
+  }
+
+  /// Import a friend's `.tdshare` for the shown route from a path.
+  Future<void> _importGhost() async {
+    final key = _routeKey, store = _ghosts, p = _shownGpx;
+    if (key == null || store == null || p == null) return;
+    final ctrl = TextEditingController();
+    final path = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Import ghost (.tdshare)'),
+        content: TextField(
+          key: const ValueKey('ghost-import-path'),
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '/path/to/friend.tdshare'),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (path == null || path.trim().isEmpty) return;
+    try {
+      final g = store.importShare(File(path.trim()), key: key, routeDistanceM: p.distanceM);
+      final who = g.riderName.isEmpty ? 'Friend' : g.riderName;
+      _toast('$who\'s ghost imported (${fmtClock(g.totalS)})', Icons.group_outlined);
+    } on FormatException catch (e) {
+      _toast('Import failed: ${e.message}', Icons.error_outline);
+    } catch (e) {
+      _toast('Import failed: $e', Icons.error_outline);
     }
-    return oldM != _ghostM || oldD?.round() != _ghostDeltaS?.round();
   }
 
   /// Planned steps for the workout in [st] (cached per workout id). Null
@@ -1006,11 +1127,14 @@ class _RideDashboardState extends State<RideDashboard> {
                             builder: (context, r, _) => RideSummaryStrip(
                               key: const ValueKey('ride-summary'),
                               stats: r,
-                              onReset: () {
-                                api.resetRideStats();
-                                _trend.clear();
-                                _refresh();
-                              },
+                              // Disabled mid route / workout (G7).
+                              onReset: _route.running || _workout.running
+                                  ? null
+                                  : () {
+                                      api.resetRideStats();
+                                      _trend.clear();
+                                      _refresh();
+                                    },
                               onExport: _exportRide,
                             ),
                           ),
@@ -1131,7 +1255,15 @@ class _RideDashboardState extends State<RideDashboard> {
                                       : _workouts,
                                   workoutStatus: liveWorkout,
                                   routeStatus: _route,
-                                  gpxProfile: _gpx,
+                                  gpxProfile: _shownGpx,
+                                  queuedGpxName: _ridingGpx != null &&
+                                          _gpx != null &&
+                                          !identical(_gpx, _ridingGpx)
+                                      ? _gpx!.name
+                                      : null,
+                                  onResetBest: _best == null ? null : _resetBest,
+                                  onExportGhost: _best == null ? null : _exportGhost,
+                                  onImportGhost: _routeKey == null ? null : _importGhost,
                                   ergFromGrade: _ergFromGrade,
                                   enabled: connected && !_busy,
                                   supportsSimulation: simSupported,
@@ -1156,12 +1288,15 @@ class _RideDashboardState extends State<RideDashboard> {
                                       final p = api.parseGpxXml(xml: xml);
                                       setState(() {
                                         _gpx = p;
-                                        // Mid-route paste must not swap the
-                                        // ghost of the route being ridden.
-                                        if (!_route.running) _loadBestForGpx();
+                                        // Mid-route paste is queued: the
+                                        // ridden route keeps its markers and
+                                        // ghost until finish / stop (G3).
+                                        if (!_attemptLive) _loadBestForGpx();
                                       });
                                       _toast(
-                                        'GPX loaded · ${(p.distanceM / 1000).toStringAsFixed(1)} km',
+                                        _attemptLive
+                                            ? 'GPX queued · ${p.name} (after this route)'
+                                            : 'GPX loaded · ${(p.distanceM / 1000).toStringAsFixed(1)} km',
                                         Icons.terrain,
                                       );
                                     } catch (e) {
@@ -1179,12 +1314,14 @@ class _RideDashboardState extends State<RideDashboard> {
                                         kg: _userWeightKg,
                                       );
                                       await api.startGpxRoute(profile: p);
+                                      _ridingGpx = p;
                                     },
                                     success: 'GPX route started',
                                     successIcon: Icons.terrain,
                                   ),
                                   onStopRoute: () {
                                     api.stopGpxRoute();
+                                    if (_attemptLive) setState(_endAttempt);
                                     _refresh();
                                   },
                                   onErgFromGrade: (v) {
@@ -2249,7 +2386,8 @@ class RideSummaryStrip extends StatelessWidget {
   });
 
   final RideStats stats;
-  final VoidCallback onReset;
+  /// Null while a route / workout runs (button disabled).
+  final VoidCallback? onReset;
 
   /// Saves the ride as a TCX file; disabled until something was recorded.
   final VoidCallback? onExport;

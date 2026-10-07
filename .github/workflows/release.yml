@@ -29,6 +29,8 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned: goldens and pubspec.lock are generated with this SDK.
+          flutter-version: 3.35.5
           cache: true
       - name: Rust tests
         working-directory: rust
@@ -86,6 +88,8 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned: goldens and pubspec.lock are generated with this SDK.
+          flutter-version: 3.35.5
           cache: true
       - name: Rust tests
         working-directory: rust
@@ -157,6 +161,8 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned: goldens and pubspec.lock are generated with this SDK.
+          flutter-version: 3.35.5
           cache: true
       - name: Rust tests
         working-directory: rust

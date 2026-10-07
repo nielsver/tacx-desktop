@@ -74,6 +74,8 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned: goldens and pubspec.lock are generated with this SDK.
+          flutter-version: 3.35.5
           cache: true
       - name: Build Rust cdylib (for widget tests)
         run: cargo build

@@ -488,6 +488,7 @@ class _RideDashboardState extends State<RideDashboard> {
                         ),
                         const SizedBox(height: 12),
                         _SimulationPanel(
+                          key: const ValueKey('simulation-panel'),
                           expanded:
                               _simExpanded ||
                               activeMode == ControlMode.simulation,
@@ -683,15 +684,22 @@ class _Header extends StatelessWidget {
           _ModeChip(mode: snap.mode),
           const Spacer(),
           if (connected && snap.deviceName.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Text(
-                '${snap.deviceName} · ${_protocolShort(snap.protocol)}',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: RideType.label,
+            // Flexible so a long trainer name ellipsizes instead of
+            // overflowing the header row on narrow windows.
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Text(
+                  '${snap.deviceName} · ${_protocolShort(snap.protocol)}',
+                  key: const ValueKey('header-identity'),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: RideType.label,
+                  ),
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                overflow: TextOverflow.ellipsis,
               ),
             )
           else
@@ -1286,6 +1294,7 @@ class _MetricCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      key: ValueKey('metric-${label.toLowerCase()}'),
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
       decoration: BoxDecoration(
         color: RideColors.surface,
@@ -1739,6 +1748,7 @@ class _IntervalPanel extends StatelessWidget {
 
 class _SimulationPanel extends StatelessWidget {
   const _SimulationPanel({
+    super.key,
     required this.expanded,
     required this.advanced,
     required this.gradePct,

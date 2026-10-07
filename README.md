@@ -24,7 +24,7 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 | Link-lost → Reconnect | Simulated disconnect N/A | Auto Error state; Reconnect restores interval ERG |
 | FE-C write rate limit | — | ~4 Hz latest-wins coalesce on UART WithoutResponse |
 | FE-C Track / Wind / User-config | Demo simulates grade | Pages `0x33` / `0x32` / `0x37` + Flutter Simulation panel |
-| FTMS Indoor Bike Simulation | Demo grade feel | Opcode `0x11` when Feature bit 13 set; gated otherwise |
+| FTMS Indoor Bike Simulation | Demo grade feel | Opcode `0x11` + Crr/Cw sliders when Feature bit 13 set |
 | Fitness Machine Status | — | Subscribe `0x2ADA`; stop/pause banner; control-lost → Error |
 | DEMO badge | Always when demo on | — |
 
@@ -37,6 +37,21 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 | **macOS** | Supported | Enable **Bluetooth** permission for the app (entitlements included) |
 
 “All distros” on Linux means: a portable Flutter Linux binary **or** `flutter run -d linux` / source build on common distros with BlueZ. We do not ship every distro’s native `.deb`/`.rpm` packager.
+
+
+## Windows quickstart
+
+1. **Prereqs:** Flutter 3.29+, Rust (`rustup`), Visual Studio **Desktop development with C++**, Windows 10/11 BLE.
+2. **Clone & run (demo first):**
+   ```powershell
+   git clone https://github.com/nielsver/tacx-desktop.git
+   cd tacx-desktop
+   flutter pub get
+   flutter run -d windows
+   ```
+   Leave the red **DEMO** toggle on — try ERG, Resistance, Intervals, and Simulation (grade / wind / Crr / Cw) without a trainer.
+3. **Live trainer:** turn **Demo** off. Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad. In **Settings → Bluetooth**, **remove/forget** the trainer so it is **unpaired**. Power the trainer → **Scan** → **Connect**.
+4. **Release zip:** `flutter build windows --release` → zip `build\windows\x64\runner\Release\`, or `./scripts/build_release.sh windows`.
 
 ## Requirements
 

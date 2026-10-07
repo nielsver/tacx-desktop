@@ -48,6 +48,8 @@ class _RideDashboardState extends State<RideDashboard> {
   double _resistancePct = 20;
   double _gradePct = 0;
   double _windKmh = 0;
+  double _crr = 0.004;
+  double _cw = 0.51;
   double _userWeightKg = 75;
   final double _bikeWeightKg = 8;
   final double _wheelDiameterM = 0.7;
@@ -195,28 +197,22 @@ class _RideDashboardState extends State<RideDashboard> {
                     _SimulationPanel(
                       gradePct: _gradePct,
                       windKmh: _windKmh,
+                      crr: _crr,
+                      cw: _cw,
                       userWeightKg: _userWeightKg,
                       enabled: connected && (_snap.supportsSimulation || _snap.isDemo),
                       supportsSimulation: _snap.supportsSimulation || _snap.isDemo,
                       onGrade: (v) => setState(() => _gradePct = v),
                       onWind: (v) => setState(() => _windKmh = v),
+                      onCrr: (v) => setState(() => _crr = v),
+                      onCw: (v) => setState(() => _cw = v),
                       onWeight: (v) => setState(() => _userWeightKg = v),
-                      onApplyGrade: () => _run(() async {
-                        await api.setTrackResistance(gradePct: _gradePct, crr: 0.004);
-                      }),
-                      onApplyWind: () => _run(() async {
-                        await api.setWindResistance(
-                          windResistanceCoefficient: 0.51,
-                          windSpeedKmh: _windKmh,
-                          draftingFactor: 1.0,
-                        );
-                      }),
-                      onApplyAll: () => _run(() async {
+                      onApplySim: () => _run(() async {
                         await api.setIndoorBikeSimulation(
                           windSpeedMps: _windKmh / 3.6,
                           gradePct: _gradePct,
-                          crr: 0.004,
-                          cw: 0.51,
+                          crr: _crr,
+                          cw: _cw,
                         );
                       }),
                       onApplyUser: () => _run(() async {
@@ -756,29 +752,33 @@ class _SimulationPanel extends StatelessWidget {
   const _SimulationPanel({
     required this.gradePct,
     required this.windKmh,
+    required this.crr,
+    required this.cw,
     required this.userWeightKg,
     required this.enabled,
     required this.supportsSimulation,
     required this.onGrade,
     required this.onWind,
+    required this.onCrr,
+    required this.onCw,
     required this.onWeight,
-    required this.onApplyGrade,
-    required this.onApplyWind,
-    required this.onApplyAll,
+    required this.onApplySim,
     required this.onApplyUser,
   });
 
   final double gradePct;
   final double windKmh;
+  final double crr;
+  final double cw;
   final double userWeightKg;
   final bool enabled;
   final bool supportsSimulation;
   final ValueChanged<double> onGrade;
   final ValueChanged<double> onWind;
+  final ValueChanged<double> onCrr;
+  final ValueChanged<double> onCw;
   final ValueChanged<double> onWeight;
-  final VoidCallback onApplyGrade;
-  final VoidCallback onApplyWind;
-  final VoidCallback onApplyAll;
+  final VoidCallback onApplySim;
   final VoidCallback onApplyUser;
 
   @override
@@ -797,20 +797,22 @@ class _SimulationPanel extends StatelessWidget {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  supportsSimulation
-                      ? 'FTMS 0x11 / FE-C Track·Wind'
-                      : 'Not advertised on this trainer',
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                Expanded(
+                  child: Text(
+                    supportsSimulation
+                        ? 'FTMS 0x11 / FE-C Track·Wind — Crr 0–0.0127, Cw 0–1.86 kg/m'
+                        : 'Not advertised on this trainer',
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                const Spacer(),
-                FilledButton.tonal(
-                  onPressed: enabled ? onApplyAll : null,
-                  child: const Text('Apply grade+wind'),
+                FilledButton(
+                  onPressed: enabled ? onApplySim : null,
+                  child: const Text('Apply simulation'),
                 ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Row(
               children: [
                 Expanded(
@@ -829,17 +831,10 @@ class _SimulationPanel extends StatelessWidget {
                         label: '${gradePct.toStringAsFixed(1)}%',
                         onChanged: enabled ? onGrade : null,
                       ),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: FilledButton(
-                          onPressed: enabled ? onApplyGrade : null,
-                          child: const Text('Apply grade'),
-                        ),
-                      ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -856,19 +851,52 @@ class _SimulationPanel extends StatelessWidget {
                         label: '${windKmh.toStringAsFixed(0)} km/h',
                         onChanged: enabled ? onWind : null,
                       ),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: FilledButton(
-                          onPressed: enabled ? onApplyWind : null,
-                          child: const Text('Apply wind'),
-                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Crr ${crr.toStringAsFixed(4)}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Slider(
+                        value: crr.clamp(0.0, 0.0127),
+                        min: 0,
+                        max: 0.0127,
+                        divisions: 127,
+                        label: crr.toStringAsFixed(4),
+                        onChanged: enabled ? onCrr : null,
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Cw ${cw.toStringAsFixed(2)} kg/m',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Slider(
+                        value: cw.clamp(0.0, 1.86),
+                        min: 0,
+                        max: 1.86,
+                        divisions: 186,
+                        label: cw.toStringAsFixed(2),
+                        onChanged: enabled ? onCw : null,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
                 SizedBox(
-                  width: 200,
+                  width: 180,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [

@@ -315,8 +315,8 @@ pub fn encode_indoor_bike_simulation(
 ) -> Vec<u8> {
     let wind = (wind_speed_mps * 1000.0).round().clamp(i16::MIN as f64, i16::MAX as f64) as i16;
     let grade = (grade_pct * 100.0).round().clamp(i16::MIN as f64, i16::MAX as f64) as i16;
-    let crr_u = (crr / 0.0001).round().clamp(0.0, 255.0) as u8;
-    let cw_u = (cw / 0.01).round().clamp(0.0, 255.0) as u8;
+    let crr_u = (clamp_simulation_crr(crr) / 0.0001).round().clamp(0.0, 255.0) as u8;
+    let cw_u = (clamp_simulation_cw(cw) / 0.01).round().clamp(0.0, 255.0) as u8;
     let mut v = vec![OP_SET_INDOOR_BIKE_SIMULATION];
     v.extend_from_slice(&wind.to_le_bytes());
     v.extend_from_slice(&grade.to_le_bytes());
@@ -325,10 +325,23 @@ pub fn encode_indoor_bike_simulation(
     v
 }
 
+/// Defaults commonly used by open FTMS / FE-C clients.
+pub const DEFAULT_SIM_CRR: f64 = 0.004;
+pub const DEFAULT_SIM_CW: f64 = 0.51;
+
+/// FE-C Track Crr max is 0.0127; FTMS uint8×0.0001 allows up to 0.0255 — clamp to FE-C-safe.
+pub fn clamp_simulation_crr(crr: f64) -> f64 {
+    crr.clamp(0.0, 0.0127)
+}
+
+/// FE-C wind resistance coeff max 1.86; FTMS uint8×0.01 allows 2.55 — clamp to FE-C-safe.
+pub fn clamp_simulation_cw(cw: f64) -> f64 {
+    cw.clamp(0.0, 1.86)
+}
+
 /// Grade-only simulation helper (zero wind, default Crr/Cw).
 pub fn encode_simulation_grade(grade_pct: f64) -> Vec<u8> {
-    // Defaults commonly used by open FTMS clients: Crr=0.004, Cw=0.51
-    encode_indoor_bike_simulation(0.0, grade_pct, 0.004, 0.51)
+    encode_indoor_bike_simulation(0.0, grade_pct, DEFAULT_SIM_CRR, DEFAULT_SIM_CW)
 }
 
 /// Parse Fitness Machine Feature (0x2ACC) for Indoor Bike Simulation support.
@@ -436,6 +449,19 @@ mod tests {
         assert_eq!(frame[6], 51);
         let uphill = encode_indoor_bike_simulation(0.0, 5.0, 0.004, 0.51);
         assert_eq!(i16::from_le_bytes([uphill[3], uphill[4]]), 500); // 5.00%
+    }
+
+    #[test]
+    fn encode_simulation_custom_crr_cw() {
+        // Crr 0.0035 → 35; Cw 0.40 → 40
+        let frame = encode_indoor_bike_simulation(1.5, -2.5, 0.0035, 0.40);
+        assert_eq!(frame[0], OP_SET_INDOOR_BIKE_SIMULATION);
+        assert_eq!(i16::from_le_bytes([frame[1], frame[2]]), 1500); // 1.5 m/s
+        assert_eq!(i16::from_le_bytes([frame[3], frame[4]]), -250); // -2.50%
+        assert_eq!(frame[5], 35);
+        assert_eq!(frame[6], 40);
+        assert!((clamp_simulation_crr(0.05) - 0.0127).abs() < 1e-9);
+        assert!((clamp_simulation_cw(3.0) - 1.86).abs() < 1e-9);
     }
 
     #[test]

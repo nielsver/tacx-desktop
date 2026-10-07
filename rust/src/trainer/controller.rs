@@ -446,7 +446,7 @@ impl TrainerController {
                 }
                 match b.protocol {
                     ProtocolKind::TacxFecBle => {
-                        let payload = fec::encode_track_resistance(grade_pct, crr)?;
+                        let payload = fec::encode_track_resistance(grade_pct, ftms::clamp_simulation_crr(crr))?;
                         write_fec_throttled(b, payload).await?;
                         *b.mode.lock() = ControlMode::Simulation;
                         Ok(())
@@ -462,7 +462,12 @@ impl TrainerController {
                             .control_char
                             .as_ref()
                             .ok_or_else(|| "FTMS Control Point missing".to_string())?;
-                        let payload = ftms::encode_indoor_bike_simulation(0.0, grade_pct, crr, 0.51);
+                        let payload = ftms::encode_indoor_bike_simulation(
+                            0.0,
+                            grade_pct,
+                            ftms::clamp_simulation_crr(crr),
+                            ftms::DEFAULT_SIM_CW,
+                        );
                         *b.last_cp.lock() = None;
                         b.peripheral
                             .write(ch, &payload, WriteType::WithResponse)
@@ -501,7 +506,7 @@ impl TrainerController {
                 match b.protocol {
                     ProtocolKind::TacxFecBle => {
                         let payload = fec::encode_wind_resistance(
-                            wind_resistance_coefficient,
+                            ftms::clamp_simulation_cw(wind_resistance_coefficient),
                             wind_speed_kmh,
                             drafting_factor,
                         )?;
@@ -524,8 +529,8 @@ impl TrainerController {
                         let payload = ftms::encode_indoor_bike_simulation(
                             wind_mps,
                             0.0,
-                            0.004,
-                            wind_resistance_coefficient,
+                            ftms::DEFAULT_SIM_CRR,
+                            ftms::clamp_simulation_cw(wind_resistance_coefficient),
                         );
                         *b.last_cp.lock() = None;
                         b.peripheral
@@ -612,8 +617,12 @@ impl TrainerController {
                             .control_char
                             .as_ref()
                             .ok_or_else(|| "FTMS Control Point missing".to_string())?;
-                        let payload =
-                            ftms::encode_indoor_bike_simulation(wind_speed_mps, grade_pct, crr, cw);
+                        let payload = ftms::encode_indoor_bike_simulation(
+                            wind_speed_mps,
+                            grade_pct,
+                            ftms::clamp_simulation_crr(crr),
+                            ftms::clamp_simulation_cw(cw),
+                        );
                         *b.last_cp.lock() = None;
                         b.peripheral
                             .write(ch, &payload, WriteType::WithResponse)
@@ -631,9 +640,16 @@ impl TrainerController {
                         Ok(())
                     }
                     ProtocolKind::TacxFecBle => {
-                        let track = fec::encode_track_resistance(grade_pct, crr)?;
+                        let track = fec::encode_track_resistance(
+                            grade_pct,
+                            ftms::clamp_simulation_crr(crr),
+                        )?;
                         write_fec_throttled(b, track).await?;
-                        let wind = fec::encode_wind_resistance(cw, wind_speed_mps * 3.6, 1.0)?;
+                        let wind = fec::encode_wind_resistance(
+                            ftms::clamp_simulation_cw(cw),
+                            wind_speed_mps * 3.6,
+                            1.0,
+                        )?;
                         write_fec_throttled(b, wind).await?;
                         *b.mode.lock() = ControlMode::Simulation;
                         Ok(())

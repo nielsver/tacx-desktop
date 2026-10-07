@@ -136,13 +136,21 @@ class _RideDashboardState extends State<RideDashboard> {
         _bt!.radio == BluetoothRadio.noAdapter;
   }
 
-  Future<void> _run(Future<void> Function() action) async {
+  /// Runs a trainer action with busy/error handling. When [success] is given
+  /// and the action completes, a short confirmation snackbar tells the rider
+  /// the write was sent (P1-SIM3 apply feedback).
+  Future<void> _run(
+    Future<void> Function() action, {
+    String? success,
+    IconData successIcon = Icons.check_circle_outline,
+  }) async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       await action();
+      if (success != null && mounted) _toast(success, successIcon);
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -151,6 +159,37 @@ class _RideDashboardState extends State<RideDashboard> {
         _refresh();
       }
     }
+  }
+
+  void _toast(String message, IconData icon) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          width: 420,
+          duration: const Duration(milliseconds: 1800),
+          backgroundColor: const Color(0xFF1E2633),
+          content: Row(
+            children: [
+              Icon(icon, size: 18, color: RideColors.ok),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
   }
 
   Future<void> _scan() async {
@@ -339,10 +378,17 @@ class _RideDashboardState extends State<RideDashboard> {
                                 ),
                                 onApply: () => _run(
                                   () => api.setTargetPower(watts: _targetWatts),
+                                  success:
+                                      'ERG target ${_targetWatts.round()} W sent',
+                                  successIcon: Icons.bolt,
                                 ),
                                 onSetExact: (w) {
                                   setState(() => _targetWatts = w);
-                                  _run(() => api.setTargetPower(watts: w));
+                                  _run(
+                                    () => api.setTargetPower(watts: w),
+                                    success: 'ERG target ${w.round()} W sent',
+                                    successIcon: Icons.bolt,
+                                  );
                                 },
                               ),
                             ),
@@ -365,6 +411,9 @@ class _RideDashboardState extends State<RideDashboard> {
                                   () => api.setResistancePercent(
                                     percent: _resistancePct,
                                   ),
+                                  success:
+                                      'Resistance ${_resistancePct.toStringAsFixed(0)} % sent',
+                                  successIcon: Icons.tune,
                                 ),
                               ),
                             ),
@@ -375,8 +424,11 @@ class _RideDashboardState extends State<RideDashboard> {
                               presets: _presets,
                               status: _interval,
                               enabled: connected && !_busy,
-                              onStart: (key) =>
-                                  _run(() => api.startInterval(key: key)),
+                              onStart: (key) => _run(
+                                () => api.startInterval(key: key),
+                                success: 'Interval started',
+                                successIcon: Icons.timer_outlined,
+                              ),
                               onStop: () {
                                 api.stopInterval();
                                 _refresh();
@@ -407,22 +459,32 @@ class _RideDashboardState extends State<RideDashboard> {
                       onCrr: (v) => setState(() => _crr = v),
                       onCw: (v) => setState(() => _cw = v),
                       onWeight: (v) => setState(() => _userWeightKg = v),
-                      onApplySim: () => _run(() async {
-                        await api.setIndoorBikeSimulation(
-                          windSpeedMps: _windKmh / 3.6,
-                          gradePct: _gradePct,
-                          crr: _crr,
-                          cw: _cw,
-                        );
-                      }),
-                      onApplyUser: () => _run(() async {
-                        await api.setUserConfiguration(
-                          userWeightKg: _userWeightKg,
-                          bicycleWeightKg: _bikeWeightKg,
-                          wheelDiameterM: _wheelDiameterM,
-                          gearRatio: 3.0,
-                        );
-                      }),
+                      onApplySim: () => _run(
+                        () async {
+                          await api.setIndoorBikeSimulation(
+                            windSpeedMps: _windKmh / 3.6,
+                            gradePct: _gradePct,
+                            crr: _crr,
+                            cw: _cw,
+                          );
+                        },
+                        success:
+                            'Simulation sent · grade ${_gradePct.toStringAsFixed(1)} % · wind ${_windKmh.toStringAsFixed(0)} km/h',
+                        successIcon: Icons.terrain,
+                      ),
+                      onApplyUser: () => _run(
+                        () async {
+                          await api.setUserConfiguration(
+                            userWeightKg: _userWeightKg,
+                            bicycleWeightKg: _bikeWeightKg,
+                            wheelDiameterM: _wheelDiameterM,
+                            gearRatio: 3.0,
+                          );
+                        },
+                        success:
+                            'Rider ${_userWeightKg.toStringAsFixed(0)} kg sent',
+                        successIcon: Icons.person_outline,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(

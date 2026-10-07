@@ -1,0 +1,44 @@
+name: apt-install
+description: >
+  Install apt packages on a GitHub-hosted Ubuntu runner, robust against the
+  flaky azure.archive.ubuntu.com mirror. Skips apt entirely when every
+  requested package is already installed.
+inputs:
+  packages:
+    description: Space/newline separated list of apt packages
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        DEBIAN_FRONTEND: noninteractive
+        PKGS: ${{ inputs.packages }}
+      run: |
+        set -euo pipefail
+        read -r -a pkgs <<< "$(echo "$PKGS" | tr '\n' ' ')"
+        missing=()
+        for p in "${pkgs[@]}"; do
+          if [ "$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)" != "install ok installed" ]; then
+            missing+=("$p")
+          fi
+        done
+        if [ "${#missing[@]}" -eq 0 ]; then
+          echo "All apt packages already installed, skipping apt: ${pkgs[*]}"
+          exit 0
+        fi
+        echo "Missing apt packages: ${missing[*]}"
+
+        # Runner sources use `mirror+file:/etc/apt/apt-mirrors.txt` (azure mirror,
+        # often Ign/hangs on GHA). Point that list at the main archive, and also
+        # rewrite any plain azure URIs in classic/deb822 source files.
+        if [ -f /etc/apt/apt-mirrors.txt ]; then
+          echo "Old /etc/apt/apt-mirrors.txt:"; cat /etc/apt/apt-mirrors.txt || true
+        fi
+        echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+        sudo sed -i 's|https\?://azure\.archive\.ubuntu\.com|http://archive.ubuntu.com|g' \
+          /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+
+        APT_OPTS=(-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o DPkg::Lock::Timeout=120)
+        sudo apt-get "${APT_OPTS[@]}" update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "${missing[@]}"

@@ -1,0 +1,23 @@
+Tacx Desktop — Windows first-run
+================================
+
+1) After install, launch "Tacx Desktop" from the Start Menu.
+
+2) Bluetooth
+   - Turn Bluetooth on (Settings → Bluetooth & devices).
+   - Leave your trainer UNPAIRED in Windows Settings.
+     (Forget / Remove the device if it was paired.)
+   - Quit Zwift, Tacx Training, MyWhoosh, Wahoo, Rouvy, TrainerRoad
+     so nothing else holds the BLE link.
+
+3) In the app
+   - First launch shows Welcome → Connect.
+   - Demo stays OFF by default. Turn Demo ON only to try the UI
+     without a trainer (devices are labeled DEMO, not "found").
+   - Connect a trainer (required) before Focus / ride. HR strap is optional.
+
+4) Modes
+   - Normal ride, Focus/Game (G / F11), ERG, Resistance, Simulation,
+     Workouts / GPX grade, Demo.
+
+Need help? https://github.com/nielsver/tacx-desktop

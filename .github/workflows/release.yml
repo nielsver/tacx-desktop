@@ -2,7 +2,11 @@ name: Release
 
 # Builds ready-to-run desktop packages for Windows, Linux and macOS.
 # Run manually from the Actions tab (artifacts only), or push a tag like
-# v0.1.0 to also attach all three packages to a GitHub Release.
+# v0.1.0 to also attach packages to a GitHub Release.
+#
+# Linux (Garuda first): tar.gz + AppImage + .deb
+# Windows: zip + Inno Setup installer (Setup.exe)
+# macOS: zipped .app (ad-hoc signed, not notarized)
 on:
   workflow_dispatch:
   push:
@@ -39,17 +43,33 @@ jobs:
           $zip = "tacx-desktop-windows-x64-$ver.zip"
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath $zip
           "PKG=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "VER=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
           Get-ChildItem build\windows\x64\runner\Release
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Build Setup.exe (Inno Setup)
+        shell: pwsh
+        run: |
+          ./scripts/package_windows_installer.ps1 -Version $env:VER
+          $setup = Get-ChildItem dist\TacxDesktop-Setup-*.exe | Select-Object -First 1
+          if (-not $setup) { throw "Setup.exe missing" }
+          "INSTALLER=$($setup.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "INSTALLER_NAME=$($setup.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Get-Item $setup.FullName
       - uses: actions/upload-artifact@v4
         with:
           name: tacx-desktop-windows-x64
-          path: ${{ env.PKG }}
+          path: |
+            ${{ env.PKG }}
+            ${{ env.INSTALLER }}
           retention-days: 30
       - name: Attach to GitHub Release (tags only)
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.PKG }}
+          files: |
+            ${{ env.PKG }}
+            ${{ env.INSTALLER }}
           generate_release_notes: true
 
   linux:
@@ -57,11 +77,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install Flutter Linux + BlueZ / D-Bus build deps
+      - name: Install Flutter Linux + BlueZ / D-Bus + packaging deps
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config \
-            libgtk-3-dev liblzma-dev libdbus-1-dev
+            libgtk-3-dev liblzma-dev libdbus-1-dev \
+            dpkg-dev fakeroot file curl desktop-file-utils
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -82,13 +103,22 @@ jobs:
           ls -la build/linux/x64/release/bundle build/linux/x64/release/bundle/lib
           ls build/linux/x64/release/bundle/lib | grep -q tacx_desktop_core \
             || { echo "::error::Rust cdylib missing from Linux bundle"; exit 1; }
-      - name: Tarball bundle
+      - name: Stage launcher files into bundle
         run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then ver="$GITHUB_REF_NAME"; else ver="main-${GITHUB_SHA::7}"; fi
-          pkg="tacx-desktop-linux-x64-$ver.tar.gz"
           cp packaging/linux/FIRST_RUN.txt packaging/linux/install.sh packaging/linux/uninstall.sh \
              packaging/linux/com.nielsver.tacx_desktop.png build/linux/x64/release/bundle/
-          chmod +x build/linux/x64/release/bundle/install.sh build/linux/x64/release/bundle/uninstall.sh
+          chmod +x build/linux/x64/release/bundle/install.sh \
+                   build/linux/x64/release/bundle/uninstall.sh \
+                   build/linux/x64/release/bundle/tacx_desktop
+      - name: Version stamp
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then ver="$GITHUB_REF_NAME"; else ver="main-${GITHUB_SHA::7}"; fi
+          echo "VER=$ver" >> "$GITHUB_ENV"
+          # deb-friendly version (strip leading v)
+          echo "DEB_VER=${ver#v}" >> "$GITHUB_ENV"
+      - name: Tarball bundle
+        run: |
+          pkg="tacx-desktop-linux-x64-$VER.tar.gz"
           tar -C build/linux/x64/release -czf "$pkg" --transform 's,^bundle,tacx-desktop,' bundle
           echo "PKG=$pkg" >> "$GITHUB_ENV"
           tar -tzf "$pkg" | head -30
@@ -96,16 +126,34 @@ jobs:
             tar -tzf "$pkg" | grep -q "tacx-desktop/$f" \
               || { echo "::error::$f missing from Linux tarball"; exit 1; }
           done
+      - name: Build AppImage
+        run: |
+          ./scripts/package_linux_appimage.sh build/linux/x64/release/bundle "$VER" .
+          appimage=$(ls Tacx_Desktop-*-x86_64.AppImage | head -1)
+          echo "APPIMAGE=$appimage" >> "$GITHUB_ENV"
+          file "$appimage"
+      - name: Build .deb
+        run: |
+          ./scripts/package_linux_deb.sh build/linux/x64/release/bundle "$DEB_VER" .
+          deb=$(ls tacx-desktop_*_amd64.deb | head -1)
+          echo "DEB=$deb" >> "$GITHUB_ENV"
+          dpkg-deb -I "$deb" | head -25
       - uses: actions/upload-artifact@v4
         with:
           name: tacx-desktop-linux-x64
-          path: ${{ env.PKG }}
+          path: |
+            ${{ env.PKG }}
+            ${{ env.APPIMAGE }}
+            ${{ env.DEB }}
           retention-days: 30
       - name: Attach to GitHub Release (tags only)
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.PKG }}
+          files: |
+            ${{ env.PKG }}
+            ${{ env.APPIMAGE }}
+            ${{ env.DEB }}
           generate_release_notes: true
 
   macos:

@@ -40,9 +40,56 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 | **Windows** | Supported | WinRT BLE; leave trainer **unpaired** in OS Settings |
 | **macOS** | Supported | TCC Bluetooth; entitlements included (not notarized in CI) |
 
-Portable Linux binary works on BlueZ distros (Garuda, Arch, Fedora, Debian/Ubuntu). We do not ship every distro’s native `.deb`/`.rpm`.
+Portable Linux builds work on BlueZ distros (Garuda, Arch, Fedora, Debian/Ubuntu).
+**Release artifacts (Garuda first):** AppImage (one-click), `.deb`, and tar.gz + `install.sh` launcher.
+**Windows:** Inno Setup `TacxDesktop-Setup-*.exe` (Start Menu + optional Desktop shortcut) plus zip.
 
 
+
+## Installers (end users)
+
+### Garuda / Linux (primary)
+
+Download from **Actions → Release** (workflow artifact `tacx-desktop-linux-x64`) or a GitHub Release tag:
+
+| Artifact | What it is |
+| --- | --- |
+| `Tacx_Desktop-<ver>-x86_64.AppImage` | **Recommended** — chmod +x and run |
+| `tacx-desktop_<ver>_amd64.deb` | System package → app menu entry under `/opt/tacx-desktop` |
+| `tacx-desktop-linux-x64-<ver>.tar.gz` | Portable tree + `./install.sh` for a user launcher |
+
+```bash
+# BlueZ once (Garuda / Arch)
+sudo pacman -S --needed bluez bluez-utils gtk3 libepoxy xz util-linux
+sudo systemctl enable --now bluetooth
+groups | grep -q bluetooth || { sudo usermod -aG bluetooth "$USER"; echo "Log out/in"; }
+
+# A) AppImage (easiest)
+chmod +x Tacx_Desktop-*-x86_64.AppImage
+./Tacx_Desktop-*-x86_64.AppImage
+
+# B) .deb (Debian/Ubuntu)
+sudo apt install ./tacx-desktop_*_amd64.deb
+tacx-desktop   # or open "Tacx Desktop" from the app menu
+
+# C) tar.gz + menu launcher
+mkdir -p ~/Apps && tar -xzf tacx-desktop-linux-x64-*.tar.gz -C ~/Apps
+cd ~/Apps/tacx-desktop && ./install.sh && ./tacx_desktop
+```
+
+Never `sudo` the app. Leave the trainer **unpaired** in KDE Bluetooth; quit Zwift/Wahoo/etc. before Connect.
+Wayland fallback: `GDK_BACKEND=x11 ./Tacx_Desktop-*.AppImage`.
+
+### Windows
+
+| Artifact | What it is |
+| --- | --- |
+| `TacxDesktop-Setup-<ver>.exe` | **Recommended** — Inno Setup installer (Start Menu, uninstaller, optional Desktop icon) |
+| `tacx-desktop-windows-x64-<ver>.zip` | Portable `Release/` folder |
+
+1. Run `TacxDesktop-Setup-*.exe` → finish wizard → launch **Tacx Desktop** from Start Menu.
+2. Bluetooth on; leave trainer **unpaired** in Windows Settings; quit Zwift/Tacx/MyWhoosh/Wahoo.
+3. Welcome → Connect; Demo OFF by default.
 
 ## First-run checklist (`flutter doctor`)
 
@@ -60,7 +107,13 @@ Run `flutter doctor -v` after installing the toolchain. You want these green bef
 
 **Demo-first path:** `flutter pub get` → `flutter run -d windows` (or `linux` / `macos`) → leave **DEMO** on → exercise ERG / Resistance / Intervals / Simulation. Then Demo **off** for live BLE (quit other apps; Windows: forget OS pairing).
 
-**Release without a local toolchain:** GitHub Actions → **Release** → *Run workflow* (manual) builds `tacx-desktop-windows-x64` (zip), `tacx-desktop-linux-x64` (tar.gz) and `tacx-desktop-macos` (zipped `.app`, ad-hoc signed, not notarized) artifacts; a `v*` tag also attaches all three to a GitHub Release. Local: `./scripts/build_release.sh linux` (Garuda primary) or `windows` / `macos`.
+**Release without a local toolchain:** GitHub Actions → **Release** → *Run workflow* (manual) uploads:
+
+- **Linux** artifact `tacx-desktop-linux-x64`: AppImage + `.deb` + tar.gz (with `install.sh`)
+- **Windows** artifact `tacx-desktop-windows-x64`: `TacxDesktop-Setup-*.exe` (Inno) + zip
+- **macOS** artifact `tacx-desktop-macos`: zipped `.app` (ad-hoc signed, not notarized)
+
+A `v*` tag attaches the same files to a GitHub Release. Local: `./scripts/build_release.sh linux` (Garuda primary) or `windows` / `macos`.
 
 
 
@@ -81,32 +134,31 @@ Visual effects default **Off**; header menu → **Subtle** for a soft zone wash 
 
 ## Garuda / Linux first-run (released binary)
 
-**Primary target.** Download Actions → **Release** → artifact `tacx-desktop-linux-x64` (or a GitHub Release `tacx-desktop-linux-x64-v*.tar.gz`).
+**Primary target.** Prefer the **AppImage** from Actions → **Release** → `tacx-desktop-linux-x64` (or a GitHub Release). See [Installers (end users)](#installers-end-users) above.
 
 ```bash
-# BlueZ + runtime (Garuda / Arch)
+# BlueZ + runtime (Garuda / Arch) — once
 sudo pacman -S --needed bluez bluez-utils gtk3 libepoxy xz util-linux
 sudo systemctl enable --now bluetooth
 groups | grep -q bluetooth || { sudo usermod -aG bluetooth "$USER"; echo "Log out/in"; }
 
+# AppImage (recommended)
+chmod +x Tacx_Desktop-*-x86_64.AppImage && ./Tacx_Desktop-*-x86_64.AppImage
+
+# Or tar.gz + menu launcher
 mkdir -p ~/Apps && tar -xzf tacx-desktop-linux-x64-*.tar.gz -C ~/Apps
 cd ~/Apps/tacx-desktop
 chmod +x ./tacx_desktop
 ls lib | grep -i tacx_desktop_core    # must list the Rust cdylib
 ldd ./tacx_desktop | grep 'not found' || echo "ldd OK"
-
-# Run from the bundle dir so RPATH $ORIGIN/lib resolves libtacx_desktop_core
+./install.sh     # "Tacx Desktop" in the app menu; undo: ./uninstall.sh
 ./tacx_desktop
-# Optional: "Tacx Desktop" in the KDE/GNOME app menu (user-only, ~/.local); undo with ./uninstall.sh
-./install.sh
-# LD_LIBRARY_PATH fallback only if needed:
-#   export LD_LIBRARY_PATH="$PWD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # Wayland blank/crash: GDK_BACKEND=x11 ./tacx_desktop
 ```
 
-The tarball includes `FIRST_RUN.txt`. Full smoke: `./scripts/garuda_first_run_smoke.sh ~/Downloads/tacx-desktop-linux-x64-*.tar.gz`.
+Bundles include `FIRST_RUN.txt`. Full smoke: `./scripts/garuda_first_run_smoke.sh ~/Downloads/tacx-desktop-linux-x64-*.tar.gz`.
 
-**In app:** Demo ON → smoke UI (includes DEMO KICKR CORE) → Demo OFF → quit Zwift/Tacx/MyWhoosh/Wahoo → forget trainer in KDE BT → Scan (Tacx **or Kickr**) → Connect → ERG. Manual Connect must **not** freeze the UI (spinner/busy only).
+**In app:** Welcome → Connect. Demo OFF by default (turn ON only to try UI — DEMO-labeled stubs, never “Found N devices”). Quit Zwift/Tacx/MyWhoosh/Wahoo → forget trainer in KDE BT → Scan (Tacx **or Kickr**) → Connect → ERG. Manual Connect must **not** freeze the UI.
 
 ## Windows quickstart
 
@@ -120,7 +172,7 @@ The tarball includes `FIRST_RUN.txt`. Full smoke: `./scripts/garuda_first_run_sm
    ```
    Leave the red **DEMO** toggle on — try ERG, Resistance, Intervals, and Simulation (grade / wind / Crr / Cw) without a trainer.
 3. **Live trainer:** turn **Demo** off. Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad. In **Settings → Bluetooth**, **remove/forget** the trainer so it is **unpaired**. Power the trainer → **Scan** → **Connect**.
-4. **Release zip:** `flutter build windows --release` → zip `build\windows\x64\runner\Release\`, or `./scripts/build_release.sh windows`.
+4. **Release installer:** GitHub Actions → **Release** → `TacxDesktop-Setup-*.exe` (Inno; Start Menu + uninstaller). Or zip of `build\windows\x64\runner\Release\` / `./scripts/build_release.sh windows`.
 
 ## Requirements
 
@@ -222,7 +274,7 @@ flutter build windows --release  # → build/windows/x64/runner/Release/
 flutter build macos --release    # → build/macos/Build/Products/Release/tacx_desktop.app
 ```
 
-Ship the Linux `bundle/` folder as-is (includes `lib/` + the Rust **cdylib**). On Windows zip the `Release/` folder. On macOS distribute the `.app` (notarize for Gatekeeper if you ship outside your machine).
+Ship Linux as **AppImage** / **`.deb`** / tar.gz (`scripts/package_linux_*.sh`). Windows: **Inno Setup** `scripts/package_windows_installer.ps1` → `TacxDesktop-Setup-*.exe`, or zip `Release/`. macOS: distribute the `.app` (notarize for Gatekeeper if you ship outside your machine).
 
 ### flutter_rust_bridge / cdylib notes
 

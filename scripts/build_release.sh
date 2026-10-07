@@ -33,7 +33,8 @@ build_one() {
     linux)
       flutter build linux --release
       echo "Bundle: build/linux/x64/release/bundle/"
-      cp packaging/linux/FIRST_RUN.txt build/linux/x64/release/bundle/FIRST_RUN.txt
+      cp packaging/linux/FIRST_RUN.txt packaging/linux/install.sh packaging/linux/uninstall.sh          packaging/linux/com.nielsver.tacx_desktop.png build/linux/x64/release/bundle/
+      chmod +x build/linux/x64/release/bundle/install.sh build/linux/x64/release/bundle/uninstall.sh
       echo "Ship the whole bundle/ tree (RPATH \$ORIGIN/lib → libtacx_desktop_core)."
       echo "Garuda: see FIRST_RUN.txt / scripts/garuda_first_run_smoke.sh"
       ver="local-$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
@@ -41,14 +42,26 @@ build_one() {
       tar -C build/linux/x64/release -czf "$pkg" --transform 's,^bundle,tacx-desktop,' bundle
       echo "Tarball: $ROOT/$pkg"
       zip_dir "build/linux/x64/release/bundle" "tacx-desktop-linux-x64.zip" || true
+      # Optional local AppImage / .deb (skip if tools missing)
+      if command -v curl >/dev/null 2>&1; then
+        ./scripts/package_linux_appimage.sh build/linux/x64/release/bundle "$ver" "$ROOT" || \
+          echo "AppImage skipped (appimagetool/FUSE?)"
+      fi
+      if command -v dpkg-deb >/dev/null 2>&1; then
+        ./scripts/package_linux_deb.sh build/linux/x64/release/bundle "${ver#v}" "$ROOT" || \
+          echo ".deb skipped"
+      fi
       ;;
     windows)
       flutter build windows --release
       echo "Output: build/windows/x64/runner/Release/"
       echo "Bluetooth: leave trainers UNPAIRED in Windows Settings → Bluetooth."
       echo "Quit Zwift/Tacx/MyWhoosh before first Connect."
-      echo "CI alternative: Actions → 'Windows release' (workflow_dispatch) uploads a zip artifact."
+      echo "CI: Actions → Release builds zip + TacxDesktop-Setup-*.exe (Inno)."
       zip_dir "build/windows/x64/runner/Release" "tacx-desktop-windows-x64.zip" || true
+      if command -v pwsh >/dev/null 2>&1; then
+        pwsh -File ./scripts/package_windows_installer.ps1 || echo "Inno Setup skipped (install Inno Setup 6)"
+      fi
       ;;
     macos)
       flutter build macos --release

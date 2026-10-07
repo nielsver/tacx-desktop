@@ -1,6 +1,29 @@
 Tacx Desktop — Linux first-run (Garuda / Arch primary)
 ======================================================
 
+Pick one install path (AppImage is the easiest one-click on Garuda):
+
+A) AppImage (recommended — no root)
+   chmod +x Tacx_Desktop-*-x86_64.AppImage
+   ./Tacx_Desktop-*-x86_64.AppImage
+   # Optional: move to ~/Applications and add a menu entry via your DE,
+   # or keep using the AppImage launcher as-is.
+
+B) .deb (Debian/Ubuntu and some Arch helpers)
+   sudo pacman -S --needed debtap   # Garuda/Arch optional
+   # Debian/Ubuntu:
+   sudo apt install ./tacx-desktop_*_amd64.deb
+   # Then find "Tacx Desktop" in the app menu, or: tacx-desktop
+
+C) tar.gz + launcher (works everywhere BlueZ runs)
+   mkdir -p ~/Apps
+   tar -xzf tacx-desktop-linux-x64-*.tar.gz -C ~/Apps
+   cd ~/Apps/tacx-desktop
+   chmod +x ./tacx_desktop
+   ./install.sh          # adds "Tacx Desktop" to the KDE/GNOME menu (~/.local)
+   ./tacx_desktop        # or launch from the app menu
+   # Remove launcher: ./uninstall.sh
+
 1) BlueZ session (never sudo the app)
    sudo pacman -S --needed bluez bluez-utils bluez-libs gtk3 libepoxy xz util-linux
    sudo systemctl enable --now bluetooth
@@ -9,36 +32,22 @@ Tacx Desktop — Linux first-run (Garuda / Arch primary)
    bluetoothctl power on
    bluetoothctl show | grep -E 'Powered|Discovering'
 
-2) Extract the Release tar.gz (keep the whole tree)
-   mkdir -p ~/Apps
-   tar -xzf tacx-desktop-linux-x64-*.tar.gz -C ~/Apps
-   cd ~/Apps/tacx-desktop
-   chmod +x ./tacx_desktop
-   ls lib | grep -i tacx_desktop_core
-
-3) Runtime libs
-   ldd ./tacx_desktop | grep 'not found' || echo "ldd OK"
+2) Runtime libs (tar.gz / AppImage)
+   # AppImage is self-contained enough for most Garuda installs.
+   # tar.gz: ldd ./tacx_desktop | grep 'not found' || echo "ldd OK"
    # If anything is missing: sudo pacman -S gtk3 libepoxy xz util-linux
 
-4) Run from this directory (RPATH $ORIGIN/lib finds libtacx_desktop_core)
-   ./tacx_desktop
-   # Only if you see "error while loading shared libraries":
-   #   export LD_LIBRARY_PATH="$PWD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-   # Wayland blank/crash fallback:
-   #   GDK_BACKEND=x11 ./tacx_desktop
+3) Wayland blank/crash fallback
+   GDK_BACKEND=x11 ./Tacx_Desktop-*.AppImage
+   # or: GDK_BACKEND=x11 ./tacx_desktop
 
-   Optional: add "Tacx Desktop" to the KDE app menu (user-only, ~/.local):
-     ./install.sh        # remove again with ./uninstall.sh
+4) In-app
+   Welcome → Connect on first launch. Demo OFF by default.
+   Demo ON only to try UI (devices labeled DEMO — never shown as "found" trainers).
+   Quit Zwift/Tacx/MyWhoosh/Wahoo/Rouvy → forget trainer in KDE Bluetooth
+   (do NOT OS-pair) → Scan (Tacx or Kickr FTMS) → Connect → ERG.
+   Focus / game mode: press G (or header Focus). F11 fullscreen; Esc leaves fullscreen.
 
-5) In-app
-   Demo ON → ERG / Resistance / Intervals / Simulation (includes DEMO KICKR CORE)
-   Demo OFF → quit Zwift/Tacx/MyWhoosh/Wahoo/Rouvy → forget trainer in KDE Bluetooth
-   (do NOT OS-pair) → Scan (Tacx or Kickr FTMS) → Connect → ERG. UI must stay responsive while Connecting.
-
-Pitfalls: Soft-blocked rfkill; OS pairing; another app holding the link (busy/NOCTRL — quit Wahoo app too).
-Kickr ERG: allow 3–5 s to settle after Apply. Kickr Bike: Resistance panel stays disabled (ERG/Simulation only).
+Pitfalls: Soft-blocked rfkill; OS pairing; another app holding the link (busy/NOCTRL).
+Kickr ERG: allow 3–5 s to settle after Apply. Kickr Bike: Resistance panel stays disabled.
 Public FTMS only — no Wahoo proprietary a026* path.
-
-Focus / game mode: press G (or header Focus). F11 fullscreen; Esc leaves fullscreen.
-Effects Off by default; Subtle = soft power wash. KDE uses classic titlebar (dark-friendly).
-Wayland jank fallback: GDK_BACKEND=x11 ./tacx_desktop

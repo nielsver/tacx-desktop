@@ -19,7 +19,7 @@ void main() {
       (tester) async {
         await tester.binding.setSurfaceSize(size);
         addTearDown(() => tester.binding.setSurfaceSize(null));
-        await tester.pumpWidget(const TacxDesktopApp());
+        await tester.pumpWidget(const TacxDesktopApp(skipOnboarding: true));
         await tester.pump(const Duration(milliseconds: 100));
         await tester.runAsync(() async {
           api.setDemoMode(enabled: true);

@@ -2,8 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tacx_desktop/main.dart';
+import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
 import 'package:tacx_desktop/src/rust/frb_generated.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
+
+
+Future<void> _enableDemo(WidgetTester tester) async {
+  await tester.runAsync(() async {
+    api.setDemoMode(enabled: true);
+  });
+  await tester.pump(const Duration(milliseconds: 300));
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -16,8 +25,9 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1280, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const TacxDesktopApp());
+    await tester.pumpWidget(const TacxDesktopApp(skipOnboarding: true));
     await tester.pump(const Duration(milliseconds: 100));
+    await _enableDemo(tester);
 
     expect(find.text('ERG mode'), findsOneWidget);
     expect(find.text('Simulation'), findsOneWidget);
@@ -48,8 +58,9 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1280, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const TacxDesktopApp());
+    await tester.pumpWidget(const TacxDesktopApp(skipOnboarding: true));
     await tester.pump(const Duration(milliseconds: 100));
+    await _enableDemo(tester);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
     await tester.pumpAndSettle();

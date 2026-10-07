@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tacx_desktop/main.dart';
 import 'package:tacx_desktop/src/ride_prefs.dart';
+import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
 import 'package:tacx_desktop/src/rust/frb_generated.dart';
 
 void main() {
@@ -22,6 +23,7 @@ void main() {
       userWeightKg: 82,
       resAutoApply: false,
       demoMode: true,
+      welcomeSeen: true,
     );
     expect(await p.save(), isTrue);
     final back = await RidePrefs.load();
@@ -33,6 +35,11 @@ void main() {
     expect(back.userWeightKg, 82);
     expect(back.resAutoApply, isFalse);
     expect(back.demoMode, isTrue);
+    expect(back.welcomeSeen, isTrue);
+  });
+
+  test('RidePrefs defaults welcomeSeen OFF', () {
+    expect(const RidePrefs().welcomeSeen, isFalse);
   });
 
   test('RidePrefs defaults Demo OFF', () {
@@ -58,12 +65,17 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'ride.focusMode': true,
       'ride.ergTargetW': 230,
+      'ride.demoMode': true,
     });
     await tester.binding.setSurfaceSize(const Size(1280, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const TacxDesktopApp());
+    await tester.pumpWidget(const TacxDesktopApp(skipOnboarding: true));
     await tester.pump(const Duration(milliseconds: 100));
+    await tester.runAsync(() async {
+      api.setDemoMode(enabled: true);
+    });
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('focus-ride-view')), findsOneWidget);

@@ -8,7 +8,7 @@ import 'package:tacx_desktop/src/ui/ride_theme.dart';
 /// UX checklist P0-D1 (power reads first), P0-D2 (stack order) and
 /// P1-D4 (connected identity in header).
 Future<void> _connectDemo(WidgetTester tester) async {
-  await tester.pumpWidget(const TacxDesktopApp());
+  await tester.pumpWidget(const TacxDesktopApp(skipOnboarding: true));
   await tester.pump(const Duration(milliseconds: 100));
   await tester.runAsync(() async {
     api.setDemoMode(enabled: true);

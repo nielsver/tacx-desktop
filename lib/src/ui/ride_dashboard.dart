@@ -10,6 +10,8 @@ import 'package:tacx_desktop/src/ride_prefs.dart';
 import 'package:tacx_desktop/src/ui/focus_ride_view.dart';
 import 'package:tacx_desktop/src/ui/hr_strap_bar.dart';
 import 'package:tacx_desktop/src/ui/live_trend_chart.dart';
+import 'package:tacx_desktop/src/ui/bluetooth_tips.dart';
+import 'package:tacx_desktop/src/ui/mode_copy.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 import 'package:tacx_desktop/src/ui/window_chrome.dart';
 
@@ -434,6 +436,7 @@ class _RideDashboardState extends State<RideDashboard> {
     userWeightKg: _userWeightKg,
     resAutoApply: _resAutoApply,
     demoMode: _snap.isDemo,
+    welcomeSeen: true,
   );
 
   /// Debounced so slider drags / rapid −/+ taps write once.
@@ -465,7 +468,20 @@ class _RideDashboardState extends State<RideDashboard> {
     _savePrefsSoon();
   }
 
+  bool get _canRide =>
+      _snap.state == ConnectionState.connected || _snap.isDemo;
+
+  /// Focus chrome only when Focus is on and a trainer (or Demo) is available.
+  bool get _inFocus => _focusMode && _canRide;
+
   void _toggleFocusMode() {
+    if (!_focusMode && !_canRide) {
+      _toast(
+        'Connect a trainer or enable Demo',
+        Icons.link_off,
+      );
+      return;
+    }
     _setPref(() => _focusMode = !_focusMode);
   }
 
@@ -482,6 +498,10 @@ class _RideDashboardState extends State<RideDashboard> {
   }
 
   Future<void> _enterImmersive() async {
+    if (!_canRide) {
+      _toast('Connect a trainer or enable Demo', Icons.link_off);
+      return;
+    }
     _setPref(() => _focusMode = true);
     await WindowChrome.setFullScreen(true);
     if (mounted) setState(() {});
@@ -513,18 +533,25 @@ class _RideDashboardState extends State<RideDashboard> {
           body: SafeArea(
             child: Column(
               children: [
-                if (!_focusMode)
+                if (!_inFocus)
                   _Header(
                     snap: _snap,
                     demo: _snap.isDemo,
                     focusMode: _focusMode,
                     focusEffects: _focusEffects,
+                    canFocus: _canRide || _focusMode,
                     onFocusToggle: _toggleFocusMode,
-                    onImmersive: _enterImmersive,
+                    onImmersive: _canRide || _focusMode
+                        ? _enterImmersive
+                        : () => _toast(
+                              'Connect a trainer or enable Demo',
+                              Icons.link_off,
+                            ),
                     onFullScreen: _toggleFullScreen,
                     onEffectsChanged: (e) =>
                         _setPref(() => _focusEffects = e),
                     onDemoChanged: _setDemoMode,
+                    onShowModes: () => showModesDialog(context),
                   ),
             if (_btRadioBad)
               _StatusStrip(
@@ -597,7 +624,7 @@ class _RideDashboardState extends State<RideDashboard> {
                 ],
               ),
             Expanded(
-              child: _focusMode
+              child: _inFocus
                   ? ListenableBuilder(
                     listenable: Listenable.merge([_metricsN, _rideN]),
                     builder: (context, _) => FocusRideView(
@@ -1062,10 +1089,12 @@ class _Header extends StatelessWidget {
     required this.onDemoChanged,
     required this.focusMode,
     required this.focusEffects,
+    required this.canFocus,
     required this.onFocusToggle,
     required this.onImmersive,
     required this.onFullScreen,
     required this.onEffectsChanged,
+    required this.onShowModes,
   });
 
   final ConnectionSnapshot snap;
@@ -1073,10 +1102,12 @@ class _Header extends StatelessWidget {
   final ValueChanged<bool> onDemoChanged;
   final bool focusMode;
   final FocusEffects focusEffects;
+  final bool canFocus;
   final VoidCallback onFocusToggle;
   final VoidCallback onImmersive;
   final VoidCallback onFullScreen;
   final ValueChanged<FocusEffects> onEffectsChanged;
+  final VoidCallback onShowModes;
 
   @override
   Widget build(BuildContext context) {
@@ -1151,20 +1182,29 @@ class _Header extends StatelessWidget {
             ),
           const SizedBox(width: 8),
           Tooltip(
-            message: 'Focus mode (G) — immersive power view',
+            message: canFocus
+                ? 'Focus mode (G) — immersive power view'
+                : 'Connect a trainer or enable Demo',
             child: TextButton.icon(
               key: const ValueKey('header-focus'),
-              onPressed: onFocusToggle,
+              onPressed: canFocus ? onFocusToggle : null,
               icon: Icon(
                 focusMode ? Icons.fullscreen_exit : Icons.sports_esports,
-                color: Colors.white,
+                color: canFocus ? Colors.white : Colors.white38,
                 size: 20,
               ),
               label: Text(
                 focusMode ? 'Exit Focus' : 'Focus',
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(
+                  color: canFocus ? Colors.white : Colors.white38,
+                ),
               ),
             ),
+          ),
+          TextButton(
+            key: const ValueKey('header-modes'),
+            onPressed: onShowModes,
+            child: const Text('Modes', style: TextStyle(color: Colors.white70)),
           ),
           Tooltip(
             message: 'Immersive = Focus + fullscreen (F11)',
@@ -1605,27 +1645,7 @@ String _bleFootnote() {
   }
 }
 
-String _emptyScanBullets() {
-  switch (defaultTargetPlatform) {
-    case TargetPlatform.linux:
-      return '• Quit Zwift / Wahoo app / Tacx Training / MyWhoosh / TrainerRoad / Rouvy\n'
-          '• Wake the trainer and stand nearby\n'
-          '• rfkill unblock bluetooth; bluetoothctl power on\n'
-          '• Forget Kickr/Tacx in KDE Bluetooth — connect only in-app (no OS pair)';
-    case TargetPlatform.windows:
-      return '• Quit Zwift / Wahoo app / Tacx Training / MyWhoosh / TrainerRoad\n'
-          '• Wake the trainer and stand nearby\n'
-          '• Windows: leave Kickr/Tacx unpaired in Bluetooth settings';
-    case TargetPlatform.macOS:
-      return '• Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad\n'
-          '• Wake the trainer and stand nearby\n'
-          '• macOS: allow Bluetooth for Tacx Desktop; Forget device if OS-paired';
-    default:
-      return '• Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad\n'
-          '• Wake the trainer and stand nearby\n'
-          '• Leave the trainer unpaired in OS Bluetooth settings';
-  }
-}
+String _emptyScanBullets() => BluetoothTips.emptyScanText();
 
 class _EmptyScanPanel extends StatelessWidget {
   const _EmptyScanPanel({required this.onScanAgain});

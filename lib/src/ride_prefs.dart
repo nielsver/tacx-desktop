@@ -16,6 +16,7 @@ class RidePrefs {
     this.userWeightKg = 75,
     this.resAutoApply = true,
     this.demoMode = false,
+    this.welcomeSeen = false,
   });
 
   final bool focusMode;
@@ -27,6 +28,8 @@ class RidePrefs {
   /// Stub trainers for UI/dev without BLE. Default OFF so first-run Garuda
   /// scan only shows real Tacx / Kickr hardware.
   final bool demoMode;
+  /// First-run Welcome page has been dismissed (Connect trainer / Try Demo / Skip).
+  final bool welcomeSeen;
 
   static const _kFocus = 'ride.focusMode';
   static const _kEffects = 'ride.focusEffectsSubtle';
@@ -35,6 +38,7 @@ class RidePrefs {
   static const _kWeight = 'ride.userWeightKg';
   static const _kResAuto = 'ride.resAutoApply';
   static const _kDemo = 'ride.demoMode';
+  static const _kWelcome = 'ride.welcomeSeen';
 
   static const allowedSteps = [5, 10, 25];
 
@@ -50,6 +54,7 @@ class RidePrefs {
         : 75,
     resAutoApply: resAutoApply,
     demoMode: demoMode,
+    welcomeSeen: welcomeSeen,
   );
 
   static Future<RidePrefs?> load() async {
@@ -64,6 +69,7 @@ class RidePrefs {
         userWeightKg: p.getDouble(_kWeight) ?? d.userWeightKg,
         resAutoApply: p.getBool(_kResAuto) ?? d.resAutoApply,
         demoMode: p.getBool(_kDemo) ?? d.demoMode,
+        welcomeSeen: p.getBool(_kWelcome) ?? d.welcomeSeen,
       ).sanitized();
     } catch (_) {
       return null;
@@ -81,6 +87,7 @@ class RidePrefs {
       await p.setDouble(_kWeight, s.userWeightKg);
       await p.setBool(_kResAuto, s.resAutoApply);
       await p.setBool(_kDemo, s.demoMode);
+      await p.setBool(_kWelcome, s.welcomeSeen);
       return true;
     } catch (_) {
       return false;

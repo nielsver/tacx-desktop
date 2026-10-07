@@ -124,7 +124,7 @@ void main() {
   ) async {
     await tester.binding.setSurfaceSize(const Size(1280, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(const TacxDesktopApp());
+    await tester.pumpWidget(const TacxDesktopApp(skipOnboarding: true));
     await tester.pump(const Duration(milliseconds: 100));
     final ride = find.byKey(const ValueKey('ride-summary'));
     expect(ride, findsOneWidget);

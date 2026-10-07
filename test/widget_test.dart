@@ -27,7 +27,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const TacxDesktopApp());
+    await tester.pumpWidget(const TacxDesktopApp(skipOnboarding: true));
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.textContaining('Tacx Desktop'), findsOneWidget);
     expect(find.text('DEMO'), findsNothing);
@@ -46,7 +46,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const TacxDesktopApp());
+    await tester.pumpWidget(const TacxDesktopApp(skipOnboarding: true));
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pumpAndSettle();
 
@@ -79,7 +79,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const TacxDesktopApp());
+    await tester.pumpWidget(const TacxDesktopApp(skipOnboarding: true));
     await tester.pump(const Duration(milliseconds: 100));
     await _enableDemo(tester);
 
@@ -107,7 +107,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const TacxDesktopApp());
+    await tester.pumpWidget(const TacxDesktopApp(skipOnboarding: true));
     await tester.pump(const Duration(milliseconds: 100));
     await _enableDemo(tester);
 

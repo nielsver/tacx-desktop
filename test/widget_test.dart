@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tacx_desktop/main.dart';
+import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
 import 'package:tacx_desktop/src/rust/frb_generated.dart';
+
+Future<void> _enableDemo(WidgetTester tester) async {
+  await tester.runAsync(() async {
+    api.setDemoMode(enabled: true);
+  });
+  await tester.pump(const Duration(milliseconds: 300));
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -10,15 +19,19 @@ void main() {
     await RustLib.init();
   });
 
-  testWidgets('Ride dashboard loads in demo mode', (tester) async {
-    // Desktop-sized surface (default 800x600 overflows the control panels).
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('Ride dashboard loads with Demo OFF by default', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     await tester.pumpWidget(const TacxDesktopApp());
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.textContaining('Tacx Desktop'), findsOneWidget);
-    expect(find.text('DEMO'), findsOneWidget);
+    expect(find.text('DEMO'), findsNothing);
+    expect(find.byKey(const ValueKey('demo-switch')), findsOneWidget);
     expect(find.text('ERG mode'), findsOneWidget);
     expect(find.text('Resistance'), findsOneWidget);
     expect(find.text('Intervals'), findsOneWidget);
@@ -28,12 +41,47 @@ void main() {
       expect(find.byKey(ValueKey('erg-preset-$w')), findsOneWidget);
     }
   });
+
+  testWidgets('Demo switch toggles stub devices on and off', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(const TacxDesktopApp());
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+
+    expect(find.text('DEMO'), findsNothing);
+    final sw = find.byKey(const ValueKey('demo-switch'));
+    expect(tester.widget<Switch>(sw).value, isFalse);
+
+    await tester.tap(sw);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<Switch>(sw).value, isTrue);
+    expect(find.text('DEMO'), findsOneWidget);
+
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Scan'));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+    });
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.textContaining('Demo trainers'), findsOneWidget);
+    expect(find.textContaining('DEMO Tacx Neo'), findsWidgets);
+
+    await tester.tap(sw);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<Switch>(sw).value, isFalse);
+    expect(find.text('DEMO'), findsNothing);
+    expect(find.textContaining('DEMO Tacx Neo'), findsNothing);
+    expect(find.textContaining('Demo trainers'), findsNothing);
+  });
+
   testWidgets('ERG preset shows sent confirmation snackbar', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     await tester.pumpWidget(const TacxDesktopApp());
     await tester.pump(const Duration(milliseconds: 100));
+    await _enableDemo(tester);
 
     await tester.runAsync(() async {
       await tester.tap(find.text('Scan'));
@@ -61,6 +109,7 @@ void main() {
 
     await tester.pumpWidget(const TacxDesktopApp());
     await tester.pump(const Duration(milliseconds: 100));
+    await _enableDemo(tester);
 
     await tester.runAsync(() async {
       await tester.tap(find.text('Scan'));

@@ -1,4 +1,4 @@
-//! Global trainer controller: demo by default; live BLE via btleplug (FTMS → FE-C fallback).
+//! Global trainer controller: live BLE by default (FTMS → FE-C); optional Demo stubs.
 
 use crate::trainer::demo::DemoTrainer;
 use crate::trainer::fec;
@@ -41,9 +41,9 @@ pub fn ensure_runtime() {
     CONTROLLER.get_or_init(|| Arc::new(AsyncMutex::new(TrainerController::new_global())));
     PUBLISHED_SNAPSHOT.get_or_init(|| {
         Arc::new(Mutex::new(ConnectionSnapshot {
-            is_demo: true,
-            protocol: ProtocolKind::Demo,
-            detail: "Demo mode on".into(),
+            is_demo: false,
+            protocol: ProtocolKind::Ftms,
+            detail: "Live BLE — close Zwift / Wahoo app / Tacx Training / MyWhoosh first (exclusive control)".into(),
             ..Default::default()
         }))
     });
@@ -228,11 +228,12 @@ impl TrainerController {
 
     pub fn new() -> Self {
         Self {
-            demo_mode: true,
+            demo_mode: false,
             backend: Backend::Demo(DemoTrainer::new()),
             snapshot: ConnectionSnapshot {
-                is_demo: true,
-                protocol: ProtocolKind::Demo,
+                is_demo: false,
+                protocol: ProtocolKind::Ftms,
+                detail: "Live BLE — close Zwift / Wahoo app / Tacx Training / MyWhoosh first (exclusive control)".into(),
                 ..Default::default()
             },
             intervals: IntervalEngine::new(),
@@ -277,6 +278,12 @@ impl TrainerController {
     pub fn snapshot(&self) -> ConnectionSnapshot {
         match &self.backend {
             Backend::Demo(d) => {
+                // Demo backend is also the idle placeholder when live BLE is off.
+                // Always honor `demo_mode` so the Demo switch cannot snap back on
+                // after the rider turns it off (UI poll called this every 250 ms).
+                if !self.demo_mode {
+                    return self.snapshot.clone();
+                }
                 let mut s = d.snapshot.lock().clone();
                 s.is_demo = true;
                 s.protocol = ProtocolKind::Demo;
@@ -530,6 +537,7 @@ impl TrainerController {
             },
             ..Default::default()
         };
+        self.publish();
         Ok(())
     }
 
@@ -1098,6 +1106,11 @@ pub async fn scan_trainers_unlocked(timeout_ms: u32) -> Result<Vec<DiscoveredDev
     let mut g = ctrl.lock().await;
     match result {
         Ok(v) => {
+            // Never surface stub DEMO:* ids in a live BLE list.
+            let v: Vec<_> = v
+                .into_iter()
+                .filter(|d| !d.id.starts_with("DEMO:"))
+                .collect();
             g.snapshot.state = ConnectionState::Disconnected;
             g.snapshot.detail = format!("Found {} device(s)", v.len());
             publish_snapshot(&g.snapshot);
@@ -2077,6 +2090,22 @@ mod ui_poll_freeze_tests {
         let c = TrainerController::new();
         assert!(!c.publishes);
         assert!(TrainerController::new_global().publishes);
+    }
+
+    #[tokio::test]
+    async fn set_demo_mode_off_keeps_is_demo_false_in_snapshot() {
+        let mut c = TrainerController::new();
+        assert!(!c.is_demo(), "default must be live BLE (demo off)");
+        assert!(!c.snapshot().is_demo);
+        c.set_demo_mode(true).await;
+        assert!(c.is_demo());
+        assert!(c.snapshot().is_demo);
+        assert_eq!(c.snapshot().protocol, ProtocolKind::Demo);
+        c.set_demo_mode(false).await;
+        assert!(!c.is_demo());
+        let s = c.snapshot();
+        assert!(!s.is_demo, "toggle off must stick; was forced true by Demo backend");
+        assert_ne!(s.protocol, ProtocolKind::Demo);
     }
 
     #[tokio::test]

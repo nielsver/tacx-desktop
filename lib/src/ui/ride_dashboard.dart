@@ -47,11 +47,11 @@ class _RideDashboardState extends State<RideDashboard> {
   ConnectionSnapshot _snap = const ConnectionSnapshot(
     state: ConnectionState.disconnected,
     detail: '',
-    protocol: ProtocolKind.demo,
-    isDemo: true,
+    protocol: ProtocolKind.ftms,
+    isDemo: false,
     mode: ControlMode.idle,
     deviceName: '',
-    supportsSimulation: true,
+    supportsSimulation: false,
     reconnectAttempt: 0,
     reconnectMaxAttempts: 0,
     reconnectInS: 0,
@@ -123,11 +123,15 @@ class _RideDashboardState extends State<RideDashboard> {
   /// Zone wash / cadence pulse — off by default (P0-V3).
   FocusEffects _focusEffects = FocusEffects.off;
   Timer? _prefsSave;
+  /// Non-null once the rider (or a test) toggles Demo before prefs finish
+  /// loading — keeps async prefs from stomping the explicit choice.
+  bool? _demoUserChoice;
 
   @override
   void initState() {
     super.initState();
-    api.setDemoMode(enabled: true);
+    // Demo defaults OFF (Rust + prefs). Prefs may re-enable after load.
+    api.setDemoMode(enabled: false);
     _refresh();
     _checkBluetooth();
     _loadPrefs();
@@ -394,6 +398,8 @@ class _RideDashboardState extends State<RideDashboard> {
   Future<void> _loadPrefs() async {
     final p = await RidePrefs.load();
     if (p == null || !mounted) return;
+    final demo = _demoUserChoice ?? p.demoMode;
+    api.setDemoMode(enabled: demo);
     setState(() {
       _focusMode = p.focusMode;
       _focusEffects =
@@ -402,7 +408,14 @@ class _RideDashboardState extends State<RideDashboard> {
       _ergStep = p.ergStep;
       _userWeightKg = p.userWeightKg;
       _resAutoApply = p.resAutoApply;
+      if (!demo) {
+        _devices = [];
+        _selected = null;
+        _didScan = false;
+      }
     });
+    _refresh();
+    _checkBluetooth();
   }
 
   RidePrefs _currentPrefs() => RidePrefs(
@@ -412,6 +425,7 @@ class _RideDashboardState extends State<RideDashboard> {
     ergStep: _ergStep,
     userWeightKg: _userWeightKg,
     resAutoApply: _resAutoApply,
+    demoMode: _snap.isDemo,
   );
 
   /// Debounced so slider drags / rapid −/+ taps write once.
@@ -425,6 +439,21 @@ class _RideDashboardState extends State<RideDashboard> {
   /// setState + persist ride settings.
   void _setPref(VoidCallback fn) {
     setState(fn);
+    _savePrefsSoon();
+  }
+
+  /// Toggle Demo mode: clear any stub/live scan list, persist preference.
+  void _setDemoMode(bool enabled) {
+    _demoUserChoice = enabled;
+    api.setDemoMode(enabled: enabled);
+    setState(() {
+      _devices = [];
+      _selected = null;
+      _error = null;
+      _didScan = false;
+    });
+    _refresh();
+    _checkBluetooth();
     _savePrefsSoon();
   }
 
@@ -487,17 +516,7 @@ class _RideDashboardState extends State<RideDashboard> {
                     onFullScreen: _toggleFullScreen,
                     onEffectsChanged: (e) =>
                         _setPref(() => _focusEffects = e),
-                    onDemoChanged: (v) {
-                      api.setDemoMode(enabled: v);
-                      setState(() {
-                        _devices = [];
-                        _selected = null;
-                        _error = null;
-                        _didScan = false;
-                      });
-                      _refresh();
-                      _checkBluetooth();
-                    },
+                    onDemoChanged: _setDemoMode,
                   ),
             if (_btRadioBad)
               _StatusStrip(
@@ -514,11 +533,7 @@ class _RideDashboardState extends State<RideDashboard> {
                     ),
                   ),
                   TextButton(
-                    onPressed: () {
-                      api.setDemoMode(enabled: true);
-                      _refresh();
-                      _checkBluetooth();
-                    },
+                    onPressed: () => _setDemoMode(true),
                     child: const Text(
                       'Use demo',
                       style: TextStyle(color: Colors.white),
@@ -652,11 +667,7 @@ class _RideDashboardState extends State<RideDashboard> {
                           const SizedBox(height: 12),
                           _PermissionDeniedPanel(
                             onRetry: _checkBluetooth,
-                            onUseDemo: () {
-                              api.setDemoMode(enabled: true);
-                              _refresh();
-                              _checkBluetooth();
-                            },
+                            onUseDemo: () => _setDemoMode(true),
                           ),
                         ] else if (!_permissionDenied &&
                             !_btRadioBad &&
@@ -1184,7 +1195,11 @@ class _Header extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           const Text('Demo', style: TextStyle(color: Colors.white)),
-          Switch(value: demo, onChanged: onDemoChanged),
+          Switch(
+            key: const ValueKey('demo-switch'),
+            value: demo,
+            onChanged: onDemoChanged,
+          ),
         ],
       ),
     );
@@ -1313,7 +1328,11 @@ class _ConnectionBar extends StatelessWidget {
                         ? devices.firstWhere((d) => d.id == selected!.id)
                         : null,
                     isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Trainer'),
+                    decoration: InputDecoration(
+                      labelText: snap.isDemo
+                          ? 'Demo trainers (not real hardware)'
+                          : 'Trainer',
+                    ),
                     items: devices
                         .map(
                           (d) => DropdownMenuItem(
@@ -1483,7 +1502,7 @@ class _DeviceRow extends StatelessWidget {
     final chipColor = switch (hint) {
       'ftms' || 'kickr_ftms' => RideColors.accent,
       'tacx_fec' => RideColors.accentAlt,
-      'demo' => RideColors.accent,
+      'demo' => RideColors.demo,
       _ => RideColors.textMuted,
     };
     final n = bars(device.rssi);

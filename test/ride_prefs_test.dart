@@ -21,6 +21,7 @@ void main() {
       ergStep: 25,
       userWeightKg: 82,
       resAutoApply: false,
+      demoMode: true,
     );
     expect(await p.save(), isTrue);
     final back = await RidePrefs.load();
@@ -31,6 +32,12 @@ void main() {
     expect(back.ergStep, 25);
     expect(back.userWeightKg, 82);
     expect(back.resAutoApply, isFalse);
+    expect(back.demoMode, isTrue);
+  });
+
+  test('RidePrefs defaults Demo OFF', () {
+    const d = RidePrefs();
+    expect(d.demoMode, isFalse);
   });
 
   test('RidePrefs sanitizes stale or hand-edited values', () async {

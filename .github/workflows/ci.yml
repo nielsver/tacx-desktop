@@ -9,7 +9,7 @@ on:
 jobs:
   rust:
     name: Rust
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: rust
@@ -30,7 +30,7 @@ jobs:
 
   linux-packaging:
     name: Linux packaging scripts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install desktop-file-utils + shellcheck + dpkg
@@ -58,7 +58,7 @@ jobs:
 
   flutter:
     name: Flutter
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install BlueZ / D-Bus build deps

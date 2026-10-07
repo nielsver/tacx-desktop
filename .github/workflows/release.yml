@@ -193,7 +193,7 @@ jobs:
     if: >-
       always() && github.ref_type == 'tag' &&
       needs.windows.result == 'success' && needs.linux.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
         with:

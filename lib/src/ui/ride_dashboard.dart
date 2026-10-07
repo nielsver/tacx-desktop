@@ -15,6 +15,14 @@ import 'package:tacx_desktop/src/ui/window_chrome.dart';
 class RideDashboard extends StatefulWidget {
   const RideDashboard({super.key});
 
+  /// Full dashboard builds — tests assert live metric ticks don't bump it.
+  @visibleForTesting
+  static int debugBuilds = 0;
+
+  /// Metric-card rebuilds driven by the live metrics notifier.
+  @visibleForTesting
+  static int debugMetricsBuilds = 0;
+
   @override
   State<RideDashboard> createState() => _RideDashboardState();
 }
@@ -28,11 +36,14 @@ class _RideDashboardState extends State<RideDashboard> {
   final _scroll = ScrollController();
   List<DiscoveredDevice> _devices = [];
   DiscoveredDevice? _selected;
-  TrainerMetrics _metrics = const TrainerMetrics(
-    powerW: 0,
-    cadenceRpm: 0,
-    speedKmh: 0,
+  /// Live trainer metrics / ride totals change ~4x per second while riding.
+  /// They live in notifiers so only the metric cards, ride strip and Focus
+  /// view rebuild per tick — not the header, connection bar or control
+  /// panels (P0-P2 rebuild isolation).
+  final ValueNotifier<TrainerMetrics> _metricsN = ValueNotifier(
+    const TrainerMetrics(powerW: 0, cadenceRpm: 0, speedKmh: 0),
   );
+  TrainerMetrics get _metrics => _metricsN.value;
   ConnectionSnapshot _snap = const ConnectionSnapshot(
     state: ConnectionState.disconnected,
     detail: '',
@@ -58,18 +69,21 @@ class _RideDashboardState extends State<RideDashboard> {
     repeatIndex: 0,
     remainingS: 0,
   );
-  RideStats _ride = const RideStats(
-    elapsedS: 0,
-    movingS: 0,
-    avgPowerW: 0,
-    maxPowerW: 0,
-    avgCadenceRpm: 0,
-    energyKj: 0,
-    distanceKm: 0,
-    avgHeartRateBpm: 0,
-    maxHeartRateBpm: 0,
-    recording: false,
+  final ValueNotifier<RideStats> _rideN = ValueNotifier(
+    const RideStats(
+      elapsedS: 0,
+      movingS: 0,
+      avgPowerW: 0,
+      maxPowerW: 0,
+      avgCadenceRpm: 0,
+      energyKj: 0,
+      distanceKm: 0,
+      avgHeartRateBpm: 0,
+      maxHeartRateBpm: 0,
+      recording: false,
+    ),
   );
+  RideStats get _ride => _rideN.value;
   final _presets = api.listIntervalPresets();
 
   HrStrapStatus _strap = const HrStrapStatus(
@@ -131,6 +145,8 @@ class _RideDashboardState extends State<RideDashboard> {
       _currentPrefs().save();
     }
     _scroll.dispose();
+    _metricsN.dispose();
+    _rideN.dispose();
     super.dispose();
   }
 
@@ -144,23 +160,25 @@ class _RideDashboardState extends State<RideDashboard> {
     final ride = api.getRideStats();
     final strap = api.getHeartRateStrapStatus();
     final simExpand = snap.mode == ControlMode.simulation && !_simExpanded;
-    // P0-P2: skip the 250 ms rebuild of the whole dashboard (header,
-    // connection bar, controls) when the trainer reported nothing new —
-    // idle/disconnected/paused rides stay at zero rebuilds per poll.
+    // P0-P2: the whole dashboard (header, connection bar, controls) only
+    // rebuilds when connection/control state changes. Live power, cadence,
+    // speed, HR and ride totals go through notifiers, so a steady ride
+    // rebuilds just the metric cards / ride strip / Focus view each tick.
+    // The ERG panel shows the trainer's live target, so that one field
+    // still triggers a full rebuild.
     final changed = simExpand ||
-        metrics != _metrics ||
         snap != _snap ||
         resRange != _resRange ||
         interval != _interval ||
-        ride != _ride ||
-        strap != _strap;
+        strap != _strap ||
+        metrics.targetPowerW != _metrics.targetPowerW;
+    _metricsN.value = metrics;
+    _rideN.value = ride;
     if (changed) {
       setState(() {
-        _metrics = metrics;
         _snap = snap;
         _resRange = resRange;
         _interval = interval;
-        _ride = ride;
         _strap = strap;
         if (simExpand) _simExpanded = true;
       });
@@ -434,6 +452,7 @@ class _RideDashboardState extends State<RideDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    RideDashboard.debugBuilds++;
     final connected = _snap.state == ConnectionState.connected;
     final theme = Theme.of(context);
     final simSupported = _snap.supportsSimulation || _snap.isDemo;
@@ -556,7 +575,9 @@ class _RideDashboardState extends State<RideDashboard> {
               ),
             Expanded(
               child: _focusMode
-                  ? FocusRideView(
+                  ? ListenableBuilder(
+                    listenable: Listenable.merge([_metricsN, _rideN]),
+                    builder: (context, _) => FocusRideView(
                       key: const ValueKey('focus-ride-view'),
                       metrics: _metrics,
                       snap: _snap,
@@ -587,7 +608,8 @@ class _RideDashboardState extends State<RideDashboard> {
                         successIcon: Icons.bolt,
                       ),
                       onStepChanged: (s) => _setPref(() => _ergStep = s),
-                    )
+                    ),
+                  )
                   : Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                 child: LayoutBuilder(
@@ -646,16 +668,29 @@ class _RideDashboardState extends State<RideDashboard> {
                           _EmptyScanPanel(onScanAgain: _scan),
                         ],
                         const SizedBox(height: 12),
-                        _MetricsRow(metrics: _metrics, snap: _snap),
+                        RepaintBoundary(
+                          child: ValueListenableBuilder<TrainerMetrics>(
+                            valueListenable: _metricsN,
+                            builder: (context, m, _) {
+                              RideDashboard.debugMetricsBuilds++;
+                              return _MetricsRow(metrics: m, snap: _snap);
+                            },
+                          ),
+                        ),
                         const SizedBox(height: 8),
-                        RideSummaryStrip(
-                          key: const ValueKey('ride-summary'),
-                          stats: _ride,
-                          onReset: () {
-                            api.resetRideStats();
-                            _refresh();
-                          },
-                          onExport: _exportRide,
+                        RepaintBoundary(
+                          child: ValueListenableBuilder<RideStats>(
+                            valueListenable: _rideN,
+                            builder: (context, r, _) => RideSummaryStrip(
+                              key: const ValueKey('ride-summary'),
+                              stats: r,
+                              onReset: () {
+                                api.resetRideStats();
+                                _refresh();
+                              },
+                              onExport: _exportRide,
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 8),
                         HeartRateStrapBar(

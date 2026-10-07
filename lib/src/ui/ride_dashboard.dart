@@ -555,9 +555,7 @@ class _RideDashboardState extends State<RideDashboard> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Only one BLE client can control the trainer. Close Zwift / Tacx Training / '
-                          'MyWhoosh / TrainerRoad before connecting. Windows: leave the trainer unpaired '
-                          'in OS Bluetooth settings.',
+                          _bleFootnote(),
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: RideColors.textMuted,
                             fontSize: RideType.footnote,
@@ -1178,6 +1176,48 @@ class _SignalBars extends StatelessWidget {
   }
 }
 
+
+String _bleFootnote() {
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.linux:
+      return 'Only one BLE client can control the trainer. Quit Zwift / Tacx Training / '
+          'MyWhoosh / TrainerRoad / Rouvy. Linux: forget the trainer in KDE/Plasma Bluetooth '
+          '(do not OS-pair) — connect only in-app. Never run with sudo.';
+    case TargetPlatform.windows:
+      return 'Only one BLE client can control the trainer. Close Zwift / Tacx Training / '
+          'MyWhoosh / TrainerRoad before connecting. Windows: leave the trainer unpaired '
+          'in OS Bluetooth settings.';
+    case TargetPlatform.macOS:
+      return 'Only one BLE client can control the trainer. Quit other apps first. '
+          'Prefer Connect in-app; Forget This Device in macOS Bluetooth if control fails after OS pairing.';
+    default:
+      return 'Only one BLE client can control the trainer. Quit Zwift / Tacx Training / '
+          'MyWhoosh / TrainerRoad before connecting.';
+  }
+}
+
+String _emptyScanBullets() {
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.linux:
+      return '• Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad / Rouvy\n'
+          '• Wake the trainer and stand nearby\n'
+          '• rfkill unblock bluetooth; bluetoothctl power on\n'
+          '• Forget trainer in KDE Bluetooth — connect only in-app (no OS pair)';
+    case TargetPlatform.windows:
+      return '• Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad\n'
+          '• Wake the trainer and stand nearby\n'
+          '• Windows: leave the trainer unpaired in Bluetooth settings';
+    case TargetPlatform.macOS:
+      return '• Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad\n'
+          '• Wake the trainer and stand nearby\n'
+          '• macOS: allow Bluetooth for Tacx Desktop; Forget device if OS-paired';
+    default:
+      return '• Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad\n'
+          '• Wake the trainer and stand nearby\n'
+          '• Leave the trainer unpaired in OS Bluetooth settings';
+  }
+}
+
 class _EmptyScanPanel extends StatelessWidget {
   const _EmptyScanPanel({required this.onScanAgain});
   final VoidCallback onScanAgain;
@@ -1217,11 +1257,9 @@ class _EmptyScanPanel extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    '• Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad\n'
-                    '• Wake the trainer and stand nearby\n'
-                    '• Windows: leave the trainer unpaired in Bluetooth settings',
-                    style: TextStyle(
+                  Text(
+                    _emptyScanBullets(),
+                    style: const TextStyle(
                       fontSize: RideType.label,
                       height: 1.45,
                       color: RideColors.textSecondary,
@@ -1260,7 +1298,9 @@ class _PermissionDeniedPanel extends StatelessWidget {
       TargetPlatform.windows =>
         'Windows: Settings → Bluetooth & devices → ensure Bluetooth is on and app access is allowed.',
       TargetPlatform.linux =>
-        'Linux: BlueZ running, D-Bus user session active, user in the bluetooth group.',
+        'Garuda/Arch: pacman -S bluez bluez-utils; systemctl enable --now bluetooth; '
+            'usermod -aG bluetooth \$USER (log out/in); rfkill unblock bluetooth; '
+            'bluetoothctl power on. Run as normal user — never sudo. Plasma session D-Bus required.',
       _ =>
         'Allow Bluetooth permission for Tacx Desktop in your OS privacy settings.',
     };

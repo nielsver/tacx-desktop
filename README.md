@@ -32,11 +32,11 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 
 | OS | Status | Notes |
 | --- | --- | --- |
-| **Windows** | Supported | Bleak/btleplug WinRT BLE; build with Visual Studio + Flutter Windows desktop |
-| **Linux** | Supported | Needs **BlueZ** + D-Bus; portable binary via `flutter build linux` |
-| **macOS** | Supported | Enable **Bluetooth** permission for the app (entitlements included) |
+| **Linux (Garuda / Arch primary)** | **Primary perfect-working target** | **BlueZ** + D-Bus; Release `tacx-desktop-linux-x64` tar.gz; see [Garuda / Linux first-run](#garuda--linux-first-run-released-binary) |
+| **Windows** | Supported | WinRT BLE; leave trainer **unpaired** in OS Settings |
+| **macOS** | Supported | TCC Bluetooth; entitlements included (not notarized in CI) |
 
-“All distros” on Linux means: a portable Flutter Linux binary **or** `flutter run -d linux` / source build on common distros with BlueZ. We do not ship every distro’s native `.deb`/`.rpm` packager.
+Portable Linux binary works on BlueZ distros (Garuda, Arch, Fedora, Debian/Ubuntu). We do not ship every distro’s native `.deb`/`.rpm`.
 
 
 
@@ -56,7 +56,35 @@ Run `flutter doctor -v` after installing the toolchain. You want these green bef
 
 **Demo-first path:** `flutter pub get` → `flutter run -d windows` (or `linux` / `macos`) → leave **DEMO** on → exercise ERG / Resistance / Intervals / Simulation. Then Demo **off** for live BLE (quit other apps; Windows: forget OS pairing).
 
-**Release without a local toolchain:** GitHub Actions → **Release** → *Run workflow* (manual) builds `tacx-desktop-windows-x64` (zip), `tacx-desktop-linux-x64` (tar.gz) and `tacx-desktop-macos` (zipped `.app`, ad-hoc signed, not notarized) artifacts; a `v*` tag also attaches all three to a GitHub Release. Local: `./scripts/build_release.sh windows`.
+**Release without a local toolchain:** GitHub Actions → **Release** → *Run workflow* (manual) builds `tacx-desktop-windows-x64` (zip), `tacx-desktop-linux-x64` (tar.gz) and `tacx-desktop-macos` (zipped `.app`, ad-hoc signed, not notarized) artifacts; a `v*` tag also attaches all three to a GitHub Release. Local: `./scripts/build_release.sh linux` (Garuda primary) or `windows` / `macos`.
+
+
+## Garuda / Linux first-run (released binary)
+
+**Primary target.** Download Actions → **Release** → artifact `tacx-desktop-linux-x64` (or a GitHub Release `tacx-desktop-linux-x64-v*.tar.gz`).
+
+```bash
+# BlueZ + runtime (Garuda / Arch)
+sudo pacman -S --needed bluez bluez-utils gtk3 libepoxy xz util-linux
+sudo systemctl enable --now bluetooth
+groups | grep -q bluetooth || { sudo usermod -aG bluetooth "$USER"; echo "Log out/in"; }
+
+mkdir -p ~/Apps && tar -xzf tacx-desktop-linux-x64-*.tar.gz -C ~/Apps
+cd ~/Apps/tacx-desktop
+chmod +x ./tacx_desktop
+ls lib | grep -i tacx_desktop_core    # must list the Rust cdylib
+ldd ./tacx_desktop | grep 'not found' || echo "ldd OK"
+
+# Run from the bundle dir so RPATH $ORIGIN/lib resolves libtacx_desktop_core
+./tacx_desktop
+# LD_LIBRARY_PATH fallback only if needed:
+#   export LD_LIBRARY_PATH="$PWD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# Wayland blank/crash: GDK_BACKEND=x11 ./tacx_desktop
+```
+
+The tarball includes `FIRST_RUN.txt`. Full smoke: `./scripts/garuda_first_run_smoke.sh ~/Downloads/tacx-desktop-linux-x64-*.tar.gz`.
+
+**In app:** Demo ON → smoke UI → Demo OFF → quit Zwift/Tacx/MyWhoosh → forget trainer in KDE BT → Scan → Connect → ERG. Manual Connect must **not** freeze the UI (spinner/busy only).
 
 ## Windows quickstart
 
@@ -81,18 +109,22 @@ Run `flutter doctor -v` after installing the toolchain. You want these green bef
    - Zwift, Tacx Training / Tacx Desktop, MyWhoosh, Rouvy, TrainerRoad, etc.
    - Only one BLE client can typically control FTMS / Tacx FE-C at a time.
 
-### Linux (BlueZ)
+### Linux (BlueZ) — Garuda / Arch
 
 ```bash
-# Debian/Ubuntu/Fedora-family examples — package names vary
-sudo apt install bluez bluetooth libdbus-1-dev
-# Ensure your user can use Bluetooth (often group `bluetooth` or via polkit)
+sudo pacman -S --needed bluez bluez-utils bluez-libs gtk3 libepoxy xz util-linux
+sudo systemctl enable --now bluetooth
+# Debian/Ubuntu: sudo apt install bluez bluetooth libgtk-3-0 …
 sudo usermod -aG bluetooth "$USER"   # then log out/in
-systemctl --user status  # D-Bus session must be active for desktop BLE
+rfkill unblock bluetooth 2>/dev/null || true
+bluetoothctl power on
+# D-Bus session must be active (Plasma/SDDM login — not a raw tty without session bus)
 ```
 
+- Run as a **normal user** (**never `sudo`** the app).
 - Keep the scan filter **empty** (this app post-filters by FTMS UUID / Tacx-like names). BlueZ UUID filters are unioned across D-Bus clients and can hide FE-C-only trainers.
-- Run as a normal user (no `sudo`); if scan fails, check `bluetoothctl show` and group membership.
+- **Forget OS pairing** in KDE/Plasma Bluetooth — connect **only** in-app.
+- Automated checks: `./scripts/garuda_first_run_smoke.sh [tar.gz]`
 
 ### macOS (TCC + entitlements)
 
@@ -163,7 +195,7 @@ Ship the Linux `bundle/` folder as-is (includes `lib/` + the Rust **cdylib**). O
 - Linux runners / local: ensure `LD_LIBRARY_PATH` includes `rust/target/debug` (or release) when loading the native lib outside a full Flutter bundle — see `scripts/test_all.sh`.
 
 
-## Windows build, run & release (primary desktop target)
+## Windows build, run & release
 
 ### Day-to-day
 

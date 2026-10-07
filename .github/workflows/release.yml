@@ -86,9 +86,12 @@ jobs:
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then ver="$GITHUB_REF_NAME"; else ver="main-${GITHUB_SHA::7}"; fi
           pkg="tacx-desktop-linux-x64-$ver.tar.gz"
+          cp packaging/linux/FIRST_RUN.txt build/linux/x64/release/bundle/FIRST_RUN.txt
           tar -C build/linux/x64/release -czf "$pkg" --transform 's,^bundle,tacx-desktop,' bundle
           echo "PKG=$pkg" >> "$GITHUB_ENV"
-          tar -tzf "$pkg" | head -20
+          tar -tzf "$pkg" | head -30
+          tar -tzf "$pkg" | grep -q FIRST_RUN.txt \
+            || { echo "::error::FIRST_RUN.txt missing from Linux tarball"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: tacx-desktop-linux-x64

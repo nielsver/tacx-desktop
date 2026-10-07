@@ -28,10 +28,75 @@ use tokio::sync::Notify;
 
 static RUNTIME: OnceCell<Runtime> = OnceCell::new();
 static CONTROLLER: OnceCell<Arc<AsyncMutex<TrainerController>>> = OnceCell::new();
+/// Last connection snapshot published for sync UI polls. Updated whenever the
+/// controller mutates connection state; read via [`try_snapshot`] so Flutter's
+/// 250 ms timer never blocks behind a long BlueZ connect/scan holding the
+/// async mutex (manual Connect freeze on Linux).
+static PUBLISHED_SNAPSHOT: OnceCell<Arc<Mutex<ConnectionSnapshot>>> = OnceCell::new();
 
 pub fn ensure_runtime() {
     RUNTIME.get_or_init(|| Runtime::new().expect("tokio runtime"));
     CONTROLLER.get_or_init(|| Arc::new(AsyncMutex::new(TrainerController::new())));
+    PUBLISHED_SNAPSHOT.get_or_init(|| {
+        Arc::new(Mutex::new(ConnectionSnapshot {
+            is_demo: true,
+            protocol: ProtocolKind::Demo,
+            detail: "Demo mode on".into(),
+            ..Default::default()
+        }))
+    });
+}
+
+fn publish_snapshot(s: &ConnectionSnapshot) {
+    ensure_runtime();
+    *PUBLISHED_SNAPSHOT.get().unwrap().lock() = s.clone();
+}
+
+/// Non-blocking snapshot for sync FRB getters. Prefer live controller state;
+/// if the async mutex is held (scan/connect in flight), return the last
+/// published copy so the Flutter UI isolate stays responsive.
+pub fn try_snapshot() -> ConnectionSnapshot {
+    ensure_runtime();
+    match CONTROLLER.get().unwrap().try_lock() {
+        Ok(g) => {
+            let s = g.snapshot();
+            publish_snapshot(&s);
+            s
+        }
+        Err(_) => PUBLISHED_SNAPSHOT.get().unwrap().lock().clone(),
+    }
+}
+
+pub fn try_metrics() -> TrainerMetrics {
+    ensure_runtime();
+    match CONTROLLER.get().unwrap().try_lock() {
+        Ok(g) => g.metrics(),
+        Err(_) => TrainerMetrics::default(),
+    }
+}
+
+pub fn try_resistance_range() -> ResistanceRange {
+    ensure_runtime();
+    match CONTROLLER.get().unwrap().try_lock() {
+        Ok(g) => g.resistance_range(),
+        Err(_) => ResistanceRange::default(),
+    }
+}
+
+pub fn try_power_range() -> PowerRange {
+    ensure_runtime();
+    match CONTROLLER.get().unwrap().try_lock() {
+        Ok(g) => g.power_range(),
+        Err(_) => PowerRange::default(),
+    }
+}
+
+pub fn try_interval_status() -> IntervalStatus {
+    ensure_runtime();
+    match CONTROLLER.get().unwrap().try_lock() {
+        Ok(g) => g.interval_status(),
+        Err(_) => IntervalStatus::default(),
+    }
 }
 
 pub fn runtime() -> &'static Runtime {
@@ -47,6 +112,13 @@ pub fn controller() -> Arc<AsyncMutex<TrainerController>> {
 enum Backend {
     Demo(DemoTrainer),
     Ble(BleSession),
+}
+
+/// Result of [`TrainerController::prepare_connect`]: either finished (demo) or
+/// ready for an unlocked `connect_ble` call.
+enum ConnectPrep {
+    Done,
+    Ble(String),
 }
 
 struct BleSession {
@@ -143,6 +215,7 @@ impl TrainerController {
             },
             ..Default::default()
         };
+        publish_snapshot(&self.snapshot);
     }
 
     pub fn is_demo(&self) -> bool {
@@ -250,6 +323,8 @@ impl TrainerController {
     }
 
     pub async fn scan(&mut self, timeout_ms: u32) -> Result<Vec<DiscoveredDevice>, String> {
+        // Prefer [`scan_trainers_unlocked`] from the API so BlueZ scan does not
+        // hold the controller mutex (UI freeze). Kept for demo / internal use.
         if self.demo_mode {
             self.backend = Backend::Demo(DemoTrainer::new());
             if let Backend::Demo(d) = &self.backend {
@@ -258,22 +333,27 @@ impl TrainerController {
         }
         self.snapshot.state = ConnectionState::Scanning;
         self.snapshot.detail = "Scanning for FTMS / Tacx FE-C…".into();
+        publish_snapshot(&self.snapshot);
         match scan_ble(timeout_ms).await {
             Ok(v) => {
                 self.snapshot.state = ConnectionState::Disconnected;
                 self.snapshot.detail = format!("Found {} device(s)", v.len());
+                publish_snapshot(&self.snapshot);
                 Ok(v)
             }
             Err(e) => {
                 let msg = friendly_ble_error(&e);
                 self.snapshot.state = ConnectionState::Error;
                 self.snapshot.detail = msg.clone();
+                publish_snapshot(&self.snapshot);
                 Err(msg)
             }
         }
     }
 
     pub async fn connect(&mut self, device_id: Option<String>) -> Result<(), String> {
+        // Prefer [`connect_trainer_unlocked`] — this path still holds the mutex
+        // for the whole BLE handshake (legacy / tests).
         self.connect_inner(device_id, false).await
     }
 
@@ -282,7 +362,30 @@ impl TrainerController {
         device_id: Option<String>,
         preserve_intervals: bool,
     ) -> Result<(), String> {
-        // A manual connect supersedes any pending automatic reconnect.
+        match self.prepare_connect(device_id, preserve_intervals).await? {
+            ConnectPrep::Done => Ok(()),
+            ConnectPrep::Ble(id) => {
+                // Holding &mut self: callers that care about UI responsiveness
+                // must use connect_trainer_unlocked instead.
+                match connect_ble(&id).await {
+                    Ok(session) => {
+                        self.install_ble_session(session, id);
+                        Ok(())
+                    }
+                    Err(e) => Err(self.fail_connect(e)),
+                }
+            }
+        }
+    }
+
+    /// Prepare a connect: cancel auto-reconnect, start demo tick or mark
+    /// Connecting. Returns [`ConnectPrep::Ble`] so the caller can run
+    /// `connect_ble` **without** holding the controller mutex.
+    async fn prepare_connect(
+        &mut self,
+        device_id: Option<String>,
+        preserve_intervals: bool,
+    ) -> Result<ConnectPrep, String> {
         self.cancel_auto_reconnect();
         if !preserve_intervals {
             self.stop_interval();
@@ -298,6 +401,7 @@ impl TrainerController {
                 d.connect(device_id).await?;
                 self.snapshot = d.snapshot.lock().clone();
                 self.last_device_id = id.or_else(|| Some(self.snapshot.device_name.clone()));
+                publish_snapshot(&self.snapshot);
             }
             let ctrl = controller();
             self.demo_tick_handle = Some(tokio::spawn(async move {
@@ -314,7 +418,7 @@ impl TrainerController {
                     }
                 }
             }));
-            return Ok(());
+            return Ok(ConnectPrep::Done);
         }
 
         let id = device_id
@@ -322,26 +426,29 @@ impl TrainerController {
         self.snapshot.state = ConnectionState::Connecting;
         self.snapshot.detail = format!("Connecting to {id}…");
         self.snapshot.is_demo = false;
+        publish_snapshot(&self.snapshot);
+        Ok(ConnectPrep::Ble(id))
+    }
 
-        match connect_ble(&id).await {
-            Ok(session) => {
-                self.snapshot.state = ConnectionState::Connected;
-                self.snapshot.detail = session.device_name.clone();
-                self.snapshot.device_name = session.device_name.clone();
-                self.snapshot.protocol = session.protocol;
-                self.snapshot.mode = ControlMode::Idle;
-                self.last_device_id = Some(id.clone());
-                self.backend = Backend::Ble(session);
-                self.arm_link_watch();
-                Ok(())
-            }
-            Err(e) => {
-                let msg = friendly_ble_error(&e);
-                self.snapshot.state = ConnectionState::Error;
-                self.snapshot.detail = msg.clone();
-                Err(msg)
-            }
-        }
+    fn install_ble_session(&mut self, session: BleSession, id: String) {
+        self.snapshot.state = ConnectionState::Connected;
+        self.snapshot.detail = session.device_name.clone();
+        self.snapshot.device_name = session.device_name.clone();
+        self.snapshot.protocol = session.protocol;
+        self.snapshot.mode = ControlMode::Idle;
+        self.snapshot.supports_simulation = session.simulation_supported;
+        self.last_device_id = Some(id);
+        self.backend = Backend::Ble(session);
+        publish_snapshot(&self.snapshot);
+        self.arm_link_watch();
+    }
+
+    fn fail_connect(&mut self, e: String) -> String {
+        let msg = friendly_ble_error(&e);
+        self.snapshot.state = ConnectionState::Error;
+        self.snapshot.detail = msg.clone();
+        publish_snapshot(&self.snapshot);
+        msg
     }
 
     pub async fn disconnect(&mut self) -> Result<(), String> {
@@ -771,7 +878,10 @@ impl TrainerController {
         Ok(())
     }
 
-    pub async fn reconnect(&mut self) -> Result<(), String> {
+    /// Tear down the current BLE link (keep interval engine) and return the
+    /// device id + whether to restore control after reconnect. Used by
+    /// [`reconnect_trainer_unlocked`].
+    async fn prepare_manual_reconnect(&mut self) -> Result<(String, Option<ResumeTarget>, bool), String> {
         let id = self
             .last_device_id
             .clone()
@@ -779,12 +889,21 @@ impl TrainerController {
         self.cancel_auto_reconnect();
         let resume = self.resume_target();
         let preserve = self.intervals.status().running || resume.is_some();
-        // Drop existing BLE session without aborting an active interval preset.
         if let Backend::Ble(b) = &self.backend {
             b.alive.store(false, Ordering::SeqCst);
             let _ = b.peripheral.disconnect().await;
         }
         self.backend = Backend::Demo(DemoTrainer::new());
+        self.snapshot.state = ConnectionState::Connecting;
+        self.snapshot.detail = format!("Reconnecting to {id}…");
+        self.snapshot.is_demo = false;
+        publish_snapshot(&self.snapshot);
+        Ok((id, resume, preserve))
+    }
+
+    pub async fn reconnect(&mut self) -> Result<(), String> {
+        // Legacy path (holds mutex). Prefer reconnect_trainer_unlocked.
+        let (id, resume, preserve) = self.prepare_manual_reconnect().await?;
         self.connect_inner(Some(id), preserve).await?;
         if let Some(t) = resume {
             self.apply_resume_target(t).await?;
@@ -897,35 +1016,185 @@ impl TrainerController {
     }
 }
 
+/// Scan without holding the controller mutex during BlueZ discovery (UI stays
+/// responsive; sync FRB polls use [`try_snapshot`]).
+pub async fn scan_trainers_unlocked(timeout_ms: u32) -> Result<Vec<DiscoveredDevice>, String> {
+    let ctrl = controller();
+    let demo = {
+        let mut g = ctrl.lock().await;
+        if g.demo_mode {
+            g.backend = Backend::Demo(DemoTrainer::new());
+            if let Backend::Demo(d) = &g.backend {
+                return Ok(d.scan().await);
+            }
+        }
+        g.snapshot.state = ConnectionState::Scanning;
+        g.snapshot.detail = "Scanning for FTMS / Tacx FE-C…".into();
+        publish_snapshot(&g.snapshot);
+        false
+    };
+    let _ = demo;
+    let result = scan_ble(timeout_ms).await;
+    let mut g = ctrl.lock().await;
+    match result {
+        Ok(v) => {
+            g.snapshot.state = ConnectionState::Disconnected;
+            g.snapshot.detail = format!("Found {} device(s)", v.len());
+            publish_snapshot(&g.snapshot);
+            Ok(v)
+        }
+        Err(e) => {
+            let msg = friendly_ble_error(&e);
+            g.snapshot.state = ConnectionState::Error;
+            g.snapshot.detail = msg.clone();
+            publish_snapshot(&g.snapshot);
+            Err(msg)
+        }
+    }
+}
+
+/// Connect without holding the controller mutex during BlueZ GATT handshake.
+/// Fixes Manual Connect freezing the Flutter UI on Linux (poll timer blocked
+/// on sync `get_connection_snapshot` while the async mutex was held).
+pub async fn connect_trainer_unlocked(device_id: Option<String>) -> Result<(), String> {
+    let ctrl = controller();
+    let prep = {
+        let mut g = ctrl.lock().await;
+        g.prepare_connect(device_id, false).await?
+    };
+    match prep {
+        ConnectPrep::Done => Ok(()),
+        ConnectPrep::Ble(id) => {
+            let result = connect_ble(&id).await;
+            let mut g = ctrl.lock().await;
+            match result {
+                Ok(session) => {
+                    g.install_ble_session(session, id);
+                    Ok(())
+                }
+                Err(e) => Err(g.fail_connect(e)),
+            }
+        }
+    }
+}
+
+/// Manual Reconnect with the same unlocked BlueZ pattern as connect.
+pub async fn reconnect_trainer_unlocked() -> Result<(), String> {
+    let ctrl = controller();
+    let (id, resume, preserve) = {
+        let mut g = ctrl.lock().await;
+        g.prepare_manual_reconnect().await?
+    };
+    let prep = {
+        let mut g = ctrl.lock().await;
+        // prepare_connect after tear-down; preserve intervals when needed.
+        g.prepare_connect(Some(id), preserve).await?
+    };
+    match prep {
+        ConnectPrep::Done => Ok(()),
+        ConnectPrep::Ble(id) => {
+            let result = connect_ble(&id).await;
+            let mut g = ctrl.lock().await;
+            match result {
+                Ok(session) => {
+                    g.install_ble_session(session, id);
+                    if let Some(t) = resume {
+                        g.apply_resume_target(t).await?;
+                    }
+                    Ok(())
+                }
+                Err(e) => Err(g.fail_connect(e)),
+            }
+        }
+    }
+}
+
 fn friendly_ble_error(err: &str) -> String {
     let lower = err.to_lowercase();
     if lower.contains("busy") || lower.contains("in use") || lower.contains("already") {
         return format!(
-            "Trainer busy or already connected elsewhere. Close Zwift / Tacx Training / MyWhoosh / TrainerRoad and retry. ({err})"
+            "Trainer busy or already connected elsewhere. Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad / Rouvy and retry. ({err})"
         );
     }
     if lower.contains("permission")
         || lower.contains("not authorized")
         || lower.contains("tcc")
         || lower.contains("denied")
+        || lower.contains("org.bluez")
+        || lower.contains("access denied")
     {
-        return format!(
-            "Bluetooth permission denied. macOS: System Settings → Privacy & Security → Bluetooth → allow Tacx Desktop (TCC). Linux: BlueZ + D-Bus session, user in `bluetooth` group. Windows: enable Bluetooth in Settings. ({err})"
-        );
+        #[cfg(target_os = "linux")]
+        {
+            return format!(
+                "Bluetooth access denied. Garuda/Arch: install bluez bluez-utils; `systemctl enable --now bluetooth`; add yourself to the `bluetooth` group (then log out/in); ensure a D-Bus user session (Plasma login, never sudo the app); check polkit if prompted. ({err})"
+            );
+        }
+        #[cfg(target_os = "macos")]
+        {
+            return format!(
+                "Bluetooth permission denied. System Settings → Privacy & Security → Bluetooth → allow Tacx Desktop (TCC). ({err})"
+            );
+        }
+        #[cfg(target_os = "windows")]
+        {
+            return format!(
+                "Bluetooth permission denied. Settings → Bluetooth & devices: turn Bluetooth on and allow app access. ({err})"
+            );
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        {
+            return format!("Bluetooth permission denied. ({err})");
+        }
     }
-    if lower.contains("adapter") || lower.contains("no bluetooth") || lower.contains("powered off") {
-        return format!(
-            "No Bluetooth adapter / radio off. Enable Bluetooth (BlueZ on Linux; Windows Settings → Bluetooth; macOS menu bar Bluetooth). ({err})"
-        );
+    if lower.contains("adapter")
+        || lower.contains("no bluetooth")
+        || lower.contains("powered off")
+        || lower.contains("rfkill")
+    {
+        #[cfg(target_os = "linux")]
+        {
+            return format!(
+                "Bluetooth adapter off or blocked. `rfkill unblock bluetooth`; `bluetoothctl power on`; Plasma tray Bluetooth On; `systemctl is-active bluetooth` should be active. Never run the app with sudo. ({err})"
+            );
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            return format!(
+                "No Bluetooth adapter / radio off. Enable Bluetooth (Windows Settings → Bluetooth; macOS menu bar Bluetooth; Linux: bluetoothctl power on / rfkill). ({err})"
+            );
+        }
     }
     if lower.contains("control") || lower.contains("noctrl") {
-        return format!(
-            "Could not take exclusive control (NOCTRL). Disconnect other FTMS clients and retry. On Windows: do NOT OS-pair the trainer in Settings → Bluetooth — leave it unpaired and connect only from this app. ({err})"
-        );
+        #[cfg(target_os = "linux")]
+        {
+            return format!(
+                "Could not take exclusive control (NOCTRL). Quit other FTMS apps. In KDE/Plasma Bluetooth settings, remove/forget the trainer — do not OS-pair; connect only from Tacx Desktop. ({err})"
+            );
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            return format!(
+                "Could not take exclusive control (NOCTRL). Disconnect other FTMS clients and retry. Do NOT OS-pair the trainer — leave it unpaired and connect only from this app. ({err})"
+            );
+        }
     }
-    if lower.contains("paired") || lower.contains("bonding") {
+    if lower.contains("paired") || lower.contains("bonding") || lower.contains("bond") {
+        #[cfg(target_os = "linux")]
+        {
+            return format!(
+                "OS Bluetooth pairing can break FTMS/FE-C control. Forget the trainer in KDE Bluetooth settings (unpaired), then Connect only from Tacx Desktop — never pair in the OS. ({err})"
+            );
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            return format!(
+                "OS Bluetooth pairing can break FTMS control. Windows: remove/forget the trainer in Settings → Bluetooth. macOS: Forget This Device. Then Connect from Tacx Desktop only. ({err})"
+            );
+        }
+    }
+    if lower.contains("timed out") || lower.contains("timeout") {
         return format!(
-            "OS Bluetooth pairing can break FTMS control. Windows: remove/forget the trainer in Settings → Bluetooth so it is unpaired, then Connect from Tacx Desktop only. macOS: Forget This Device if control fails after system pairing. ({err})"
+            "Connect timed out. Wake the trainer (pedal), stand nearby, quit other apps, then Scan → Connect again. ({err})"
         );
     }
     err.to_string()
@@ -1021,8 +1290,15 @@ async fn scan_ble(timeout_ms: u32) -> Result<Vec<DiscoveredDevice>, String> {
 }
 
 async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
+    /// BlueZ/GATT handshakes can hang; never block the UI forever.
+    const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+    const SESSION_TIMEOUT: Duration = Duration::from_secs(25);
+
     let central = adapter().await?;
-    // Ensure we have seen the device
+    if let Ok(CentralState::PoweredOff) = central.adapter_state().await {
+        return Err(BluetoothStatus::from_radio(BluetoothRadio::Off, None).hint);
+    }
+    // Empty ScanFilter (post-filter in scan_ble) — required so FE-C-only Tacx stay visible.
     central
         .start_scan(ScanFilter::default())
         .await
@@ -1040,17 +1316,30 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             format!("Device {device_id} not found — scan again while the trainer is awake")
         })?;
 
-    peripheral
-        .connect()
+    // Stop discovery before connect — BlueZ is happier; keeps ads from racing GATT.
+    central.stop_scan().await.ok();
+
+    tokio::time::timeout(CONNECT_TIMEOUT, peripheral.connect())
         .await
+        .map_err(|_| {
+            "Connect timed out (BlueZ) — wake the trainer, quit other apps, Scan again".to_string()
+        })?
         .map_err(|e| format!("Connect failed (busy trainer?): {e}"))?;
-    match open_session(&central, peripheral.clone(), device_id).await {
-        Ok(session) => Ok(session),
-        Err(e) => {
-            // Don't leave a half-open link behind (auto-reconnect retries).
+
+    match tokio::time::timeout(SESSION_TIMEOUT, open_session(&central, peripheral.clone(), device_id))
+        .await
+    {
+        Ok(Ok(session)) => Ok(session),
+        Ok(Err(e)) => {
             let _ = peripheral.disconnect().await;
-            central.stop_scan().await.ok();
             Err(e)
+        }
+        Err(_) => {
+            let _ = peripheral.disconnect().await;
+            Err(
+                "GATT setup timed out — forget OS pairing (KDE Bluetooth), power-cycle trainer, retry"
+                    .into(),
+            )
         }
     }
 }
@@ -1656,5 +1945,50 @@ mod auto_reconnect_tests {
         let s = c.snapshot();
         assert_ne!(s.state, ConnectionState::Reconnecting);
         assert_eq!(s.reconnect_attempt, 0);
+    }
+}
+
+
+#[cfg(test)]
+mod ui_poll_freeze_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn try_snapshot_works_while_controller_locked() {
+        ensure_runtime();
+        let ctrl = controller();
+        {
+            let mut g = ctrl.lock().await;
+            g.snapshot.state = ConnectionState::Connecting;
+            g.snapshot.detail = "Connecting to test…".into();
+            publish_snapshot(&g.snapshot);
+            // Hold the async mutex like a buggy locked connect would.
+            let snap = try_snapshot();
+            assert_eq!(snap.state, ConnectionState::Connecting);
+            assert!(snap.detail.contains("Connecting"));
+            // Keep lock for a beat — try_snapshot must not await the mutex.
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let snap2 = try_snapshot();
+            assert_eq!(snap2.state, ConnectionState::Connecting);
+        }
+        // Unlocked again — live snapshot still readable.
+        let _ = try_snapshot();
+    }
+
+    #[tokio::test]
+    async fn unlocked_demo_connect_publishes_connected() {
+        ensure_runtime();
+        let ctrl = controller();
+        {
+            let mut g = ctrl.lock().await;
+            g.set_demo_mode(true).await;
+        }
+        connect_trainer_unlocked(Some("DEMO:00:11:22:33:44:55".into()))
+            .await
+            .expect("demo connect");
+        let snap = try_snapshot();
+        assert_eq!(snap.state, ConnectionState::Connected);
+        assert!(snap.is_demo);
     }
 }

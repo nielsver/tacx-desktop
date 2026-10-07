@@ -44,21 +44,17 @@ pub async fn bluetooth_status() -> BluetoothStatus {
 }
 
 pub async fn scan_trainers(timeout_ms: u32) -> Result<Vec<DiscoveredDevice>, String> {
-    let ctrl = controller();
-    let mut g = ctrl.lock().await;
-    g.scan(timeout_ms).await
+    // Unlocked: BlueZ scan must not hold the controller mutex (UI poll freeze).
+    crate::trainer::controller::scan_trainers_unlocked(timeout_ms).await
 }
 
 pub async fn connect_trainer(device_id: Option<String>) -> Result<(), String> {
-    let ctrl = controller();
-    let mut g = ctrl.lock().await;
-    g.connect(device_id).await
+    // Unlocked: BlueZ connect/GATT outside the mutex so Flutter stays responsive.
+    crate::trainer::controller::connect_trainer_unlocked(device_id).await
 }
 
 pub async fn reconnect_trainer() -> Result<(), String> {
-    let ctrl = controller();
-    let mut g = ctrl.lock().await;
-    g.reconnect().await
+    crate::trainer::controller::reconnect_trainer_unlocked().await
 }
 
 pub async fn disconnect_trainer() -> Result<(), String> {
@@ -131,38 +127,23 @@ pub async fn set_indoor_bike_simulation(
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn get_metrics() -> TrainerMetrics {
-    block_on(async {
-        let ctrl = controller();
-        let g = ctrl.lock().await;
-        g.metrics()
-    })
+    // Non-blocking: never stall the Flutter UI isolate behind BlueZ connect.
+    crate::trainer::controller::try_metrics()
 }
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn get_connection_snapshot() -> ConnectionSnapshot {
-    block_on(async {
-        let ctrl = controller();
-        let g = ctrl.lock().await;
-        g.snapshot()
-    })
+    crate::trainer::controller::try_snapshot()
 }
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn get_resistance_range() -> ResistanceRange {
-    block_on(async {
-        let ctrl = controller();
-        let g = ctrl.lock().await;
-        g.resistance_range()
-    })
+    crate::trainer::controller::try_resistance_range()
 }
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn get_power_range() -> PowerRange {
-    block_on(async {
-        let ctrl = controller();
-        let g = ctrl.lock().await;
-        g.power_range()
-    })
+    crate::trainer::controller::try_power_range()
 }
 
 #[flutter_rust_bridge::frb(sync)]
@@ -187,11 +168,7 @@ pub fn stop_interval() {
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn get_interval_status() -> IntervalStatus {
-    block_on(async {
-        let ctrl = controller();
-        let g = ctrl.lock().await;
-        g.interval_status()
-    })
+    crate::trainer::controller::try_interval_status()
 }
 
 /// Headless smoke test used by CI / README.

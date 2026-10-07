@@ -33,7 +33,13 @@ build_one() {
     linux)
       flutter build linux --release
       echo "Bundle: build/linux/x64/release/bundle/"
-      echo "Ship the whole bundle/ folder (includes lib/ with Rust cdylib)."
+      cp packaging/linux/FIRST_RUN.txt build/linux/x64/release/bundle/FIRST_RUN.txt
+      echo "Ship the whole bundle/ tree (RPATH \$ORIGIN/lib → libtacx_desktop_core)."
+      echo "Garuda: see FIRST_RUN.txt / scripts/garuda_first_run_smoke.sh"
+      ver="local-$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
+      pkg="tacx-desktop-linux-x64-${ver}.tar.gz"
+      tar -C build/linux/x64/release -czf "$pkg" --transform 's,^bundle,tacx-desktop,' bundle
+      echo "Tarball: $ROOT/$pkg"
       zip_dir "build/linux/x64/release/bundle" "tacx-desktop-linux-x64.zip" || true
       ;;
     windows)

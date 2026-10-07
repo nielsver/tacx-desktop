@@ -186,15 +186,36 @@ impl BluetoothStatus {
         let hint = match radio {
             BluetoothRadio::NotNeeded => "Demo mode — no Bluetooth needed.".to_string(),
             BluetoothRadio::On => "Bluetooth is on.".to_string(),
-            BluetoothRadio::Off => "Bluetooth is off. Turn it on (Windows: Settings → Bluetooth & devices; macOS: menu bar Bluetooth; Linux: `bluetoothctl power on`), then check again.".to_string(),
+            BluetoothRadio::Off => {
+                #[cfg(target_os = "linux")]
+                {
+                    "Bluetooth is off. Garuda/Arch: `rfkill unblock bluetooth`; `bluetoothctl power on`; Plasma tray On; then Check again. Never sudo the app.".to_string()
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    "Bluetooth is off. Turn it on (Windows: Settings → Bluetooth & devices; macOS: menu bar Bluetooth; Linux: `bluetoothctl power on` / rfkill), then check again.".to_string()
+                }
+            }
             BluetoothRadio::NoAdapter => {
-                let base = "No Bluetooth adapter found. Plug in a BLE 4.0+ dongle or enable the adapter/driver (Linux: start bluetoothd), then check again.";
+                #[cfg(target_os = "linux")]
+                let base = "No Bluetooth adapter / BlueZ not ready. `sudo pacman -S bluez bluez-utils`; `sudo systemctl enable --now bluetooth`; plug in a BLE dongle if needed; then Check again.";
+                #[cfg(not(target_os = "linux"))]
+                let base = "No Bluetooth adapter found. Plug in a BLE 4.0+ dongle or enable the adapter/driver (Linux: start bluetooth), then check again.";
                 match detail {
                     Some(d) if !d.is_empty() => format!("{base} ({d})"),
                     _ => base.to_string(),
                 }
             }
-            BluetoothRadio::Unknown => "Bluetooth state unknown — scanning anyway may still work.".to_string(),
+            BluetoothRadio::Unknown => {
+                #[cfg(target_os = "linux")]
+                {
+                    "Bluetooth state unknown (common on BlueZ). Ensure `bluetooth` group + powered adapter; scanning may still work.".to_string()
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    "Bluetooth state unknown — scanning anyway may still work.".to_string()
+                }
+            }
         };
         let can_scan = !matches!(radio, BluetoothRadio::Off | BluetoothRadio::NoAdapter);
         Self { radio, hint, can_scan }

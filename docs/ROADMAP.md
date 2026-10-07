@@ -10,9 +10,11 @@ Rules for every step: widget/unit tests, `flutter analyze` clean, CI green on
 **Demo OFF by default** and the existing charts working. Tick the box and record
 the SHA here when a step lands.
 
-**Current step:** 3 — Pro polish (after the QA fixes on `d40f621`, see
-QA report findings 1–9, which come first)
-**Last SHA:** `155eeba` (step 2 done, CI 37693301137 green)
+**Current step:** 3 — Pro polish (design tokens → offline RouteMap →
+ride summary). Ghost QA (cycle 2 G1–G9) and Research route-key v2 land
+first; checklists in [`pro-polish.md`](pro-polish.md) and
+[`multiplayer.md`](multiplayer.md).
+**Last SHA:** see Log
 
 ## Steps
 
@@ -45,3 +47,4 @@ QA report findings 1–9, which come first)
 | 0. Installers + v0.2.1 release | done | `fdb57de` (tag `v0.2.1`) | CI 37675496926, Release 37675940929 |
 | 1. Pro workout view | done | `d40f621` | CI 37692811589 (success) |
 | 2. Ghost race | done | `155eeba` | CI 37693301137 (success) |
+| 2b. Ghost QA + route key v2 + .tdshare | in progress | — | — |

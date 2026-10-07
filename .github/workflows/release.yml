@@ -46,6 +46,7 @@ jobs:
           "VER=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
           Get-ChildItem build\windows\x64\runner\Release
       - name: Install Inno Setup
+        timeout-minutes: 10
         run: choco install innosetup --no-progress -y
       - name: Build Setup.exe (Inno Setup)
         shell: pwsh
@@ -78,9 +79,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Flutter Linux + BlueZ / D-Bus + packaging deps
+        timeout-minutes: 5
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config \
+          sudo apt-get update -o Acquire::Retries=3
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            clang cmake ninja-build pkg-config \
             libgtk-3-dev liblzma-dev libdbus-1-dev \
             dpkg-dev fakeroot file curl desktop-file-utils
       - uses: dtolnay/rust-toolchain@stable

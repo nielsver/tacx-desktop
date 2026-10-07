@@ -16,9 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install BlueZ / D-Bus build deps
+        timeout-minutes: 5
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev pkg-config
+          sudo apt-get update -o Acquire::Retries=3
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libdbus-1-dev pkg-config
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -32,10 +36,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install desktop-file-utils + shellcheck + dpkg
-        run: sudo apt-get update && sudo apt-get install -y desktop-file-utils shellcheck dpkg-dev file curl
+        timeout-minutes: 5
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            desktop-file-utils shellcheck dpkg-dev file curl
       - name: shellcheck
         run: |
-          shellcheck packaging/linux/install.sh packaging/linux/uninstall.sh             scripts/test_linux_install.sh scripts/test_linux_packaging.sh             scripts/package_linux_appimage.sh scripts/package_linux_deb.sh
+          shellcheck packaging/linux/install.sh packaging/linux/uninstall.sh \
+            scripts/test_linux_install.sh scripts/test_linux_packaging.sh \
+            scripts/package_linux_appimage.sh scripts/package_linux_deb.sh
       - name: install/uninstall in a temp XDG_DATA_HOME
         run: ./scripts/test_linux_install.sh
       - name: AppImage AppDir + .deb smoke (fake bundle)
@@ -54,9 +66,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install BlueZ / D-Bus build deps
+        timeout-minutes: 5
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev pkg-config
+          sudo apt-get update -o Acquire::Retries=3
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libdbus-1-dev pkg-config
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

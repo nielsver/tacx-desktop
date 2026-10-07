@@ -1,30 +1,49 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
+import 'package:tacx_desktop/src/ui/app_tokens.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
+import 'package:tacx_desktop/src/ui/route_map.dart';
 import 'package:tacx_desktop/src/workout/route_ghost.dart';
 
-/// Elevation profile sparkline with optional progress marker (GPX / sim route).
+/// Elevation profile (GPX / sim route) in two layers: a static profile
+/// that repaints only for a new route or size, and a cursor layer (rider,
+/// ghost, hover) driven by [ValueListenable]s, so the 4 Hz ride refresh
+/// never redraws the profile path.
+///
+/// Hover or horizontal drag reports metres along the route via [onHover]
+/// (`null` on exit / drag end); the dashboard feeds that into [hoverM],
+/// which also drives the preview ring on the route map.
 class ElevProfileChart extends StatelessWidget {
   const ElevProfileChart({
     super.key,
     required this.profile,
-    this.progressM,
+    this.geo,
+    this.riderM,
     this.ghostM,
+    this.hoverM,
+    this.onHover,
     this.height = 72,
   });
 
   final GpxProfileInfo profile;
-  final double? progressM;
+
+  /// Shared route geometry (built once per GPX); one is made if omitted.
+  final RouteGeo? geo;
+  final ValueListenable<double?>? riderM;
 
   /// Where the best attempt was at the same elapsed time (ghost marker).
-  final double? ghostM;
+  final ValueListenable<double?>? ghostM;
+  final ValueListenable<double?>? hoverM;
+  final ValueChanged<double?>? onHover;
   final double height;
 
   @override
   Widget build(BuildContext context) {
     final samples = profile.samples;
+    final g = geo ?? RouteGeo(samples);
     return Container(
       key: const ValueKey('elev-profile-chart'),
       height: height,
@@ -39,28 +58,33 @@ class ElevProfileChart extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(
-                profile.name,
-                style: const TextStyle(
-                  color: RideColors.textSecondary,
-                  fontSize: RideType.caption,
-                  fontWeight: FontWeight.w700,
+              Flexible(
+                child: Text(
+                  profile.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: RideColors.textSecondary,
+                    fontSize: RideType.caption,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               Text(
                 '${(profile.distanceM / 1000).toStringAsFixed(1)} km · '
                 '+${profile.elevGainM.toStringAsFixed(0)} m',
                 style: const TextStyle(
                   color: RideColors.textMuted,
                   fontSize: RideType.caption,
+                  fontFeatures: kTabularFeatures,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 4),
           Expanded(
-            child: samples.length < 2
+            child: !g.isDrawable
                 ? const Center(
                     child: Text(
                       'No elevation samples',
@@ -70,13 +94,51 @@ class ElevProfileChart extends StatelessWidget {
                       ),
                     ),
                   )
-                : CustomPaint(
-                    painter: ElevPainter(
-                      samples,
-                      progressM: progressM,
-                      ghostM: ghostM,
-                    ),
-                    size: Size.infinite,
+                : LayoutBuilder(
+                    builder: (context, c) {
+                      double toM(Offset p) =>
+                          (p.dx / math.max(c.maxWidth, 1)).clamp(0.0, 1.0) *
+                          g.distanceM;
+                      final hover = onHover;
+                      Widget body = Stack(
+                        fit: StackFit.expand,
+                        alignment: Alignment.topLeft,
+                        children: [
+                          RepaintBoundary(
+                            child: CustomPaint(
+                              key: const ValueKey('elev-static'),
+                              painter: ElevPainter(samples),
+                            ),
+                          ),
+                          RepaintBoundary(
+                            child: CustomPaint(
+                              key: const ValueKey('elev-cursor'),
+                              painter: ElevCursorPainter(
+                                g,
+                                rider: riderM,
+                                ghost: ghostM,
+                                hover: hoverM,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                      if (hover != null) {
+                        body = MouseRegion(
+                          onHover: (e) => hover(toM(e.localPosition)),
+                          onExit: (_) => hover(null),
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onHorizontalDragUpdate: (e) =>
+                                hover(toM(e.localPosition)),
+                            onHorizontalDragEnd: (_) => hover(null),
+                            onHorizontalDragCancel: () => hover(null),
+                            child: body,
+                          ),
+                        );
+                      }
+                      return body;
+                    },
                   ),
           ),
         ],
@@ -85,37 +147,25 @@ class ElevProfileChart extends StatelessWidget {
   }
 }
 
+/// Static profile line + fill. Repaints only for a new sample list.
 @visibleForTesting
 class ElevPainter extends CustomPainter {
-  ElevPainter(this.samples, {this.progressM, this.ghostM});
+  ElevPainter(this.samples);
 
   final List<ElevSample> samples;
-  final double? progressM;
-  final double? ghostM;
 
   /// Ghost marker colour (calm violet, distinct from the warn progress line).
-  static const ghostColor = Color(0xFFB39DDB);
+  static const ghostColor = kGhostColor;
 
-  /// Y of the profile line at distance [d] (for markers).
-  double _yAt(double d, Size size, double minE, double spanE) {
-    var i = 0;
-    while (i < samples.length - 2 && samples[i + 1].distanceM < d) {
-      i++;
-    }
-    final a = samples[i], b = samples[i + 1];
-    final span = b.distanceM - a.distanceM;
-    final f = span <= 0 ? 0.0 : ((d - a.distanceM) / span).clamp(0.0, 1.0);
-    final e = a.elevM + (b.elevM - a.elevM) * f;
-    return size.height * (1 - ((e - minE) / spanE));
-  }
+  @visibleForTesting
+  static int debugPaints = 0;
 
   @override
   void paint(Canvas canvas, Size size) {
+    debugPaints++;
     if (samples.length < 2 || size.width <= 0 || size.height <= 0) return;
-    final minE = samples.map((s) => s.elevM).reduce(math.min);
-    final maxE = samples.map((s) => s.elevM).reduce(math.max);
-    final spanE = (maxE - minE).abs() < 1 ? 1.0 : (maxE - minE);
-    final maxD = samples.last.distanceM.max(1);
+    final (minE, spanE) = profileElevRange(samples);
+    final maxD = math.max(samples.last.distanceM, 1.0);
 
     final path = Path();
     for (var i = 0; i < samples.length; i++) {
@@ -138,22 +188,69 @@ class ElevPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
+  }
 
-    final ghost = ghostM;
-    if (ghost != null && ghost.isFinite && ghost >= 0) {
-      final gd = ghost.clamp(0.0, maxD);
-      final x = (gd / maxD) * size.width;
-      final y = _yAt(gd, size, minE, spanE);
-      final paint = Paint()
-        ..color = ghostColor
-        ..strokeWidth = 1.5;
+  @override
+  bool shouldRepaint(ElevPainter old) => !identical(old.samples, samples);
+}
+
+/// "12.4 km · 87 m · 6.2 %" for the hover cursor.
+String elevCursorLabel(RouteGeo geo, double m) {
+  final p = geo.distanceToPoint(m);
+  return '${(m / 1000).toStringAsFixed(1)} km · '
+      '${p.elev.toStringAsFixed(0)} m · '
+      '${p.grade.toStringAsFixed(1)} %';
+}
+
+/// Rider line, ghost marker and hover cursor over the static profile.
+/// Repaints alone whenever one of its listenables changes.
+class ElevCursorPainter extends CustomPainter {
+  ElevCursorPainter(this.geo, {this.rider, this.ghost, this.hover})
+    : super(
+        repaint: Listenable.merge([
+          if (rider != null) rider,
+          if (ghost != null) ghost,
+          if (hover != null) hover,
+        ]),
+      );
+
+  final RouteGeo geo;
+  final ValueListenable<double?>? rider;
+  final ValueListenable<double?>? ghost;
+  final ValueListenable<double?>? hover;
+
+  @visibleForTesting
+  static int debugPaints = 0;
+
+  static bool _ok(double? m) => m != null && m.isFinite && m >= 0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    debugPaints++;
+    if (!geo.isDrawable || size.width <= 0 || size.height <= 0) return;
+    final (minE, spanE) = geo.elevRange;
+    final maxD = math.max(geo.distanceM, 1.0);
+    double xOf(double m) => (m.clamp(0.0, maxD) / maxD) * size.width;
+    double yOf(double m) =>
+        size.height * (1 - ((geo.distanceToPoint(m).elev - minE) / spanE));
+
+    void dashed(double x, Paint p) {
       for (var yy = 0.0; yy < size.height; yy += 6) {
         canvas.drawLine(
           Offset(x, yy),
           Offset(x, math.min(yy + 3, size.height)),
-          paint,
+          p,
         );
       }
+    }
+
+    final g = ghost?.value;
+    if (_ok(g)) {
+      final x = xOf(g!), y = yOf(g);
+      final paint = Paint()
+        ..color = kGhostColor
+        ..strokeWidth = 1.5;
+      dashed(x, paint);
       canvas.drawCircle(Offset(x, y), 5, Paint()..color = RideColors.bg);
       canvas.drawCircle(
         Offset(x, y),
@@ -164,9 +261,9 @@ class ElevPainter extends CustomPainter {
       );
     }
 
-    final prog = progressM;
-    if (prog != null && prog >= 0) {
-      final x = (prog.clamp(0.0, maxD) / maxD) * size.width;
+    final r = rider?.value;
+    if (_ok(r)) {
+      final x = xOf(r!);
       canvas.drawLine(
         Offset(x, 0),
         Offset(x, size.height),
@@ -175,18 +272,51 @@ class ElevPainter extends CustomPainter {
           ..strokeWidth = 2,
       );
     }
+
+    final h = hover?.value;
+    if (_ok(h)) {
+      final x = xOf(h!), y = yOf(h);
+      dashed(
+        x,
+        Paint()
+          ..color = RideColors.textSecondary
+          ..strokeWidth = 1,
+      );
+      canvas.drawCircle(
+        Offset(x, y),
+        4,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = RideColors.textPrimary,
+      );
+      final tp = TextPainter(
+        text: TextSpan(
+          text: elevCursorLabel(geo, h),
+          style: const TextStyle(
+            color: RideColors.textPrimary,
+            fontSize: 11,
+            fontFeatures: kTabularFeatures,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final lx = (x + 6 + tp.width > size.width) ? x - 6 - tp.width : x + 6;
+      final rect = Rect.fromLTWH(lx - 3, 0, tp.width + 6, tp.height + 2);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(4)),
+        Paint()..color = RideColors.bg.withValues(alpha: 0.85),
+      );
+      tp.paint(canvas, Offset(lx, 1));
+    }
   }
 
   @override
-  bool shouldRepaint(ElevPainter old) =>
-      old.samples.length != samples.length ||
-      old.progressM != progressM ||
-      old.ghostM != ghostM ||
-      !identical(old.samples, samples);
-}
-
-extension on double {
-  double max(double other) => this > other ? this : other;
+  bool shouldRepaint(ElevCursorPainter old) =>
+      !identical(old.geo, geo) ||
+      old.rider != rider ||
+      old.ghost != ghost ||
+      old.hover != hover;
 }
 
 /// "+0:12 vs best" chip: behind the best attempt is warm, ahead is green.
@@ -221,7 +351,7 @@ class GhostDeltaChip extends StatelessWidget {
             width: 8,
             height: 8,
             decoration: const BoxDecoration(
-              color: ElevPainter.ghostColor,
+              color: kGhostColor,
               shape: BoxShape.circle,
             ),
           ),

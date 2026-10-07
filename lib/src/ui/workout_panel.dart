@@ -25,7 +25,6 @@ class WorkoutPanel extends StatelessWidget {
     required this.onStopRoute,
     required this.onErgFromGrade,
     required this.onSaveAsCopy,
-    this.ghostM,
     this.ghostDeltaS,
     this.bestS,
     this.queuedGpxName,
@@ -33,6 +32,7 @@ class WorkoutPanel extends StatelessWidget {
     this.onExportGhost,
     this.onImportGhost,
     this.routeMap,
+    this.elevChart,
   });
 
   final List<WorkoutInfo> workouts;
@@ -51,8 +51,6 @@ class WorkoutPanel extends StatelessWidget {
   final ValueChanged<bool> onErgFromGrade;
   final ValueChanged<WorkoutInfo> onSaveAsCopy;
 
-  /// Ghost (best attempt) position on the loaded route, metres.
-  final double? ghostM;
 
   /// Seconds behind (+) / ahead (−) of the best attempt while riding.
   final double? ghostDeltaS;
@@ -70,6 +68,10 @@ class WorkoutPanel extends StatelessWidget {
 
   /// Offline route map (drawn above the elevation profile when given).
   final Widget? routeMap;
+
+  /// Elevation chart wired to the shared route geometry and cursors; a
+  /// plain profile is shown when null.
+  final Widget? elevChart;
 
   @override
   Widget build(BuildContext context) {
@@ -241,13 +243,7 @@ class WorkoutPanel extends StatelessWidget {
                         ),
                         child: routeMap,
                       ),
-                    ElevProfileChart(
-                      profile: gpxProfile!,
-                      progressM: routeStatus.running || routeStatus.complete
-                          ? routeStatus.progressM
-                          : null,
-                      ghostM: routeStatus.running ? ghostM : null,
-                    ),
+                    elevChart ?? ElevProfileChart(profile: gpxProfile!),
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(

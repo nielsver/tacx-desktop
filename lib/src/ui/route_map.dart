@@ -8,6 +8,17 @@ import 'package:tacx_desktop/src/ui/ride_theme.dart';
 /// Ghost marker colour (same as the elevation profile's ghost).
 const Color kGhostColor = Color(0xFFB39DDB);
 
+/// (min elevation, span ≥ 1 m) for scaling an elevation profile.
+(double, double) profileElevRange(List<ElevSample> samples) {
+  if (samples.isEmpty) return (0.0, 1.0);
+  var lo = double.infinity, hi = double.negativeInfinity;
+  for (final s in samples) {
+    lo = math.min(lo, s.elevM);
+    hi = math.max(hi, s.elevM);
+  }
+  return (lo, (hi - lo).abs() < 1 ? 1.0 : hi - lo);
+}
+
 /// Projected route geometry. Build it **once per GPX load**; screen points
 /// and the path are cached per size.
 ///
@@ -58,23 +69,67 @@ class RouteGeo {
     _path = Path()..addPolygon(_xy, false);
   }
 
-  /// Screen position at [d] metres along the route (after [fit]).
-  Offset at(double d) {
-    if (_xy.isEmpty) return Offset.zero;
-    if (!d.isFinite || d <= 0) return _xy.first;
-    if (d >= samples.last.distanceM) return _xy.last;
-    var lo = 0, hi = samples.length - 1;
+  /// Segment index and fraction at [m] metres along the route (binary
+  /// search). One lookup shared by the map and the elevation chart.
+  /// Requires [isDrawable].
+  ({int i, double t}) locate(double m) {
+    final s = samples;
+    if (!(m > 0)) return (i: 0, t: 0.0);
+    if (m >= s.last.distanceM) return (i: s.length - 2, t: 1.0);
+    var lo = 0, hi = s.length - 1;
     while (hi - lo > 1) {
-      final m = (lo + hi) >> 1;
-      if (samples[m].distanceM <= d) {
-        lo = m;
+      final mid = (lo + hi) >> 1;
+      if (s[mid].distanceM <= m) {
+        lo = mid;
       } else {
-        hi = m;
+        hi = mid;
       }
     }
-    final a = samples[lo].distanceM;
-    final span = samples[hi].distanceM - a;
-    return Offset.lerp(_xy[lo], _xy[hi], span <= 0 ? 0 : (d - a) / span)!;
+    final a = s[lo].distanceM, span = s[hi].distanceM - a;
+    return (i: lo, t: span <= 0 ? 0.0 : (m - a) / span);
+  }
+
+  /// Interpolated position, elevation and grade at [m] metres.
+  ({double lat, double lon, double elev, double grade}) distanceToPoint(
+    double m,
+  ) {
+    final (:i, :t) = locate(m);
+    final a = samples[i], b = samples[i + 1];
+    double l(double x, double y) => x + (y - x) * t;
+    return (
+      lat: l(a.lat, b.lat),
+      lon: l(a.lon, b.lon),
+      elev: l(a.elevM, b.elevM),
+      grade: l(a.gradePct, b.gradePct), // centred-window grades (gpx.rs)
+    );
+  }
+
+  (double, double)? _elevRange;
+
+  /// (min elevation, span ≥ 1 m), computed once.
+  (double, double) get elevRange => _elevRange ??= profileElevRange(samples);
+
+  /// Screen position at [d] metres along the route (after [fit]).
+  Offset at(double d) {
+    if (_xy.length < 2) return _xy.isEmpty ? Offset.zero : _xy.first;
+    if (!d.isFinite) return _xy.first;
+    final (:i, :t) = locate(d);
+    return Offset.lerp(_xy[i], _xy[i + 1], t)!;
+  }
+
+  /// Metres along the route of the projected point nearest [p], if it is
+  /// within [maxPx] (after [fit]). O(n); fine up to ~10k samples.
+  double? nearestM(Offset p, {double maxPx = 12}) {
+    var k = -1;
+    var bd = maxPx * maxPx;
+    for (var j = 0; j < _xy.length; j++) {
+      final d = (_xy[j] - p).distanceSquared;
+      if (d < bd) {
+        bd = d;
+        k = j;
+      }
+    }
+    return k < 0 ? null : samples[k].distanceM;
   }
 }
 
@@ -87,37 +142,96 @@ class RouteMap extends StatelessWidget {
     required this.geo,
     required this.progressM,
     required this.ghostM,
+    this.hoverM,
+    this.onHover,
   });
 
   final RouteGeo geo;
   final ValueListenable<double?> progressM;
   final ValueListenable<double?> ghostM;
 
+  /// Preview position from chart / map hover (hollow ring, own layer).
+  final ValueListenable<double?>? hoverM;
+
+  /// Map hover → metres along the route within 12 px of the line, else null.
+  final ValueChanged<double?>? onHover;
+
   @override
   Widget build(BuildContext context) {
     if (!geo.isDrawable) return const SizedBox.shrink();
-    return Semantics(
-      label: 'Route map',
-      child: Stack(
-        fit: StackFit.expand,
-        alignment: Alignment.topLeft,
-        children: [
+    final hover = onHover;
+    Widget map = Stack(
+      fit: StackFit.expand,
+      alignment: Alignment.topLeft,
+      children: [
+        RepaintBoundary(
+          child: CustomPaint(
+            key: const ValueKey('route-map-line'),
+            painter: RouteLinePainter(geo),
+          ),
+        ),
+        RepaintBoundary(
+          child: CustomPaint(
+            key: const ValueKey('route-map-dots'),
+            painter: RouteDotPainter(geo, progressM, ghostM),
+          ),
+        ),
+        if (hoverM != null)
           RepaintBoundary(
             child: CustomPaint(
-              key: const ValueKey('route-map-line'),
-              painter: RouteLinePainter(geo),
+              key: const ValueKey('route-map-hover'),
+              painter: RouteHoverPainter(geo, hoverM!),
             ),
           ),
-          RepaintBoundary(
-            child: CustomPaint(
-              key: const ValueKey('route-map-dots'),
-              painter: RouteDotPainter(geo, progressM, ghostM),
-            ),
-          ),
-        ],
-      ),
+      ],
+    );
+    if (hover != null) {
+      map = MouseRegion(
+        onHover: (e) => hover(geo.nearestM(e.localPosition)),
+        onExit: (_) => hover(null),
+        child: map,
+      );
+    }
+    return Semantics(label: 'Route map', child: map);
+  }
+}
+
+/// Hollow preview ring at the hovered distance; its own layer so hovering
+/// never repaints the rider dot or the route line.
+class RouteHoverPainter extends CustomPainter {
+  RouteHoverPainter(this.geo, this.hoverM) : super(repaint: hoverM);
+
+  final RouteGeo geo;
+  final ValueListenable<double?> hoverM;
+
+  @visibleForTesting
+  static int debugPaints = 0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    debugPaints++;
+    geo.fit(size);
+    final h = hoverM.value;
+    if (h == null || !h.isFinite) return;
+    final o = geo.at(h);
+    canvas.drawCircle(
+      o,
+      8,
+      Paint()..color = RideColors.bg.withValues(alpha: 0.4),
+    );
+    canvas.drawCircle(
+      o,
+      7,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = RideColors.textPrimary,
     );
   }
+
+  @override
+  bool shouldRepaint(RouteHoverPainter old) =>
+      !identical(old.geo, geo) || old.hoverM != hoverM;
 }
 
 class RouteLinePainter extends CustomPainter {

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
 import 'package:tacx_desktop/src/ui/elev_profile_chart.dart';
+import 'package:tacx_desktop/src/ui/route_map.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 import 'package:tacx_desktop/src/workout/route_ghost.dart';
 
@@ -341,17 +342,16 @@ void main() {
   });
 
   group('ghost UI', () {
-    test('ElevPainter repaints when the ghost moves', () {
-      final s = _profile().samples;
-      final a = ElevPainter(s, progressM: 100, ghostM: 120);
-      expect(
-        a.shouldRepaint(ElevPainter(s, progressM: 100, ghostM: 120)),
-        isFalse,
-      );
-      expect(
-        a.shouldRepaint(ElevPainter(s, progressM: 100, ghostM: 130)),
-        isTrue,
-      );
+    test('ElevCursorPainter repaints when the ghost listenable changes', () {
+      final geo = RouteGeo(_profile().samples);
+      final ghost = ValueNotifier<double?>(120);
+      var repaints = 0;
+      final p = ElevCursorPainter(geo, ghost: ghost);
+      p.addListener(() => repaints++);
+      ghost.value = 130;
+      expect(repaints, 1);
+      expect(p.shouldRepaint(ElevCursorPainter(geo, ghost: ghost)), isFalse);
+      ghost.dispose();
     });
 
     testWidgets('elevation chart draws progress + ghost without errors', (
@@ -365,8 +365,8 @@ void main() {
               width: 400,
               child: ElevProfileChart(
                 profile: _profile(),
-                progressM: 400,
-                ghostM: 450,
+                riderM: ValueNotifier(400),
+                ghostM: ValueNotifier(450),
               ),
             ),
           ),

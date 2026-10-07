@@ -83,7 +83,8 @@ void main() {
       const ElevSample(distanceM: 0, elevM: 100, gradePct: 0, lat: 50, lon: 4),
       const ElevSample(distanceM: 100, elevM: 110, gradePct: 5, lat: 50.001, lon: 4),
     ];
-    final painter = ElevPainter(samples, progressM: 40);
-    expect(painter.progressM, 40);
+    final painter = ElevPainter(samples);
+    expect(painter.shouldRepaint(ElevPainter(samples)), isFalse);
+    expect(painter.shouldRepaint(ElevPainter([...samples])), isTrue);
   });
 }

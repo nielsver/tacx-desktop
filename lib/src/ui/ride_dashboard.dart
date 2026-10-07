@@ -16,7 +16,7 @@ import 'package:tacx_desktop/src/ui/workout_ride_view.dart';
 import 'package:tacx_desktop/src/workout/route_ghost.dart';
 import 'package:tacx_desktop/src/workout/workout_plan.dart';
 import 'package:tacx_desktop/src/ui/elev_profile_chart.dart'
-    show GhostDeltaChip;
+    show ElevProfileChart, GhostDeltaChip;
 import 'package:tacx_desktop/src/ui/bluetooth_tips.dart';
 import 'package:tacx_desktop/src/ui/mode_copy.dart';
 import 'package:tacx_desktop/src/ui/app_tokens.dart';
@@ -157,6 +157,9 @@ class _RideDashboardState extends State<RideDashboard> {
   RouteGeo? _geo;
   final ValueNotifier<double?> _mapRiderM = ValueNotifier(null);
   final ValueNotifier<double?> _mapGhostM = ValueNotifier(null);
+
+  /// Chart / map hover preview (metres along the route); null = none.
+  final ValueNotifier<double?> _hoverM = ValueNotifier(null);
   bool _ergFromGrade = false;
 
   HrStrapStatus _strap = const HrStrapStatus(
@@ -231,6 +234,7 @@ class _RideDashboardState extends State<RideDashboard> {
     _workoutN.dispose();
     _mapRiderM.dispose();
     _mapGhostM.dispose();
+    _hoverM.dispose();
     super.dispose();
   }
 
@@ -327,6 +331,8 @@ class _RideDashboardState extends State<RideDashboard> {
   /// The route whose best / markers are shown: the one being ridden, else
   /// the loaded GPX.
   GpxProfileInfo? get _shownGpx => _ridingGpx ?? _gpx;
+
+  void _setHover(double? m) => _hoverM.value = m;
 
   /// Route geometry for [_shownGpx], rebuilt only when that route changes.
   RouteGeo? get _routeGeo {
@@ -1299,6 +1305,18 @@ class _RideDashboardState extends State<RideDashboard> {
                                           geo: _routeGeo!,
                                           progressM: _mapRiderM,
                                           ghostM: _mapGhostM,
+                                          hoverM: _hoverM,
+                                          onHover: _setHover,
+                                        ),
+                                  elevChart: _shownGpx == null
+                                      ? null
+                                      : ElevProfileChart(
+                                          profile: _shownGpx!,
+                                          geo: _routeGeo,
+                                          riderM: _mapRiderM,
+                                          ghostM: _mapGhostM,
+                                          hoverM: _hoverM,
+                                          onHover: _setHover,
                                         ),
                                   ergFromGrade: _ergFromGrade,
                                   enabled: connected && !_busy,
@@ -1364,7 +1382,6 @@ class _RideDashboardState extends State<RideDashboard> {
                                     setState(() => _ergFromGrade = v);
                                     api.setErgFromGrade(enabled: v);
                                   },
-                                  ghostM: _ghostM,
                                   ghostDeltaS: _ghostDeltaS,
                                   bestS: _best?.totalS,
                                   onSaveAsCopy: (info) {

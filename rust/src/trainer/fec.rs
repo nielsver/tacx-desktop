@@ -45,6 +45,85 @@ pub fn encode_target_power(watts: u32) -> Vec<u8> {
     with_checksum(frame)
 }
 
+
+/// Wind Resistance (page 50 / 0x32) — simulation mode.
+/// `wind_resistance_coefficient` kg/m (0–1.86), `wind_speed_kmh` (−127..=127),
+/// `drafting_factor` 0–1.
+pub fn encode_wind_resistance(
+    wind_resistance_coefficient: f64,
+    wind_speed_kmh: f64,
+    drafting_factor: f64,
+) -> Result<Vec<u8>, String> {
+    if !(0.0..=1.86).contains(&wind_resistance_coefficient) {
+        return Err("wind_resistance_coefficient must be 0..=1.86".into());
+    }
+    if !(-127.0..=127.0).contains(&wind_speed_kmh) {
+        return Err("wind_speed_kmh must be -127..=127".into());
+    }
+    if !(0.0..=1.0).contains(&drafting_factor) {
+        return Err("drafting_factor must be 0..=1".into());
+    }
+    let mut frame = vec![0xA4, 0x09, 0x4F, 0x05, 0x32, 0xFF, 0xFF, 0xFF, 0xFF];
+    frame.push((wind_resistance_coefficient / 0.01).round() as u8);
+    frame.push((wind_speed_kmh + 127.0).round() as u8);
+    frame.push((drafting_factor / 0.01).round() as u8);
+    Ok(with_checksum(frame))
+}
+
+/// Track Resistance (page 51 / 0x33) — simulation grade + Crr.
+/// `grade_pct` −200..=200, `crr` 0..=0.0127.
+pub fn encode_track_resistance(grade_pct: f64, crr: f64) -> Result<Vec<u8>, String> {
+    if !(-200.0..=200.0).contains(&grade_pct) {
+        return Err("grade_pct must be -200..=200".into());
+    }
+    if !(0.0..=0.0127).contains(&crr) {
+        return Err("crr must be 0..=0.0127".into());
+    }
+    let mut frame = vec![0xA4, 0x09, 0x4F, 0x05, 0x33, 0xFF, 0xFF, 0xFF, 0xFF];
+    let grade_raw = ((grade_pct + 200.0) / 0.01).round() as u16;
+    frame.extend_from_slice(&grade_raw.to_le_bytes());
+    frame.push((crr / 5e-5).round() as u8);
+    Ok(with_checksum(frame))
+}
+
+/// User Configuration (page 55 / 0x37) — rider/bike mass + wheel for simulation.
+/// Weights in kg; `wheel_diameter_m` metres; `gear_ratio` front:rear.
+pub fn encode_user_configuration(
+    user_weight_kg: f64,
+    bicycle_weight_kg: f64,
+    wheel_diameter_m: f64,
+    gear_ratio: f64,
+) -> Result<Vec<u8>, String> {
+    if !(0.0..=655.34).contains(&user_weight_kg) {
+        return Err("user_weight_kg must be 0..=655.34".into());
+    }
+    if !(0.0..=50.0).contains(&bicycle_weight_kg) {
+        return Err("bicycle_weight_kg must be 0..=50".into());
+    }
+    if !(0.0..=2.54).contains(&wheel_diameter_m) {
+        return Err("wheel_diameter_m must be 0..=2.54".into());
+    }
+    if !(0.03..=7.65).contains(&gear_ratio) {
+        return Err("gear_ratio must be 0.03..=7.65".into());
+    }
+    let mut frame = vec![0xA4, 0x09, 0x4F, 0x05, 0x37];
+    let uw = ((user_weight_kg / 0.01).round() as u16).to_le_bytes();
+    frame.extend_from_slice(&uw);
+    frame.push(0xFF);
+    // Match pycycling: diameter offset from hundredths + bicycle weight in 0.05 kg units.
+    let diam_hundredths = (wheel_diameter_m * 100.0).round() / 100.0;
+    let offset = ((wheel_diameter_m - diam_hundredths) / 0.001).round() as i32;
+    let offset = offset.clamp(0, 10) as u8;
+    let bw_raw = (bicycle_weight_kg / 0.05).round() as u16;
+    let bw_lo = (bw_raw & 0xFF) as u8;
+    let bw_hi = ((bw_raw >> 8) & 0xFF) as u8;
+    frame.push(offset.wrapping_add((bw_lo << 4) & 0xFF));
+    frame.push((bw_lo >> 4).wrapping_add(bw_hi << 4));
+    frame.push((diam_hundredths / 0.01).round() as u8);
+    frame.push((gear_ratio / 0.03).round() as u8);
+    Ok(with_checksum(frame))
+}
+
 /// Parse Tacx FE-C page 25 (specific trainer data) for power/cadence.
 pub fn parse_specific_trainer_page(message_data: &[u8]) -> Option<(Option<f64>, Option<f64>)> {
     // message_data starts at data page number
@@ -146,6 +225,53 @@ mod tests {
         assert_eq!(msg[0], 16);
         let spd = parse_general_fe_speed(&msg).unwrap();
         assert!((spd - 36.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn track_resistance_golden_flat() {
+        // pycycling-compatible: grade 0%, Crr 0.004
+        let frame = encode_track_resistance(0.0, 0.004).unwrap();
+        assert_eq!(frame[4], 0x33);
+        assert_eq!(
+            frame,
+            vec![0xA4, 0x09, 0x4F, 0x05, 0x33, 0xFF, 0xFF, 0xFF, 0xFF, 0x20, 0x4E, 0x50, 0x4A]
+        );
+    }
+
+    #[test]
+    fn track_resistance_plus_five() {
+        let frame = encode_track_resistance(5.0, 0.004).unwrap();
+        assert_eq!(
+            frame,
+            vec![0xA4, 0x09, 0x4F, 0x05, 0x33, 0xFF, 0xFF, 0xFF, 0xFF, 0x14, 0x50, 0x50, 0x40]
+        );
+    }
+
+    #[test]
+    fn wind_resistance_golden() {
+        let frame = encode_wind_resistance(0.51, 0.0, 1.0).unwrap();
+        assert_eq!(frame[4], 0x32);
+        assert_eq!(
+            frame,
+            vec![0xA4, 0x09, 0x4F, 0x05, 0x32, 0xFF, 0xFF, 0xFF, 0xFF, 51, 127, 100, 161]
+        );
+    }
+
+    #[test]
+    fn user_configuration_golden() {
+        let frame = encode_user_configuration(75.0, 8.0, 0.7, 3.0).unwrap();
+        assert_eq!(frame[4], 0x37);
+        assert_eq!(
+            frame,
+            vec![0xA4, 0x09, 0x4F, 0x05, 0x37, 76, 29, 0xFF, 0, 10, 70, 100, 176]
+        );
+    }
+
+    #[test]
+    fn sim_pages_reject_out_of_range() {
+        assert!(encode_track_resistance(201.0, 0.004).is_err());
+        assert!(encode_wind_resistance(2.0, 0.0, 1.0).is_err());
+        assert!(encode_user_configuration(75.0, 8.0, 0.7, 0.01).is_err());
     }
 
 }

@@ -427,6 +427,104 @@ impl TrainerController {
         }
     }
 
+    /// FE-C simulation: Track Resistance (page 0x33). Rate-limited. FTMS trainers: not supported yet.
+    pub async fn set_track_resistance(&mut self, grade_pct: f64, crr: f64) -> Result<(), String> {
+        match &mut self.backend {
+            Backend::Demo(d) => {
+                // Demo: treat as resistance-ish feedback only
+                let approx = (grade_pct.clamp(-10.0, 20.0) + 10.0) / 30.0 * 100.0;
+                d.set_resistance(approx.clamp(0.0, 100.0));
+                Ok(())
+            }
+            Backend::Ble(b) => {
+                if !b.alive.load(Ordering::SeqCst) || b.control_lost.load(Ordering::SeqCst) {
+                    return Err("Trainer not controllable — Reconnect first".into());
+                }
+                match b.protocol {
+                    ProtocolKind::TacxFecBle => {
+                        let payload = fec::encode_track_resistance(grade_pct, crr)?;
+                        write_fec_throttled(b, payload).await?;
+                        *b.mode.lock() = ControlMode::Resistance;
+                        Ok(())
+                    }
+                    ProtocolKind::Ftms => Err(
+                        "Track Resistance is FE-C simulation (page 0x33). This trainer is on FTMS — use ERG/Resistance for now."
+                            .into(),
+                    ),
+                    ProtocolKind::Demo => Ok(()),
+                }
+            }
+        }
+    }
+
+    /// FE-C simulation: Wind Resistance (page 0x32). Rate-limited.
+    pub async fn set_wind_resistance(
+        &mut self,
+        wind_resistance_coefficient: f64,
+        wind_speed_kmh: f64,
+        drafting_factor: f64,
+    ) -> Result<(), String> {
+        match &mut self.backend {
+            Backend::Demo(_) => Ok(()),
+            Backend::Ble(b) => {
+                if !b.alive.load(Ordering::SeqCst) || b.control_lost.load(Ordering::SeqCst) {
+                    return Err("Trainer not controllable — Reconnect first".into());
+                }
+                match b.protocol {
+                    ProtocolKind::TacxFecBle => {
+                        let payload = fec::encode_wind_resistance(
+                            wind_resistance_coefficient,
+                            wind_speed_kmh,
+                            drafting_factor,
+                        )?;
+                        write_fec_throttled(b, payload).await?;
+                        Ok(())
+                    }
+                    ProtocolKind::Ftms => Err(
+                        "Wind Resistance is FE-C simulation (page 0x32). This trainer is on FTMS."
+                            .into(),
+                    ),
+                    ProtocolKind::Demo => Ok(()),
+                }
+            }
+        }
+    }
+
+    /// FE-C User Configuration (page 0x37) — rider/bike weight + wheel. Rate-limited.
+    pub async fn set_user_configuration(
+        &mut self,
+        user_weight_kg: f64,
+        bicycle_weight_kg: f64,
+        wheel_diameter_m: f64,
+        gear_ratio: f64,
+    ) -> Result<(), String> {
+        match &mut self.backend {
+            Backend::Demo(_) => Ok(()),
+            Backend::Ble(b) => {
+                if !b.alive.load(Ordering::SeqCst) || b.control_lost.load(Ordering::SeqCst) {
+                    return Err("Trainer not controllable — Reconnect first".into());
+                }
+                match b.protocol {
+                    ProtocolKind::TacxFecBle => {
+                        let payload = fec::encode_user_configuration(
+                            user_weight_kg,
+                            bicycle_weight_kg,
+                            wheel_diameter_m,
+                            gear_ratio,
+                        )?;
+                        write_fec_throttled(b, payload).await?;
+                        Ok(())
+                    }
+                    ProtocolKind::Ftms => Err(
+                        "User Configuration is FE-C page 0x37. This trainer is on FTMS."
+                            .into(),
+                    ),
+                    ProtocolKind::Demo => Ok(()),
+                }
+            }
+        }
+    }
+
     pub async fn start_interval(&mut self, key: String) -> Result<(), String> {
         self.stop_interval();
         let _ = crate::trainer::intervals::preset_by_key(&key)
@@ -696,11 +794,18 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             .subscribe(&cp_ch)
             .await
             .map_err(|e| format!("Subscribe FTMS Control Point failed: {e}"))?;
+        // 0x2ADA is optional — trainers without Machine Status still connect/control.
         if let Some(status_ch) = chars.iter().find(|c| c.uuid == ftms_status) {
             match peripheral.subscribe(status_ch).await {
                 Ok(()) => log::info!("Subscribed Fitness Machine Status (0x2ADA)"),
-                Err(e) => log::warn!("Fitness Machine Status subscribe failed (optional): {e}"),
+                Err(e) => log::warn!(
+                    "Fitness Machine Status subscribe failed (optional, continuing): {e}"
+                ),
             }
+        } else {
+            log::info!(
+                "Fitness Machine Status (0x2ADA) not present — continuing without status notifications"
+            );
         }
 
         // Notification pump: Indoor Bike Data + CP + Machine Status; mark link lost on stream end.

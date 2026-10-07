@@ -9,6 +9,12 @@ pub const SUPPORTED_RESISTANCE_RANGE: u16 = 0x2AD6;
 pub const SUPPORTED_POWER_RANGE: u16 = 0x2AD8;
 pub const MACHINE_STATUS: u16 = 0x2ADA;
 
+/// Fitness Machine Status is optional — connect/control must work when absent.
+pub fn machine_status_is_optional() -> bool {
+    true
+}
+
+
 pub const OP_REQUEST_CONTROL: u8 = 0x00;
 pub const OP_SET_TARGET_RESISTANCE: u8 = 0x04;
 pub const OP_SET_TARGET_POWER: u8 = 0x05;
@@ -381,6 +387,11 @@ mod tests {
         };
         assert!((clamp_resistance_percent(40.4, &range) - 40.0).abs() < 0.01);
         assert!((clamp_resistance_percent(200.0, &range) - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn machine_status_optional_flag() {
+        assert!(machine_status_is_optional());
     }
 
     #[test]

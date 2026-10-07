@@ -208,6 +208,18 @@ mod tests {
     }
 
     #[test]
+    fn classify_ftms_without_status_char() {
+        // Soft-fail path: 0x2ADA absent must not change FTMS classification.
+        let uuids = vec![
+            uuid_from_u16(ftms::INDOOR_BIKE_DATA),
+            uuid_from_u16(ftms::CONTROL_POINT),
+        ];
+        assert_eq!(classify_uuids(&uuids), TrainerGattClass::Ftms);
+        assert!(!uuids.iter().any(|u| *u == uuid_from_u16(ftms::MACHINE_STATUS)));
+        assert!(ftms::machine_status_is_optional());
+    }
+
+    #[test]
     fn classify_fec_only() {
         let uuids = vec![fec::tacx_uart_rx(), fec::tacx_uart_tx()];
         assert_eq!(classify_uuids(&uuids), TrainerGattClass::FecOnly);

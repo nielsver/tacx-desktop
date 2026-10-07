@@ -66,6 +66,43 @@ pub async fn set_resistance_percent(percent: f64) -> Result<(), String> {
     g.set_resistance(percent).await
 }
 
+/// FE-C Track Resistance (page 0x33). No-op path on FTMS until Indoor Bike Simulation lands.
+pub async fn set_track_resistance(grade_pct: f64, crr: f64) -> Result<(), String> {
+    let ctrl = controller();
+    let mut g = ctrl.lock().await;
+    g.set_track_resistance(grade_pct, crr).await
+}
+
+/// FE-C Wind Resistance (page 0x32).
+pub async fn set_wind_resistance(
+    wind_resistance_coefficient: f64,
+    wind_speed_kmh: f64,
+    drafting_factor: f64,
+) -> Result<(), String> {
+    let ctrl = controller();
+    let mut g = ctrl.lock().await;
+    g.set_wind_resistance(wind_resistance_coefficient, wind_speed_kmh, drafting_factor)
+        .await
+}
+
+/// FE-C User Configuration (page 0x37).
+pub async fn set_user_configuration(
+    user_weight_kg: f64,
+    bicycle_weight_kg: f64,
+    wheel_diameter_m: f64,
+    gear_ratio: f64,
+) -> Result<(), String> {
+    let ctrl = controller();
+    let mut g = ctrl.lock().await;
+    g.set_user_configuration(
+        user_weight_kg,
+        bicycle_weight_kg,
+        wheel_diameter_m,
+        gear_ratio,
+    )
+    .await
+}
+
 #[flutter_rust_bridge::frb(sync)]
 pub fn get_metrics() -> TrainerMetrics {
     block_on(async {

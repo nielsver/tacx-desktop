@@ -26,6 +26,18 @@ jobs:
       - name: cargo test
         run: cargo test
 
+  linux-packaging:
+    name: Linux launcher scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install desktop-file-utils + shellcheck
+        run: sudo apt-get update && sudo apt-get install -y desktop-file-utils shellcheck
+      - name: shellcheck
+        run: shellcheck packaging/linux/install.sh packaging/linux/uninstall.sh scripts/test_linux_install.sh
+      - name: install/uninstall in a temp XDG_DATA_HOME
+        run: ./scripts/test_linux_install.sh
+
   flutter:
     name: Flutter
     runs-on: ubuntu-latest

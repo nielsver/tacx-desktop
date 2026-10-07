@@ -27,6 +27,9 @@ Tacx Desktop — Linux first-run (Garuda / Arch primary)
    # Wayland blank/crash fallback:
    #   GDK_BACKEND=x11 ./tacx_desktop
 
+   Optional: add "Tacx Desktop" to the KDE app menu (user-only, ~/.local):
+     ./install.sh        # remove again with ./uninstall.sh
+
 5) In-app
    Demo ON → ERG / Resistance / Intervals / Simulation
    Demo OFF → quit Zwift/Tacx/MyWhoosh/Rouvy → forget trainer in KDE Bluetooth

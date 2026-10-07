@@ -77,6 +77,8 @@ ldd ./tacx_desktop | grep 'not found' || echo "ldd OK"
 
 # Run from the bundle dir so RPATH $ORIGIN/lib resolves libtacx_desktop_core
 ./tacx_desktop
+# Optional: "Tacx Desktop" in the KDE/GNOME app menu (user-only, ~/.local); undo with ./uninstall.sh
+./install.sh
 # LD_LIBRARY_PATH fallback only if needed:
 #   export LD_LIBRARY_PATH="$PWD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # Wayland blank/crash: GDK_BACKEND=x11 ./tacx_desktop
@@ -306,6 +308,7 @@ GitHub Actions (`.github/workflows/ci.yml`):
 | --- | --- |
 | **Rust** (on push) | `cargo test` in `rust/` |
 | **Flutter** (on push) | `flutter analyze` + `flutter test` (Linux; builds Rust cdylib) |
+| **Linux launcher scripts** (on push) | `shellcheck` + `scripts/test_linux_install.sh` (install/uninstall in a temp `XDG_DATA_HOME`, `desktop-file-validate`) |
 | **Release** (manual / `v*` tags) | Windows zip, Linux tar.gz (checks the Rust cdylib is bundled), macOS `.app` zip (checks Bluetooth entitlement + usage string) — not on every push |
 
 ## Protocol context

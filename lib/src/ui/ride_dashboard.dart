@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
+import 'package:tacx_desktop/src/ui/hr_strap_bar.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 
 class RideDashboard extends StatefulWidget {
@@ -67,6 +68,17 @@ class _RideDashboardState extends State<RideDashboard> {
   );
   final _presets = api.listIntervalPresets();
 
+  HrStrapStatus _strap = const HrStrapStatus(
+    state: HrStrapState.disconnected,
+    deviceId: '',
+    deviceName: '',
+    detail: '',
+  );
+  List<DiscoveredDevice> _straps = [];
+  String? _strapPick;
+  bool _strapSearching = false;
+  String? _strapNote;
+
   int _targetWatts = 150;
   int _ergStep = 10;
   double _resistancePct = 20;
@@ -117,6 +129,7 @@ class _RideDashboardState extends State<RideDashboard> {
       _resRange = api.getResistanceRange();
       _interval = api.getIntervalStatus();
       _ride = api.getRideStats();
+      _strap = api.getHeartRateStrapStatus();
       if (_snap.mode == ControlMode.simulation) {
         _simExpanded = true;
       }
@@ -247,6 +260,49 @@ class _RideDashboardState extends State<RideDashboard> {
           ),
         ),
       );
+  }
+
+  /// Heart-rate strap search runs beside the trainer link (never blocks
+  /// trainer controls via [_busy]).
+  Future<void> _searchStraps() async {
+    setState(() {
+      _strapSearching = true;
+      _strapNote = null;
+    });
+    try {
+      final list = await api.scanHeartRateStraps(timeoutMs: 6000);
+      if (!mounted) return;
+      setState(() {
+        _straps = list;
+        if (!list.any((d) => d.id == _strapPick)) {
+          _strapPick = list.isEmpty ? null : list.first.id;
+        }
+        _strapNote = list.isEmpty
+            ? 'No heart-rate strap found — wear it (it sleeps when dry), then search again'
+            : null;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _strapNote = e.toString());
+    } finally {
+      if (mounted) setState(() => _strapSearching = false);
+    }
+  }
+
+  Future<void> _connectStrap() async {
+    final id = _strapPick ?? (_straps.isEmpty ? null : _straps.first.id);
+    if (id == null) return;
+    try {
+      await api.connectHeartRateStrap(deviceId: id);
+      _refresh();
+      if (mounted) _toast('Heart-rate strap connected', Icons.favorite);
+    } catch (e) {
+      _refresh();
+    }
+  }
+
+  Future<void> _disconnectStrap() async {
+    await api.disconnectHeartRateStrap();
+    _refresh();
   }
 
   Future<void> _scan() async {
@@ -395,8 +451,9 @@ class _RideDashboardState extends State<RideDashboard> {
                     final needed = simOpen
                         ? (_simAdvanced ? 900.0 : 780.0)
                         : 520.0;
-                    // Ride summary strip sits between metrics and controls.
-                    final neededWithRide = needed + 56;
+                    // Ride summary strip + heart-rate strap bar sit between
+                    // metrics and controls (48 px + 8 px gap each).
+                    final neededWithRide = needed + 56 + 56;
                     final compact = box.maxHeight < neededWithRide;
                     final body = Column(
                       children: [
@@ -450,6 +507,18 @@ class _RideDashboardState extends State<RideDashboard> {
                             _refresh();
                           },
                           onExport: _exportRide,
+                        ),
+                        const SizedBox(height: 8),
+                        HeartRateStrapBar(
+                          status: _strap,
+                          straps: _straps,
+                          selectedId: _strapPick,
+                          searching: _strapSearching,
+                          note: _strapNote,
+                          onSearch: _searchStraps,
+                          onSelect: (id) => setState(() => _strapPick = id),
+                          onConnect: _connectStrap,
+                          onDisconnect: _disconnectStrap,
                         ),
                         const SizedBox(height: 12),
                         _FlexOrFixed(

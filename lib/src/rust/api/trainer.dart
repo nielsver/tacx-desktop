@@ -120,6 +120,26 @@ Future<String> exportRideTcx({String? dir}) =>
 String defaultRideExportDir() =>
     RustLib.instance.api.crateApiTrainerDefaultRideExportDir();
 
+/// Scan for Bluetooth heart-rate straps (Heart Rate Service 0x180D).
+/// Independent of the trainer link and of demo mode.
+Future<List<DiscoveredDevice>> scanHeartRateStraps({required int timeoutMs}) =>
+    RustLib.instance.api.crateApiTrainerScanHeartRateStraps(
+      timeoutMs: timeoutMs,
+    );
+
+/// Connect a heart-rate strap; while it streams, its bpm replaces any HR the
+/// trainer relays (live card, ride avg/max, TCX export).
+Future<void> connectHeartRateStrap({required String deviceId}) => RustLib
+    .instance
+    .api
+    .crateApiTrainerConnectHeartRateStrap(deviceId: deviceId);
+
+Future<void> disconnectHeartRateStrap() =>
+    RustLib.instance.api.crateApiTrainerDisconnectHeartRateStrap();
+
+HrStrapStatus getHeartRateStrapStatus() =>
+    RustLib.instance.api.crateApiTrainerGetHeartRateStrapStatus();
+
 /// Headless smoke test used by CI / README.
 Future<String> runHeadlessDemoSmoke() =>
     RustLib.instance.api.crateApiTrainerRunHeadlessDemoSmoke();

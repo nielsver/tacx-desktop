@@ -172,6 +172,48 @@ class DiscoveredDevice {
           protocolHint == other.protocolHint;
 }
 
+/// Separate BLE heart-rate strap link (Heart Rate Service 0x180D).
+enum HrStrapState { disconnected, connecting, connected, error }
+
+class HrStrapStatus {
+  final HrStrapState state;
+  final String deviceId;
+  final String deviceName;
+
+  /// Short English status / error line for the UI.
+  final String detail;
+
+  /// Latest strap reading, `None` when disconnected or stale (> 5 s).
+  final int? heartRateBpm;
+
+  const HrStrapStatus({
+    required this.state,
+    required this.deviceId,
+    required this.deviceName,
+    required this.detail,
+    this.heartRateBpm,
+  });
+
+  @override
+  int get hashCode =>
+      state.hashCode ^
+      deviceId.hashCode ^
+      deviceName.hashCode ^
+      detail.hashCode ^
+      heartRateBpm.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is HrStrapStatus &&
+          runtimeType == other.runtimeType &&
+          state == other.state &&
+          deviceId == other.deviceId &&
+          deviceName == other.deviceName &&
+          detail == other.detail &&
+          heartRateBpm == other.heartRateBpm;
+}
+
 class IntervalPresetInfo {
   final String key;
   final String label;

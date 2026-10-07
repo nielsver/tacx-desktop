@@ -98,7 +98,11 @@ pub fn try_metrics() -> TrainerMetrics {
     ensure_runtime();
     match CONTROLLER.get().unwrap().try_lock() {
         Ok(g) => g.metrics(),
-        Err(_) => TrainerMetrics::default(),
+        Err(_) => {
+            let mut m = TrainerMetrics::default();
+            crate::trainer::hr_strap::overlay(&mut m);
+            m
+        }
     }
 }
 
@@ -343,10 +347,12 @@ impl TrainerController {
     }
 
     pub fn metrics(&self) -> TrainerMetrics {
-        match &self.backend {
+        let mut m = match &self.backend {
             Backend::Demo(d) => d.metrics.lock().clone(),
             Backend::Ble(b) => b.metrics.lock().clone(),
-        }
+        };
+        crate::trainer::hr_strap::overlay(&mut m);
+        m
     }
 
     pub fn resistance_range(&self) -> ResistanceRange {
@@ -1243,6 +1249,11 @@ fn friendly_ble_error(err: &str) -> String {
         );
     }
     err.to_string()
+}
+
+/// Shared adapter lookup (trainer + heart-rate strap).
+pub(crate) async fn ble_adapter() -> Result<Adapter, String> {
+    adapter().await
 }
 
 async fn adapter() -> Result<Adapter, String> {

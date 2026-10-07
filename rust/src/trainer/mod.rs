@@ -3,6 +3,7 @@ pub mod demo;
 pub mod fec;
 pub mod fec_rate;
 pub mod gatt;
+pub mod hr_strap;
 pub mod ftms;
 pub mod intervals;
 pub mod reconnect;

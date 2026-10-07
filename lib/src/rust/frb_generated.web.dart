@@ -59,6 +59,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_f_64(dynamic raw);
 
   @protected
+  HrStrapState dco_decode_hr_strap_state(dynamic raw);
+
+  @protected
+  HrStrapStatus dco_decode_hr_strap_status(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
 
   @protected
@@ -149,6 +155,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double sse_decode_f_64(SseDeserializer deserializer);
+
+  @protected
+  HrStrapState sse_decode_hr_strap_state(SseDeserializer deserializer);
+
+  @protected
+  HrStrapStatus sse_decode_hr_strap_status(SseDeserializer deserializer);
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
@@ -260,6 +272,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_hr_strap_state(HrStrapState self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_hr_strap_status(HrStrapStatus self, SseSerializer serializer);
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);

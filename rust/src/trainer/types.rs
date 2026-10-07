@@ -91,6 +91,32 @@ impl Default for ProtocolKind {
     }
 }
 
+/// Separate BLE heart-rate strap link (Heart Rate Service 0x180D).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HrStrapState {
+    Disconnected,
+    Connecting,
+    Connected,
+    Error,
+}
+
+impl Default for HrStrapState {
+    fn default() -> Self {
+        Self::Disconnected
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct HrStrapStatus {
+    pub state: HrStrapState,
+    pub device_id: String,
+    pub device_name: String,
+    /// Short English status / error line for the UI.
+    pub detail: String,
+    /// Latest strap reading, `None` when disconnected or stale (> 5 s).
+    pub heart_rate_bpm: Option<u32>,
+}
+
 #[derive(Clone, Debug)]
 pub struct DiscoveredDevice {
     pub id: String,

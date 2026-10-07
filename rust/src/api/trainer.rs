@@ -198,6 +198,30 @@ pub fn default_ride_export_dir() -> String {
     crate::trainer::ride::default_export_dir().display().to_string()
 }
 
+/// Scan for Bluetooth heart-rate straps (Heart Rate Service 0x180D).
+/// Independent of the trainer link and of demo mode.
+pub async fn scan_heart_rate_straps(timeout_ms: u32) -> Result<Vec<DiscoveredDevice>, String> {
+    ensure_runtime();
+    crate::trainer::hr_strap::scan(timeout_ms).await
+}
+
+/// Connect a heart-rate strap; while it streams, its bpm replaces any HR the
+/// trainer relays (live card, ride avg/max, TCX export).
+pub async fn connect_heart_rate_strap(device_id: String) -> Result<(), String> {
+    ensure_runtime();
+    crate::trainer::hr_strap::connect(device_id).await
+}
+
+pub async fn disconnect_heart_rate_strap() {
+    ensure_runtime();
+    crate::trainer::hr_strap::disconnect().await
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_heart_rate_strap_status() -> HrStrapStatus {
+    crate::trainer::hr_strap::status()
+}
+
 /// Headless smoke test used by CI / README.
 pub async fn run_headless_demo_smoke() -> Result<String, String> {
     {

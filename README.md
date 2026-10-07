@@ -122,6 +122,7 @@ Ship the Linux `bundle/` folder as-is (includes `lib/` + the Rust **cdylib**). O
 ### flutter_rust_bridge / cdylib notes
 
 - Rust crate `tacx_desktop_core` builds as `cdylib` + `staticlib` + `rlib` (`rust/Cargo.toml`).
+- BLE stack: **btleplug 0.13** (uuid pinned to `=1.26.1` for Rust 1.85+ MSRV; uuid 1.27 wants 1.89).
 - After editing `rust/src/api/`, regenerate: `./scripts/gen_bridge.sh` (or `flutter_rust_bridge_codegen generate`).
 - Linux runners / local: ensure `LD_LIBRARY_PATH` includes `rust/target/debug` (or release) when loading the native lib outside a full Flutter bundle — see `scripts/test_all.sh`.
 

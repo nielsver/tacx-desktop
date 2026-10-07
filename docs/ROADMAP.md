@@ -10,12 +10,12 @@ Rules for every step: widget/unit tests, `flutter analyze` clean, CI green on
 **Demo OFF by default** and the existing charts working. Tick the box and record
 the SHA here when a step lands.
 
-**Current step:** 1 — Pro workout view (in progress)
-**Last SHA:** `692b624` (main before step 1)
+**Current step:** 2 — Ghost race (in progress)
+**Last SHA:** `d40f621` (step 1 done, CI 37692811589 green)
 
 ## Steps
 
-- [ ] **1. Pro workout view** — planned workout as zone-coloured blocks
+- [x] **1. Pro workout view** (`d40f621`) — planned workout as zone-coloured blocks
       (height = target W / %FTP, width = duration), actual power drawn over it,
       "now" cursor, current/next step strip, 3-2-1 countdown before step
       changes. Dashboard + Focus. Flutter only.
@@ -42,3 +42,4 @@ the SHA here when a step lands.
 | Step | Status | SHA | CI run |
 |------|--------|-----|--------|
 | 0. Installers + v0.2.1 release | done | `fdb57de` (tag `v0.2.1`) | CI 37675496926, Release 37675940929 |
+| 1. Pro workout view | done | `d40f621` | CI 37692811589 (success) |

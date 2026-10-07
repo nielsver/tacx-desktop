@@ -1,0 +1,71 @@
+name: Trainer test report
+description: Report how Tacx Desktop behaved on a real smart trainer (fills the hardware matrix).
+title: "[HW] <trainer model> on <OS>"
+labels: ["hardware-test"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing on real hardware. One report per trainer + OS combination.
+        Keep the trainer **unpaired** in the OS Bluetooth settings and close Zwift / Tacx Training / MyWhoosh before connecting.
+  - type: input
+    id: trainer
+    attributes:
+      label: Trainer model + firmware
+      placeholder: "Tacx Neo 2T, firmware 4.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows 11, Windows 10, macOS (Apple Silicon), macOS (Intel), Linux (BlueZ)]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version / commit
+      description: Release tag or the short commit from the zip name (e.g. main-b3fafe5).
+    validations:
+      required: true
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Protocol chip shown in the scan list
+      options: [FTMS, FE-C, Both, Trainer not found]
+    validations:
+      required: true
+  - type: checkboxes
+    id: results
+    attributes:
+      label: What worked
+      description: Tick everything that behaved as expected.
+      options:
+        - label: Scan finds the trainer (P0-BLE-2)
+        - label: Connect without OS pairing (P0-BLE-3)
+        - label: Power + cadence appear within 5 s (P0-FTMS-2)
+        - label: ERG target power holds (P0-FTMS-3)
+        - label: Resistance % changes feel (P0-FTMS-4)
+        - label: Simulation grade changes feel (P1-FTMS-5 / P1-FEC-2)
+        - label: Interval preset runs end to end (P2-UX-6)
+        - label: Trainer power-off mid-ride shows "Connection lost — reconnecting" (P1-BLE-4)
+        - label: Trainer back on → auto-reconnect restores ERG without a tap (P0-UX-4)
+        - label: Another app taking control shows the exclusive-control message (P1-BLE-5)
+  - type: input
+    id: reconnect
+    attributes:
+      label: Drop test timing
+      description: Seconds from trainer off until the app left "Connected", and from trainer on until ERG was restored.
+      placeholder: "lost after ~4 s, restored after ~9 s (attempt 2/4)"
+  - type: textarea
+    id: notes
+    attributes:
+      label: What went wrong / notes
+      description: Error banners, snackbars, odd values. Screenshots welcome.
+  - type: textarea
+    id: log
+    attributes:
+      label: Console log (optional)
+      description: Run from a terminal and paste the output around the problem.
+      render: text

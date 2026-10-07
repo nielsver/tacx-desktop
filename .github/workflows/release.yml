@@ -1,0 +1,149 @@
+name: Release
+
+# Builds ready-to-run desktop packages for Windows, Linux and macOS.
+# Run manually from the Actions tab (artifacts only), or push a tag like
+# v0.1.0 to also attach all three packages to a GitHub Release.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows x64 release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Rust tests
+        working-directory: rust
+        run: cargo test
+      - name: flutter pub get
+        run: flutter pub get
+      - name: flutter build windows --release
+        run: flutter build windows --release
+      - name: Zip Release folder
+        shell: pwsh
+        run: |
+          $ver = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { "main-$($env:GITHUB_SHA.Substring(0,7))" }
+          $zip = "tacx-desktop-windows-x64-$ver.zip"
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath $zip
+          "PKG=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Get-ChildItem build\windows\x64\runner\Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tacx-desktop-windows-x64
+          path: ${{ env.PKG }}
+          retention-days: 30
+      - name: Attach to GitHub Release (tags only)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.PKG }}
+          generate_release_notes: true
+
+  linux:
+    name: Linux x64 release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Flutter Linux + BlueZ / D-Bus build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libdbus-1-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Rust tests
+        working-directory: rust
+        run: cargo test
+      - name: flutter pub get
+        run: flutter pub get
+      - name: flutter build linux --release
+        run: flutter build linux --release
+      - name: Check Rust cdylib is bundled
+        run: |
+          ls -la build/linux/x64/release/bundle build/linux/x64/release/bundle/lib
+          ls build/linux/x64/release/bundle/lib | grep -q tacx_desktop_core \
+            || { echo "::error::Rust cdylib missing from Linux bundle"; exit 1; }
+      - name: Tarball bundle
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then ver="$GITHUB_REF_NAME"; else ver="main-${GITHUB_SHA::7}"; fi
+          pkg="tacx-desktop-linux-x64-$ver.tar.gz"
+          tar -C build/linux/x64/release -czf "$pkg" --transform 's,^bundle,tacx-desktop,' bundle
+          echo "PKG=$pkg" >> "$GITHUB_ENV"
+          tar -tzf "$pkg" | head -20
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tacx-desktop-linux-x64
+          path: ${{ env.PKG }}
+          retention-days: 30
+      - name: Attach to GitHub Release (tags only)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.PKG }}
+          generate_release_notes: true
+
+  macos:
+    name: macOS release (ad-hoc signed, not notarized)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Rust tests
+        working-directory: rust
+        run: cargo test
+      - name: flutter pub get
+        run: flutter pub get
+      - name: flutter build macos --release
+        run: flutter build macos --release
+      - name: Verify entitlements + zip .app
+        run: |
+          app=$(ls -d build/macos/Build/Products/Release/*.app | head -1)
+          echo "App: $app"
+          codesign -d --entitlements - "$app" 2>&1 | tee entitlements.txt
+          grep -q "com.apple.security.device.bluetooth" entitlements.txt \
+            || { echo "::error::Bluetooth entitlement missing from release .app"; exit 1; }
+          /usr/libexec/PlistBuddy -c "Print :NSBluetoothAlwaysUsageDescription" "$app/Contents/Info.plist"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then ver="$GITHUB_REF_NAME"; else ver="main-${GITHUB_SHA::7}"; fi
+          pkg="tacx-desktop-macos-$ver.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$pkg"
+          echo "PKG=$pkg" >> "$GITHUB_ENV"
+          ls -la "$pkg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tacx-desktop-macos
+          path: ${{ env.PKG }}
+          retention-days: 30
+      - name: Attach to GitHub Release (tags only)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.PKG }}
+          generate_release_notes: true

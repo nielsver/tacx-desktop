@@ -56,7 +56,7 @@ Run `flutter doctor -v` after installing the toolchain. You want these green bef
 
 **Demo-first path:** `flutter pub get` → `flutter run -d windows` (or `linux` / `macos`) → leave **DEMO** on → exercise ERG / Resistance / Intervals / Simulation. Then Demo **off** for live BLE (quit other apps; Windows: forget OS pairing).
 
-**Release on Windows without local VS:** GitHub Actions → **Windows release** → *Run workflow* (manual) downloads `tacx-desktop-windows-x64` artifact. Local: `./scripts/build_release.sh windows`.
+**Release without a local toolchain:** GitHub Actions → **Release** → *Run workflow* (manual) builds `tacx-desktop-windows-x64` (zip), `tacx-desktop-linux-x64` (tar.gz) and `tacx-desktop-macos` (zipped `.app`, ad-hoc signed, not notarized) artifacts; a `v*` tag also attaches all three to a GitHub Release. Local: `./scripts/build_release.sh windows`.
 
 ## Windows quickstart
 
@@ -251,6 +251,8 @@ UUID    Name    Properties
 
 Use one FTMS trainer and one legacy FE-C-only Tacx to fill your lab matrix. Dual trainers prefer FTMS. No private Garmin Tacx APIs are used.
 
+Report each trainer + OS combination with the **Trainer test report** issue template (Issues → New issue). It walks through scan, unpaired connect, ERG, resistance, simulation, intervals and the power-off drop test, and the `hardware-test` label collects the reports into the hardware matrix.
+
 ### Disconnect + reconnect during intervals
 
 - When the BLE notification stream ends (trainer asleep / out of range), the app **auto-reconnects** with bounded backoff (~1 s, 3 s, 8 s, 15 s → 4 attempts). The dashboard shows “Connection lost — reconnecting (2/4) in 3 s…” with **Reconnect now** / **Disconnect**; the policy lives in `rust/src/trainer/reconnect.rs`.
@@ -272,7 +274,7 @@ GitHub Actions (`.github/workflows/ci.yml`):
 | --- | --- |
 | **Rust** (on push) | `cargo test` in `rust/` |
 | **Flutter** (on push) | `flutter analyze` + `flutter test` (Linux; builds Rust cdylib) |
-| **Windows release** (manual / `v*` tags) | `flutter build windows --release` → zip artifact — not on every push |
+| **Release** (manual / `v*` tags) | Windows zip, Linux tar.gz (checks the Rust cdylib is bundled), macOS `.app` zip (checks Bluetooth entitlement + usage string) — not on every push |
 
 ## Protocol context
 

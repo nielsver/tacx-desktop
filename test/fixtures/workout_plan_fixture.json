@@ -1,0 +1,21 @@
+{
+  "workout": {
+    "version": 1,
+    "id": "fixture_mixed",
+    "name": "Fixture mixed",
+    "steps": [
+      {"kind": "erg", "durationS": 60, "watts": 180},
+      {"kind": "ramp", "durationS": 120, "wattsStart": 120, "wattsEnd": 240},
+      {"kind": "resistance", "durationS": 30, "resistancePct": 35},
+      {"kind": "simGrade", "durationS": 45, "gradePct": -2.5}
+    ]
+  },
+  "expected": {
+    "totalS": 255,
+    "stepStartWatts": [180, 120, null, null],
+    "stepEndWatts": [180, 240, null, null],
+    "rampMidWatts": 180,
+    "resistancePct": 35,
+    "gradePct": -2.5
+  }
+}

@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub const WORKOUT_FILE_SUFFIX: &str = ".tacxworkout.json";
 
@@ -302,9 +302,8 @@ fn load_workout_file(path: &Path) -> Result<WorkoutFile, String> {
     if w.version == 0 {
         w.version = 1;
     }
-    if w.steps.is_empty() {
-        return Err("Workout has no steps".into());
-    }
+    w.validate()
+        .map_err(|e| format!("Invalid workout {}: {e}", path.display()))?;
     Ok(w)
 }
 
@@ -320,6 +319,7 @@ pub fn save_workout(mut workout: WorkoutFile) -> Result<String, String> {
     if workout.steps.is_empty() {
         return Err("Add at least one step before saving".into());
     }
+    workout.validate()?;
     let path = workouts_dir().join(format!("{}{WORKOUT_FILE_SUFFIX}", workout.id));
     let json = serde_json::to_string_pretty(&workout)
         .map_err(|e| format!("JSON encode failed: {e}"))?;
@@ -368,18 +368,96 @@ pub fn workout_from_json(s: &str) -> Result<WorkoutFile, String> {
     serde_json::from_str(s).map_err(|e| e.to_string())
 }
 
+/// Hard limits for user workouts (also applied to builtins in tests).
+pub const MAX_STEP_WATTS: u32 = 2000;
+pub const MAX_STEP_DURATION_S: u32 = 6 * 3600;
+pub const GRADE_LIMIT_PCT: f64 = 25.0;
+
+impl WorkoutFile {
+    /// Rejects workouts the engine cannot run faithfully: no steps, unknown
+    /// kinds, missing/zero durations (distance-only steps are not supported
+    /// yet), missing targets, or targets outside trainer-safe ranges.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.steps.is_empty() {
+            return Err("Workout has no steps".into());
+        }
+        for (i, s) in self.steps.iter().enumerate() {
+            let n = i + 1;
+            let dur = s.duration_s.unwrap_or(0);
+            if dur == 0 {
+                return Err(if s.distance_m.is_some() {
+                    format!("Step {n}: distance-only steps are not supported yet — use durationS")
+                } else {
+                    format!("Step {n}: durationS must be at least 1 s")
+                });
+            }
+            if dur > MAX_STEP_DURATION_S {
+                return Err(format!("Step {n}: durationS over 6 h"));
+            }
+            let watts_ok = |w: Option<u32>, what: &str| -> Result<(), String> {
+                match w {
+                    None => Err(format!("Step {n}: {what} is required")),
+                    Some(w) if w > MAX_STEP_WATTS => {
+                        Err(format!("Step {n}: {what} {w} W is over {MAX_STEP_WATTS} W"))
+                    }
+                    _ => Ok(()),
+                }
+            };
+            match s.kind.as_str() {
+                "erg" => watts_ok(s.watts, "watts")?,
+                "ramp" => {
+                    watts_ok(s.watts_start, "wattsStart")?;
+                    watts_ok(s.watts_end, "wattsEnd")?;
+                }
+                "resistance" => match s.resistance_pct {
+                    Some(p) if p.is_finite() && (0.0..=100.0).contains(&p) => {}
+                    _ => return Err(format!("Step {n}: resistancePct must be 0–100")),
+                },
+                "simGrade" => match s.grade_pct {
+                    Some(g) if g.is_finite() && g.abs() <= GRADE_LIMIT_PCT => {}
+                    _ => {
+                        return Err(format!(
+                            "Step {n}: gradePct must be within ±{GRADE_LIMIT_PCT} %"
+                        ))
+                    }
+                },
+                other => return Err(format!("Step {n}: unknown step kind '{other}'")),
+            }
+        }
+        Ok(())
+    }
+
+    fn has_sim_step(&self) -> bool {
+        self.steps.iter().any(|s| s.kind == "simGrade")
+    }
+}
+
 /// What the engine wants applied right now.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum WorkoutCommand {
     Erg(u32),
     Resistance(f64),
     SimGrade(f64),
 }
 
+/// Engine clock: tokio's Instant so tests can use `tokio::time::pause()`.
+type Instant = tokio::time::Instant;
+
+/// Ramps re-send ERG at most this often...
+const RAMP_RESEND_EVERY: Duration = Duration::from_secs(1);
+/// ...and only when the target moved by at least this much.
+const RAMP_MIN_DELTA_W: u32 = 2;
+/// Engine tick while waiting for a step deadline.
+const TICK: Duration = Duration::from_millis(250);
+
 struct EngineInner {
     running: bool,
     done: bool,
-    cancel: bool,
+    /// Last run's failure (command rejected, unknown step…), cleared on start.
+    error: Option<String>,
+    /// Bumped by every `run` and `stop`; a run loop exits as soon as it sees
+    /// a newer generation, so two runs can never drive the trainer at once.
+    generation: u64,
     workout: Option<WorkoutFile>,
     step_index: usize,
     step_started: Instant,
@@ -400,13 +478,24 @@ impl Default for WorkoutEngine {
     }
 }
 
+fn step_command(step: &WorkoutStep) -> Result<WorkoutCommand, String> {
+    Ok(match step.kind.as_str() {
+        "erg" => WorkoutCommand::Erg(step.watts.unwrap_or(0)),
+        "ramp" => WorkoutCommand::Erg(step.watts_start.unwrap_or(100)),
+        "resistance" => WorkoutCommand::Resistance(step.resistance_pct.unwrap_or(20.0)),
+        "simGrade" => WorkoutCommand::SimGrade(step.grade_pct.unwrap_or(0.0)),
+        other => return Err(format!("Unknown step kind: {other}")),
+    })
+}
+
 impl WorkoutEngine {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(EngineInner {
                 running: false,
                 done: false,
-                cancel: false,
+                error: None,
+                generation: 0,
                 workout: None,
                 step_index: 0,
                 step_started: Instant::now(),
@@ -421,7 +510,11 @@ impl WorkoutEngine {
         let g = self.inner.lock();
         let Some(w) = g.workout.as_ref() else {
             return WorkoutStatus {
-                status_text: "Idle".into(),
+                status_text: match &g.error {
+                    Some(e) => format!("Stopped: {e}"),
+                    None => "Idle".into(),
+                },
+                error: g.error.clone(),
                 ..Default::default()
             };
         };
@@ -435,14 +528,7 @@ impl WorkoutEngine {
         let (target_watts, target_grade, phase) = if g.running {
             if let Some(step) = w.steps.get(g.step_index) {
                 match step.kind.as_str() {
-                    "ramp" => {
-                        let t = g.step_started.elapsed().as_secs_f64()
-                            / g.step_duration.as_secs_f64().max(0.001);
-                        let t = t.clamp(0.0, 1.0);
-                        let w_now = g.ramp_start_w as f64
-                            + (g.ramp_end_w as f64 - g.ramp_start_w as f64) * t;
-                        (Some(w_now.round() as u32), None, "RAMP")
-                    }
+                    "ramp" => (Some(ramp_watts(&g)), None, "RAMP"),
                     "erg" => (step.watts, None, "ERG"),
                     "resistance" => (None, None, "RES"),
                     "simGrade" => (None, step.grade_pct, "SIM"),
@@ -469,6 +555,8 @@ impl WorkoutEngine {
             )
         } else if g.done {
             format!("{} · Done", w.name)
+        } else if let Some(e) = &g.error {
+            format!("{} · Stopped: {e}", w.name)
         } else {
             "Idle".into()
         };
@@ -483,6 +571,7 @@ impl WorkoutEngine {
             target_grade_pct: target_grade,
             status_text,
             done: g.done,
+            error: g.error.clone(),
         }
     }
 
@@ -493,32 +582,28 @@ impl WorkoutEngine {
         }
         let step = g.workout.as_ref()?.steps.get(g.step_index)?;
         match step.kind.as_str() {
-            "erg" => Some(WorkoutCommand::Erg(step.watts.unwrap_or(0))),
-            "ramp" => {
-                let t = g.step_started.elapsed().as_secs_f64()
-                    / g.step_duration.as_secs_f64().max(0.001);
-                let t = t.clamp(0.0, 1.0);
-                let w = g.ramp_start_w as f64
-                    + (g.ramp_end_w as f64 - g.ramp_start_w as f64) * t;
-                Some(WorkoutCommand::Erg(w.round() as u32))
-            }
-            "resistance" => Some(WorkoutCommand::Resistance(
-                step.resistance_pct.unwrap_or(20.0),
-            )),
-            "simGrade" => Some(WorkoutCommand::SimGrade(step.grade_pct.unwrap_or(0.0))),
-            _ => None,
+            "ramp" => Some(WorkoutCommand::Erg(ramp_watts(&g))),
+            _ => step_command(step).ok(),
         }
     }
 
     pub fn stop(&self) {
         let mut g = self.inner.lock();
-        g.cancel = true;
+        g.generation += 1;
         g.running = false;
         g.done = false;
+        g.error = None;
         g.workout = None;
         g.step_index = 0;
     }
 
+    /// Runs [workout] to completion, sending commands through [on_cmd].
+    ///
+    /// Every exit path leaves a consistent state: finished → `done`, failed →
+    /// `error` set and `running = false`, superseded by a newer `run`/`stop`
+    /// → untouched (the newer owner manages it). Step boundaries follow an
+    /// absolute schedule from the workout start, so command latency and tick
+    /// overshoot never accumulate.
     pub async fn run<F, Fut>(&self, workout: WorkoutFile, mut on_cmd: F) -> Result<(), String>
     where
         F: FnMut(WorkoutCommand) -> Fut,
@@ -527,85 +612,132 @@ impl WorkoutEngine {
         if workout.steps.is_empty() {
             return Err("Workout has no steps".into());
         }
-        {
+        let gen = {
             let mut g = self.inner.lock();
-            g.cancel = true;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        {
-            let mut g = self.inner.lock();
-            g.cancel = false;
+            g.generation += 1;
             g.done = false;
+            g.error = None;
             g.running = true;
             g.workout = Some(workout.clone());
             g.step_index = 0;
-        }
+            g.step_started = Instant::now();
+            g.step_duration = Duration::ZERO;
+            g.generation
+        };
 
+        let result = self.run_steps(gen, &workout, &mut on_cmd).await;
+
+        let finished = {
+            let mut g = self.inner.lock();
+            if g.generation != gen {
+                return Ok(()); // superseded: the newer run/stop owns the state
+            }
+            g.running = false;
+            match &result {
+                Ok(()) => {
+                    g.done = true;
+                    true
+                }
+                Err(e) => {
+                    g.done = false;
+                    g.error = Some(e.clone());
+                    log::warn!("Workout '{}' stopped: {e}", workout.name);
+                    false
+                }
+            }
+        };
+        // Flatten grade at the end of workouts that used simulation only;
+        // ERG-only workouts must not flip an FTMS trainer into sim mode.
+        if finished && workout.has_sim_step() {
+            if let Err(e) = on_cmd(WorkoutCommand::SimGrade(0.0)).await {
+                log::warn!("Workout end: could not flatten grade: {e}");
+            }
+        }
+        result
+    }
+
+    fn superseded(&self, gen: u64) -> bool {
+        self.inner.lock().generation != gen
+    }
+
+    async fn run_steps<F, Fut>(
+        &self,
+        gen: u64,
+        workout: &WorkoutFile,
+        on_cmd: &mut F,
+    ) -> Result<(), String>
+    where
+        F: FnMut(WorkoutCommand) -> Fut,
+        Fut: std::future::Future<Output = Result<(), String>>,
+    {
+        let t0 = Instant::now();
+        let mut step_start = t0;
         for (idx, step) in workout.steps.iter().enumerate() {
+            let dur = Duration::from_secs(step.duration_or_zero().max(1) as u64);
+            let deadline = step_start + dur;
             {
                 let mut g = self.inner.lock();
-                if g.cancel {
-                    g.running = false;
+                if g.generation != gen {
                     return Ok(());
                 }
                 g.step_index = idx;
-                let dur = Duration::from_secs(step.duration_or_zero().max(1) as u64);
                 g.step_duration = dur;
-                g.step_started = Instant::now();
+                // Scheduled start, not "now": latency doesn't stretch steps.
+                g.step_started = step_start;
                 if step.kind == "ramp" {
                     g.ramp_start_w = step.watts_start.unwrap_or(100);
                     g.ramp_end_w = step.watts_end.unwrap_or(150);
                 }
             }
 
-            let cmd = match step.kind.as_str() {
-                "erg" => WorkoutCommand::Erg(step.watts.unwrap_or(0)),
-                "ramp" => WorkoutCommand::Erg(step.watts_start.unwrap_or(100)),
-                "resistance" => {
-                    WorkoutCommand::Resistance(step.resistance_pct.unwrap_or(20.0))
-                }
-                "simGrade" => WorkoutCommand::SimGrade(step.grade_pct.unwrap_or(0.0)),
-                other => return Err(format!("Unknown step kind: {other}")),
+            let cmd = step_command(step)?;
+            on_cmd(cmd.clone()).await?;
+            let mut last_sent = match cmd {
+                WorkoutCommand::Erg(w) => Some((w, Instant::now())),
+                _ => None,
             };
-            on_cmd(cmd).await?;
 
-            // Tick until step duration elapsed (ramp re-applies watts ~1 Hz).
             loop {
-                tokio::time::sleep(Duration::from_millis(250)).await;
-                let (cancel, elapsed_done, is_ramp) = {
-                    let g = self.inner.lock();
-                    (
-                        g.cancel,
-                        g.step_started.elapsed() >= g.step_duration,
-                        step.kind == "ramp",
-                    )
-                };
-                if cancel {
-                    let mut g = self.inner.lock();
-                    g.running = false;
-                    return Ok(());
-                }
-                if is_ramp {
-                    if let Some(WorkoutCommand::Erg(w)) = self.current_command() {
-                        let _ = on_cmd(WorkoutCommand::Erg(w)).await;
-                    }
-                }
-                if elapsed_done {
+                let now = Instant::now();
+                if now >= deadline {
                     break;
                 }
+                tokio::time::sleep_until(deadline.min(now + TICK)).await;
+                if self.superseded(gen) {
+                    return Ok(());
+                }
+                if step.kind == "ramp" {
+                    let w = {
+                        let g = self.inner.lock();
+                        ramp_watts(&g)
+                    };
+                    let due = match last_sent {
+                        Some((lw, at)) => {
+                            at.elapsed() >= RAMP_RESEND_EVERY && lw.abs_diff(w) >= RAMP_MIN_DELTA_W
+                        }
+                        None => true,
+                    };
+                    if due && Instant::now() < deadline {
+                        // A dropped ramp update is not fatal: the next one
+                        // (≤ 1 s later) carries the newer target anyway.
+                        if let Err(e) = on_cmd(WorkoutCommand::Erg(w)).await {
+                            log::warn!("Ramp update {w} W failed: {e}");
+                        }
+                        last_sent = Some((w, Instant::now()));
+                    }
+                }
             }
+            step_start = deadline;
         }
-
-        {
-            let mut g = self.inner.lock();
-            g.running = false;
-            g.done = true;
-        }
-        // Flatten grade at end of sim workouts.
-        let _ = on_cmd(WorkoutCommand::SimGrade(0.0)).await;
         Ok(())
     }
+}
+
+fn ramp_watts(g: &EngineInner) -> u32 {
+    let t = g.step_started.elapsed().as_secs_f64() / g.step_duration.as_secs_f64().max(0.001);
+    let t = t.clamp(0.0, 1.0);
+    let w = g.ramp_start_w as f64 + (g.ramp_end_w as f64 - g.ramp_start_w as f64) * t;
+    w.round() as u32
 }
 
 #[cfg(test)]
@@ -687,4 +819,252 @@ mod tests {
         assert!(watts.contains(&200), "applied={watts:?}");
         assert!(engine.status().done || !engine.status().running);
     }
+
+    fn wf(steps: Vec<WorkoutStep>) -> WorkoutFile {
+        WorkoutFile {
+            version: 1,
+            id: "t".into(),
+            name: "Test".into(),
+            description: String::new(),
+            builtin: false,
+            steps,
+        }
+    }
+
+    /// Runs [w] on a paused clock, recording every command with its time
+    /// (seconds since start). [fail_on] makes that command index return Err.
+    async fn record(
+        engine: &WorkoutEngine,
+        w: WorkoutFile,
+        cmd_delay: Duration,
+        fail_on: Option<usize>,
+    ) -> (Result<(), String>, Vec<(f64, WorkoutCommand)>) {
+        let t0 = Instant::now();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let log2 = log.clone();
+        let r = engine
+            .run(w, move |cmd| {
+                let log2 = log2.clone();
+                async move {
+                    let n = {
+                        let mut l = log2.lock();
+                        l.push((t0.elapsed().as_secs_f64(), cmd));
+                        l.len() - 1
+                    };
+                    tokio::time::sleep(cmd_delay).await;
+                    if Some(n) == fail_on {
+                        Err("CP rejected".into())
+                    } else {
+                        Ok(())
+                    }
+                }
+            })
+            .await;
+        let l = log.lock().clone();
+        (r, l)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn engine_first_cmd_error_clears_running() {
+        let e = WorkoutEngine::new();
+        let (r, _) = record(&e, wf(vec![WorkoutStep::erg(5, 200)]), Duration::ZERO, Some(0)).await;
+        assert!(r.is_err());
+        let st = e.status();
+        assert!(!st.running && !st.done);
+        assert_eq!(st.error.as_deref(), Some("CP rejected"));
+        assert!(st.status_text.contains("Stopped"), "{}", st.status_text);
+        assert!(e.current_command().is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn engine_unknown_kind_clears_running() {
+        let e = WorkoutEngine::new();
+        let mut bad = WorkoutStep::erg(5, 100);
+        bad.kind = "foo".into();
+        let (r, _) = record(&e, wf(vec![WorkoutStep::erg(1, 100), bad]), Duration::ZERO, None).await;
+        assert!(r.unwrap_err().contains("foo"));
+        assert!(!e.status().running);
+        assert!(e.status().error.is_some());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn engine_step_boundaries_follow_absolute_schedule() {
+        let e = WorkoutEngine::new();
+        let steps = (0..20).map(|i| WorkoutStep::erg(1, 100 + i)).collect();
+        let t0 = Instant::now();
+        let (r, log) = record(&e, wf(steps), Duration::from_millis(100), None).await;
+        r.unwrap();
+        let total = t0.elapsed().as_secs_f64();
+        assert!(total <= 20.3, "drifted to {total:.2} s");
+        // Step n starts at n seconds, regardless of the 100 ms command latency.
+        for (n, (t, _)) in log.iter().enumerate() {
+            assert!((t - n as f64).abs() < 0.01, "step {n} at {t:.3}");
+        }
+        assert!(e.status().done);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn ramp_interpolates_and_is_rate_limited() {
+        let e = WorkoutEngine::new();
+        let (r, log) = record(&e, wf(vec![WorkoutStep::ramp(10, 100, 200)]), Duration::ZERO, None).await;
+        r.unwrap();
+        let watts: Vec<u32> = log
+            .iter()
+            .map(|(_, c)| match c {
+                WorkoutCommand::Erg(w) => *w,
+                other => panic!("unexpected {other:?}"),
+            })
+            .collect();
+        assert_eq!(watts[0], 100);
+        assert!(watts.windows(2).all(|p| p[1] >= p[0]), "{watts:?}");
+        assert!(*watts.last().unwrap() >= 185, "{watts:?}");
+        // ≤ 1 command per second (+ the step start).
+        assert!(watts.len() <= 11, "{} cmds: {watts:?}", watts.len());
+        for p in log.windows(2) {
+            assert!(p[1].0 - p[0].0 >= 0.99, "{log:?}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn flat_ramp_sends_once() {
+        let e = WorkoutEngine::new();
+        let (_, log) = record(&e, wf(vec![WorkoutStep::ramp(10, 150, 151)]), Duration::ZERO, None).await;
+        assert_eq!(log.len(), 1, "{log:?}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn erg_step_sends_exactly_once_and_no_simgrade_at_end() {
+        let e = WorkoutEngine::new();
+        let (r, log) = record(&e, wf(vec![WorkoutStep::erg(5, 220)]), Duration::ZERO, None).await;
+        r.unwrap();
+        assert_eq!(log.iter().map(|(_, c)| c.clone()).collect::<Vec<_>>(), vec![WorkoutCommand::Erg(220)]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sim_workout_flattens_grade_at_end() {
+        let e = WorkoutEngine::new();
+        let (_, log) = record(&e, wf(vec![WorkoutStep::sim_grade(3, 4.0)]), Duration::ZERO, None).await;
+        assert_eq!(log.last().unwrap().1, WorkoutCommand::SimGrade(0.0));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn restart_while_running_never_runs_two_loops() {
+        let e = WorkoutEngine::new();
+        let log = Arc::new(Mutex::new(Vec::<(char, u32)>::new()));
+        let mk = |tag: char| {
+            let log = log.clone();
+            move |cmd: WorkoutCommand| {
+                let log = log.clone();
+                async move {
+                    if let WorkoutCommand::Erg(w) = cmd {
+                        log.lock().push((tag, w));
+                    }
+                    Ok::<(), String>(())
+                }
+            }
+        };
+        let ea = e.clone();
+        let a = tokio::spawn({
+            let f = mk('A');
+            async move { ea.run(wf(vec![WorkoutStep::ramp(20, 100, 300)]), f).await }
+        });
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        let eb = e.clone();
+        let b = tokio::spawn({
+            let f = mk('B');
+            async move { eb.run(wf(vec![WorkoutStep::erg(3, 150)]), f).await }
+        });
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let n_before = log.lock().len();
+        let _ = b.await;
+        let _ = a.await;
+        let l = log.lock().clone();
+        let first_b = l.iter().position(|(t, _)| *t == 'B').unwrap();
+        assert!(first_b < n_before.max(first_b + 1));
+        assert!(l[first_b..].iter().all(|(t, _)| *t == 'B'), "{l:?}");
+        assert!(e.status().done, "B owns the final state");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn status_remaining_and_target_during_ramp() {
+        let e = WorkoutEngine::new();
+        let e2 = e.clone();
+        let h = tokio::spawn(async move {
+            e2.run(wf(vec![WorkoutStep::ramp(10, 100, 200)]), |_| async { Ok(()) })
+                .await
+        });
+        tokio::time::sleep(Duration::from_millis(5000)).await;
+        let st = e.status();
+        assert!(st.running);
+        assert!((st.target_watts.unwrap() as i64 - 150).abs() <= 2, "{st:?}");
+        assert!((st.remaining_s - 5.0).abs() < 0.3, "{st:?}");
+        h.await.unwrap().unwrap();
+    }
+
+    #[test]
+    fn validate_rejects_bad_steps() {
+        let ok = wf(vec![WorkoutStep::erg(60, 200)]);
+        assert!(ok.validate().is_ok());
+        let mut missing = WorkoutStep::erg(60, 200);
+        missing.watts = None;
+        assert!(wf(vec![missing]).validate().unwrap_err().contains("watts"));
+        assert!(wf(vec![WorkoutStep::erg(60, 5000)]).validate().is_err());
+        let mut res = WorkoutStep::erg(60, 0);
+        res.kind = "resistance".into();
+        res.resistance_pct = Some(150.0);
+        assert!(wf(vec![res]).validate().is_err());
+        assert!(wf(vec![WorkoutStep::sim_grade(60, 90.0)]).validate().is_err());
+        assert!(wf(vec![WorkoutStep::sim_grade(60, f64::NAN)]).validate().is_err());
+        let mut dist = WorkoutStep::erg(0, 200);
+        dist.duration_s = None;
+        dist.distance_m = Some(1000.0);
+        assert!(wf(vec![dist]).validate().unwrap_err().contains("distance"));
+        assert!(wf(vec![WorkoutStep::erg(0, 200)]).validate().is_err());
+        assert!(wf(vec![]).validate().is_err());
+        let mut unknown = WorkoutStep::erg(60, 200);
+        unknown.kind = "warp".into();
+        assert!(wf(vec![unknown]).validate().is_err());
+    }
+
+    #[test]
+    fn builtins_all_validate() {
+        for b in builtins() {
+            b.validate().unwrap_or_else(|e| panic!("{}: {e}", b.id));
+            assert!(b.steps.iter().map(|s| s.duration_or_zero()).sum::<u32>() > 0);
+        }
+    }
+
+    /// Shared with the Dart side (test/fixtures/workout_plan_fixture.json):
+    /// both languages must derive the same targets from the same JSON.
+    #[test]
+    fn shared_fixture_matches_engine_targets() {
+        let raw = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../test/fixtures/workout_plan_fixture.json"),
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let w: WorkoutFile = serde_json::from_value(v["workout"].clone()).unwrap();
+        w.validate().unwrap();
+        let exp = &v["expected"];
+        let total: u32 = w.steps.iter().map(|s| s.duration_or_zero()).sum();
+        assert_eq!(total as u64, exp["totalS"].as_u64().unwrap());
+        for (i, s) in w.steps.iter().enumerate() {
+            let start = match step_command(s).unwrap() {
+                WorkoutCommand::Erg(w) => Some(w as u64),
+                _ => None,
+            };
+            assert_eq!(start, exp["stepStartWatts"][i].as_u64(), "step {i}");
+        }
+        assert_eq!(
+            step_command(&w.steps[2]).unwrap(),
+            WorkoutCommand::Resistance(exp["resistancePct"].as_f64().unwrap())
+        );
+        assert_eq!(
+            step_command(&w.steps[3]).unwrap(),
+            WorkoutCommand::SimGrade(exp["gradePct"].as_f64().unwrap())
+        );
+        let mid = (w.steps[1].watts_start.unwrap() + w.steps[1].watts_end.unwrap()) / 2;
+        assert_eq!(mid as u64, exp["rampMidWatts"].as_u64().unwrap());
+    }
 }
+

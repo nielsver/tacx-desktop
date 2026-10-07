@@ -324,6 +324,8 @@ pub struct WorkoutStatus {
     pub target_grade_pct: Option<f64>,
     pub status_text: String,
     pub done: bool,
+    /// Why the last run stopped early (command rejected, link lost…).
+    pub error: Option<String>,
 }
 
 #[derive(Clone, Debug)]

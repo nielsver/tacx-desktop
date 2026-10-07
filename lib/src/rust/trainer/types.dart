@@ -611,6 +611,9 @@ class WorkoutStatus {
   final String statusText;
   final bool done;
 
+  /// Why the last run stopped early (command rejected, link lost…).
+  final String? error;
+
   const WorkoutStatus({
     required this.running,
     required this.workoutId,
@@ -622,6 +625,7 @@ class WorkoutStatus {
     this.targetGradePct,
     required this.statusText,
     required this.done,
+    this.error,
   });
 
   @override
@@ -635,7 +639,8 @@ class WorkoutStatus {
       targetWatts.hashCode ^
       targetGradePct.hashCode ^
       statusText.hashCode ^
-      done.hashCode;
+      done.hashCode ^
+      error.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -651,5 +656,6 @@ class WorkoutStatus {
           targetWatts == other.targetWatts &&
           targetGradePct == other.targetGradePct &&
           statusText == other.statusText &&
-          done == other.done;
+          done == other.done &&
+          error == other.error;
 }

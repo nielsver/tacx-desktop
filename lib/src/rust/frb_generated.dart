@@ -1807,8 +1807,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WorkoutStatus dco_decode_workout_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 10)
-      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return WorkoutStatus(
       running: dco_decode_bool(arr[0]),
       workoutId: dco_decode_String(arr[1]),
@@ -1820,6 +1820,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       targetGradePct: dco_decode_opt_box_autoadd_f_64(arr[7]),
       statusText: dco_decode_String(arr[8]),
       done: dco_decode_bool(arr[9]),
+      error: dco_decode_opt_String(arr[10]),
     );
   }
 
@@ -2296,6 +2297,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_targetGradePct = sse_decode_opt_box_autoadd_f_64(deserializer);
     var var_statusText = sse_decode_String(deserializer);
     var var_done = sse_decode_bool(deserializer);
+    var var_error = sse_decode_opt_String(deserializer);
     return WorkoutStatus(
       running: var_running,
       workoutId: var_workoutId,
@@ -2307,6 +2309,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       targetGradePct: var_targetGradePct,
       statusText: var_statusText,
       done: var_done,
+      error: var_error,
     );
   }
 
@@ -2700,5 +2703,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_f_64(self.targetGradePct, serializer);
     sse_encode_String(self.statusText, serializer);
     sse_encode_bool(self.done, serializer);
+    sse_encode_opt_String(self.error, serializer);
   }
 }

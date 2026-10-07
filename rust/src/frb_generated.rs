@@ -792,7 +792,8 @@ let mut var_targetWatts = <Option<u32>>::sse_decode(deserializer);
 let mut var_targetGradePct = <Option<f64>>::sse_decode(deserializer);
 let mut var_statusText = <String>::sse_decode(deserializer);
 let mut var_done = <bool>::sse_decode(deserializer);
-return crate::trainer::types::WorkoutStatus{running: var_running, workout_id: var_workoutId, workout_name: var_workoutName, step_index: var_stepIndex, step_count: var_stepCount, remaining_s: var_remainingS, target_watts: var_targetWatts, target_grade_pct: var_targetGradePct, status_text: var_statusText, done: var_done};}
+let mut var_error = <Option<String>>::sse_decode(deserializer);
+return crate::trainer::types::WorkoutStatus{running: var_running, workout_id: var_workoutId, workout_name: var_workoutName, step_index: var_stepIndex, step_count: var_stepCount, remaining_s: var_remainingS, target_watts: var_targetWatts, target_grade_pct: var_targetGradePct, status_text: var_statusText, done: var_done, error: var_error};}
                 }
                 
                 fn pde_ffi_dispatcher_primary_impl(
@@ -1234,7 +1235,8 @@ self.remaining_s.into_into_dart().into_dart(),
 self.target_watts.into_into_dart().into_dart(),
 self.target_grade_pct.into_into_dart().into_dart(),
 self.status_text.into_into_dart().into_dart(),
-self.done.into_into_dart().into_dart()
+self.done.into_into_dart().into_dart(),
+self.error.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -1534,7 +1536,8 @@ crate::trainer::types::ProtocolKind::TacxFecBle => { 2 }
 <Option<u32>>::sse_encode(self.target_watts, serializer);
 <Option<f64>>::sse_encode(self.target_grade_pct, serializer);
 <String>::sse_encode(self.status_text, serializer);
-<bool>::sse_encode(self.done, serializer);}
+<bool>::sse_encode(self.done, serializer);
+<Option<String>>::sse_encode(self.error, serializer);}
                 }
                 
 

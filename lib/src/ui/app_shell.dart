@@ -52,6 +52,7 @@ class _AppShellState extends State<AppShell> {
       ergStep: cur.ergStep,
       userWeightKg: cur.userWeightKg,
       resAutoApply: cur.resAutoApply,
+      ftpWatts: cur.ftpWatts,
       demoMode: demo,
       welcomeSeen: true,
     ).save();
@@ -73,6 +74,7 @@ class _AppShellState extends State<AppShell> {
       ergStep: cur.ergStep,
       userWeightKg: cur.userWeightKg,
       resAutoApply: cur.resAutoApply,
+      ftpWatts: cur.ftpWatts,
       demoMode: true,
       welcomeSeen: true,
     ).save();

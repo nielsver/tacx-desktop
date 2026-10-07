@@ -11,6 +11,8 @@ import 'package:tacx_desktop/src/ui/focus_ride_view.dart';
 import 'package:tacx_desktop/src/ui/hr_strap_bar.dart';
 import 'package:tacx_desktop/src/ui/live_trend_chart.dart';
 import 'package:tacx_desktop/src/ui/workout_panel.dart';
+import 'package:tacx_desktop/src/ui/workout_ride_view.dart';
+import 'package:tacx_desktop/src/workout/workout_plan.dart';
 import 'package:tacx_desktop/src/ui/bluetooth_tips.dart';
 import 'package:tacx_desktop/src/ui/mode_copy.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
@@ -112,6 +114,12 @@ class _RideDashboardState extends State<RideDashboard> {
     statusText: '',
   );
   GpxProfileInfo? _gpx;
+  /// Planned steps of the running / just-finished workout (ride graph).
+  WorkoutPlan? _plan;
+  /// Actual power on the workout time axis (1 Hz).
+  final WorkoutTrace _wTrace = WorkoutTrace();
+  /// Rider FTP for zone colours (persisted).
+  int _ftp = 200;
   bool _ergFromGrade = false;
 
   HrStrapStatus _strap = const HrStrapStatus(
@@ -181,6 +189,7 @@ class _RideDashboardState extends State<RideDashboard> {
     _metricsN.dispose();
     _rideN.dispose();
     _trend.dispose();
+    _wTrace.dispose();
     super.dispose();
   }
 
@@ -195,6 +204,17 @@ class _RideDashboardState extends State<RideDashboard> {
     final route = api.getRouteStatus();
     final ride = api.getRideStats();
     final strap = api.getHeartRateStrapStatus();
+    final plan = _planFor(workout);
+    if (plan != null && workout.running) {
+      _wTrace.offer(
+        plan.id,
+        plan.elapsedFrom(
+          stepIndex: workout.stepIndex,
+          remainingS: workout.remainingS,
+        ),
+        metrics.powerW,
+      );
+    }
     final simExpand = snap.mode == ControlMode.simulation && !_simExpanded;
     // P0-P2: the whole dashboard (header, connection bar, controls) only
     // rebuilds when connection/control state changes. Live power, cadence,
@@ -209,6 +229,7 @@ class _RideDashboardState extends State<RideDashboard> {
         workout != _workout ||
         route != _route ||
         strap != _strap ||
+        !identical(plan, _plan) ||
         metrics.targetPowerW != _metrics.targetPowerW;
     _metricsN.value = metrics;
     _rideN.value = ride;
@@ -224,12 +245,76 @@ class _RideDashboardState extends State<RideDashboard> {
         _workout = workout;
         _route = route;
         _strap = strap;
+        _plan = plan;
         if (simExpand) _simExpanded = true;
       });
     }
     if (wasReconnecting && _snap.state == ConnectionState.connected) {
       _toast('Trainer reconnected — previous target restored', Icons.link);
     }
+  }
+
+  /// Planned steps for the workout in [st] (cached per workout id). Null
+  /// when no workout is running or just finished.
+  WorkoutPlan? _planFor(WorkoutStatus st) {
+    if (!(st.running || st.done) || st.workoutId.isEmpty) return null;
+    final cur = _plan;
+    if (cur != null && cur.id == st.workoutId) return cur;
+    try {
+      return WorkoutPlan.tryParse(api.loadWorkoutJson(id: st.workoutId));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  WorkoutProgress get _workoutProgress => WorkoutProgress(
+    stepIndex: _workout.stepIndex,
+    remainingS: _workout.remainingS,
+    running: _workout.running,
+    done: _workout.done,
+  );
+
+  Widget _workoutView({required bool large}) => WorkoutRideView(
+    plan: _plan!,
+    progress: _workoutProgress,
+    trace: _wTrace,
+    ftp: _ftp,
+    large: large,
+    onEditFtp: _editFtp,
+  );
+
+  Future<void> _editFtp() async {
+    final ctrl = TextEditingController(text: '$_ftp');
+    final v = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: RideColors.surface,
+        title: const Text('FTP (W)'),
+        content: TextField(
+          key: const ValueKey('ftp-field'),
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            helperText: 'Colours the workout graph zones (50–600 W)',
+          ),
+          onSubmitted: (t) => Navigator.pop(ctx, int.tryParse(t)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, int.tryParse(ctrl.text)),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (v == null || !mounted) return;
+    _setPref(() => _ftp = v.clamp(50, 600));
   }
 
   Future<void> _checkBluetooth() async {
@@ -460,6 +545,7 @@ class _RideDashboardState extends State<RideDashboard> {
       _ergStep = p.ergStep;
       _userWeightKg = p.userWeightKg;
       _resAutoApply = p.resAutoApply;
+      _ftp = p.ftpWatts;
       if (!demo) {
         _devices = [];
         _selected = null;
@@ -479,6 +565,7 @@ class _RideDashboardState extends State<RideDashboard> {
     resAutoApply: _resAutoApply,
     demoMode: _snap.isDemo,
     welcomeSeen: true,
+    ftpWatts: _ftp,
   );
 
   /// Debounced so slider drags / rapid −/+ taps write once.
@@ -692,6 +779,9 @@ class _RideDashboardState extends State<RideDashboard> {
                       effects: _focusEffects,
                       intervalRunning:
                           intervalRunning || _workout.running || _route.running,
+                      workoutView: _plan == null
+                          ? null
+                          : _workoutView(large: true),
                       onExitFocus: _toggleFocusMode,
                       onDisconnect: () => _run(
                         () => api.disconnectTrainer(),
@@ -731,7 +821,9 @@ class _RideDashboardState extends State<RideDashboard> {
                     // Ride summary strip + heart-rate strap bar sit between
                     // metrics and controls (48 px + 8 px gap each).
                     // Live graph adds 88 px + 8 px gap.
-                    final neededWithRide = needed + 56 + 56 + 96;
+                    // Workout ride view adds 200 px + 8 px gap while active.
+                    final neededWithRide =
+                        needed + 56 + 56 + 96 + (_plan != null ? 208 : 0);
                     final compact = box.maxHeight < neededWithRide;
                     final body = Column(
                       children: [
@@ -797,6 +889,13 @@ class _RideDashboardState extends State<RideDashboard> {
                           ),
                         ),
                         const SizedBox(height: 8),
+                        if (_plan != null) ...[
+                          SizedBox(
+                            height: 200,
+                            child: _workoutView(large: false),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                         RepaintBoundary(
                           child: LiveTrendChart(
                             buffer: _trend,

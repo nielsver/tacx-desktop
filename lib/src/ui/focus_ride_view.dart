@@ -28,6 +28,7 @@ class FocusRideView extends StatelessWidget {
     required this.onStepChanged,
     required this.onStopInterval,
     this.intervalRunning = false,
+    this.workoutView,
   });
 
   final TrainerMetrics metrics;
@@ -45,6 +46,10 @@ class FocusRideView extends StatelessWidget {
   final ValueChanged<int> onStepChanged;
   final VoidCallback onStopInterval;
   final bool intervalRunning;
+
+  /// Planned-vs-actual workout graph + step strip, shown under the power
+  /// hero while a structured workout runs.
+  final Widget? workoutView;
 
   @override
   Widget build(BuildContext context) {
@@ -83,25 +88,39 @@ class FocusRideView extends StatelessWidget {
                     child: Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 900),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _PowerHero(
-                              watts: metrics.powerW,
-                              wash: showWash,
-                            ),
-                            const SizedBox(height: 20),
-                            _SecondaryRow(
-                              metrics: metrics,
-                              pulseCadence: animate,
-                            ),
-                            const SizedBox(height: 14),
-                            _RideRibbon(ride: ride),
-                          ],
+                        // Scales down (never overflows) when a workout
+                        // graph shares the screen on 1366×768.
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _PowerHero(
+                                watts: metrics.powerW,
+                                wash: showWash,
+                              ),
+                              const SizedBox(height: 20),
+                              _SecondaryRow(
+                                metrics: metrics,
+                                pulseCadence: animate,
+                              ),
+                              const SizedBox(height: 14),
+                              _RideRibbon(ride: ride),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
+                  if (workoutView != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: SizedBox(
+                        height: (MediaQuery.sizeOf(context).height * 0.36)
+                            .clamp(190.0, 360.0),
+                        child: workoutView,
+                      ),
+                    ),
                   _ErgDock(
                     targetWatts: targetWatts,
                     liveTarget: metrics.targetPowerW,

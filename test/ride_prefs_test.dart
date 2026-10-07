@@ -93,4 +93,14 @@ void main() {
       expect(prefs.getInt('ride.ergTargetW'), 230);
     });
   });
+
+  test('FTP defaults to 200 W, is clamped and round-trips', () async {
+    SharedPreferences.setMockInitialValues({});
+    expect(const RidePrefs().ftpWatts, 200);
+    expect(const RidePrefs(ftpWatts: 5).sanitized().ftpWatts, 50);
+    expect(const RidePrefs(ftpWatts: 9000).sanitized().ftpWatts, 600);
+    await const RidePrefs(ftpWatts: 265).save();
+    final back = await RidePrefs.load();
+    expect(back!.ftpWatts, 265);
+  });
 }

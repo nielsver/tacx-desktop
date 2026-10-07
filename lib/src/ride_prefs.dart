@@ -17,6 +17,7 @@ class RidePrefs {
     this.resAutoApply = true,
     this.demoMode = false,
     this.welcomeSeen = false,
+    this.ftpWatts = 200,
   });
 
   final bool focusMode;
@@ -30,6 +31,8 @@ class RidePrefs {
   final bool demoMode;
   /// First-run Welcome page has been dismissed (Connect trainer / Try Demo / Skip).
   final bool welcomeSeen;
+  /// Functional threshold power: colours the workout graph's power zones.
+  final int ftpWatts;
 
   static const _kFocus = 'ride.focusMode';
   static const _kEffects = 'ride.focusEffectsSubtle';
@@ -39,6 +42,7 @@ class RidePrefs {
   static const _kResAuto = 'ride.resAutoApply';
   static const _kDemo = 'ride.demoMode';
   static const _kWelcome = 'ride.welcomeSeen';
+  static const _kFtp = 'ride.ftpW';
 
   static const allowedSteps = [5, 10, 25];
 
@@ -55,6 +59,7 @@ class RidePrefs {
     resAutoApply: resAutoApply,
     demoMode: demoMode,
     welcomeSeen: welcomeSeen,
+    ftpWatts: ftpWatts.clamp(50, 600),
   );
 
   static Future<RidePrefs?> load() async {
@@ -70,6 +75,7 @@ class RidePrefs {
         resAutoApply: p.getBool(_kResAuto) ?? d.resAutoApply,
         demoMode: p.getBool(_kDemo) ?? d.demoMode,
         welcomeSeen: p.getBool(_kWelcome) ?? d.welcomeSeen,
+        ftpWatts: p.getInt(_kFtp) ?? d.ftpWatts,
       ).sanitized();
     } catch (_) {
       return null;
@@ -88,6 +94,7 @@ class RidePrefs {
       await p.setBool(_kResAuto, s.resAutoApply);
       await p.setBool(_kDemo, s.demoMode);
       await p.setBool(_kWelcome, s.welcomeSeen);
+      await p.setInt(_kFtp, s.ftpWatts);
       return true;
     } catch (_) {
       return false;

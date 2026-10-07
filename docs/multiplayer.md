@@ -1,109 +1,91 @@
-# tacx-desktop: multiplayer design checklist (roadmap step 5)
+# tacx-desktop: multiplayer v2, "Race mode, no accounts" (roadmap step 5)
 
-*Written 2026-10-08 (Brussels) against `main` @ `155eeba` (step 2 ghost race). Read-only research; no code, PRs or commits.*
-*For Tacx Build. Prices were checked on 2026-10-08 and exclude VAT. Anything marked **(est.)** is my estimate, not a quote.*
+*v2 written 2026-10-08 (Brussels) against `main` @ `155eeba`. Read-only research; no code, PRs or commits. The v1 accounts/Supabase plan is kept in `tacx-desktop-multiplayer-checklist-v1-accounts.md`.*
+*Prices were checked 2026-10-08 and exclude VAT. **(est.)** = my estimate, to be confirmed by the load test in B3.*
 
-## 0. TL;DR and what we reuse
-- **Recommended backend:** Phase A = **file share first, then Supabase (EU Frankfurt: Auth + Postgres + Storage)**. Phase B = **a self-hosted Rust/axum WebSocket relay on a Hetzner CX23** that checks Supabase JWTs. Supabase Realtime is fine for a prototype only (see §3).
-- **Reuse:** `route_ghost.dart` already has everything a friend ghost needs. `GhostTrack` is `(d,t)` only, so it holds **no GPS**. `timeAt`/`distanceAt`, `ghostDeltaS`/`fmtDelta`, `GhostStore` (atomic tmp+rename) and the ghost marker in `ElevPainter` all carry over. Multiplayer = "more ghosts, some of them live".
-- **Gaps to close first:** (1) `routeKey` is FNV over the rounded elevation profile. A GPX without `<ele>` (allowed: see the `gpx.rs` test) hashes to all zeros, so **two flat routes with the same rounded distance and sample count collide**. (2) `ElevSample` has no lat/lon (`gpx.rs` parses them but doesn't expose them). (3) Route progress = **trainer-reported wheel distance** (`controller.rs`, `ride::stats().distance_km`), so a Kickr and a Tacx are not comparable. Demo mode also creeps at 5 m/s.
-- **Golden rule:** networking is an **overlay**. A network failure must never touch trainer control, ERG/SIM or local recording.
+**Idea:** online is a race you simply connect to. You get a room code, type a nickname, ride one GPX, see live gaps, and get finish order and results. Then the room disappears. No accounts, no database, no stored personal data. **Golden rule:** networking is an overlay; a network failure never touches trainer control or local recording.
+**Reuse:** the v2 route key + trimming from `tacx-desktop-pro-polish-checklist.md` (RI2: SHA-256 over 128 resampled lat/lon/elev points + distance, computed in `gpx.rs`); `GhostTrack.timeAt` logic for time gaps (`route_ghost.dart`); the 3-2-1 countdown from the Pro workout view; the reconnect banner style; tokio, already in `rust/Cargo.toml`.
 
-## 1. Phase A: async ghosts of friends
-- [ ] **P0 · Route key v2.** `routeKeyV2 = sha256("v2|" + round(distM/10) + 64 points resampled evenly by distance, each as (lat,lon) rounded to 1e-4 (~11 m) + elev rounded to 1 m)`, hex, first 16 bytes. Compute it in Rust (`gpx.rs`) **on the canonical shared route** (after privacy trimming, §6), so sender and receiver hash the same points. Keep v1 as an alias: `GhostStore` looks up v2 first, then v1. *Done when:* two different flat no-`<ele>` GPX files give different keys; the same GPX re-exported (different name/timestamps/point density ±10%) gives the same key; there are unit tests for both.
-- [ ] **P0 · lat/lon in FRB** (this is also step 3, Pro M4). Add `lat`/`lon` to `ElevSample` or a separate `track` vec. *Done when:* Dart can draw the map and compute v2 without re-parsing.
-- [ ] **P0 · Share bundle `.tdshare` (no backend).** Gzipped JSON `{v:1, kind:"ghost", routeKeyV2, routeKeyV1, routeName, distanceM, totalS, track{d[],t[]}, route{samples:[d,elev,lat,lon]} (trimmed), rider{displayName}, app:"0.x", verified:false, demo:false, createdDate}`. **No HR, no weight, no wall-clock timestamps** (date only). Export from the post-ride summary; import with a file picker or drag-drop. Max 1 MB, strict parse like `GhostTrack.fromJson`. *Done when:* a friend imports the file, the route loads, and both ghosts (own best + friend) race on the profile.
-- [ ] **P0 · Exclude Demo rides.** `AttemptRecorder` attempts made in Demo get `demo:true` and are never exportable or "verified". *Done when:* there's a test showing a Demo attempt can't be exported.
-- [ ] **P1 · Multi-ghost UI.** Up to 5 ghosts (own best = violet, friends = a neutral palette plus initials), a chip per ghost (`+0:12 Jan`), toggles in the Workouts panel. Store friends' ghosts in `routes/ghosts/<key>.<friendId>.json`. *Done when:* 3 ghosts render at 60 fps in Focus on Garuda.
-- [ ] **P1 · Upload + share code (Supabase).** Table `ghosts(id, owner, route_key_v2, total_s, track jsonb, created)`, table `routes(key_v2, samples, dist_m, owner)`, and Storage for big blobs. Share by a **short code** (`K7QX-92`) typed in the app. Avoid deep links: `x-scheme-handler` registration differs by Linux packaging. *Done when:* code → download → ride works, and RLS blocks reading a non-shared ghost.
-- [ ] **P2 · Friends list + "beat my time" leaderboard per route** (friends only, no public leaderboards in v1).
+## Joining
+- [ ] **J1 P0 · Room code.** The server makes 6 characters from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (32 symbols, no 0/O/1/I), which is 32⁶ ≈ 1.07 billion codes. Show it as `ABC-123`; input is case-insensitive and ignores the dash. Allow ≤ 10 join attempts per minute per IP so codes can't be guessed. *Done when:* code input accepts `abc123` and `ABC-123`, and the 11th wrong guess in a minute is refused.
+- [ ] **J2 P0 · Plain code paste always works** (the "Race" screen: Create / Join, with a code field). This is the baseline on every OS and package format.
+- [ ] **J3 P1 · Invite link `tacxdesktop://race/ABC123`** (plus `?s=host:port` for host-run rooms) via `app_links` 7.2.2. Its README shows custom schemes ✔ on Linux and Windows. **Linux:** `linux/runner/my_application.cc` must become single-instance: replace `G_APPLICATION_NON_UNIQUE` (line 153 today) with `HANDLES_COMMAND_LINE|HANDLES_OPEN`, and the `.desktop` file needs `Exec=… %u` and `MimeType=x-scheme-handler/tacxdesktop;`. The `.deb` and tar.gz `install.sh` can install that file. An AppImage only registers if the app writes `~/.local/share/applications/…desktop` and runs `xdg-mime default` (an opt-in "Enable race links" button). **Windows:** call `SendAppLinkToInstance()` in `windows/runner/main.cpp` and register `HKCU\Software\Classes\tacxdesktop` from the Inno script (`packaging/windows/tacx-desktop.iss`, `[Registry]`). Many chat apps don't make custom schemes clickable, so the invite text always includes the plain code. *Done when:* clicking the link in Firefox on Garuda (.deb) and in Edge on Windows (Inno) opens or focuses the app with the code pre-filled. Re-test `window_manager` after the single-instance change.
+- [ ] **J4 P0 · Nickname.** 2–16 characters, typed on first join and saved locally only (`shared_preferences`). If two riders in a room pick the same name, the server adds `#2`. *Done when:* the nickname is never written anywhere server-side (code review + log grep).
+- [ ] **J5 P0 · Anonymous session token.** On join the server issues 128 random bits. The client keeps it in RAM only and uses it for `resume`. It dies with the room. *Done when:* a resume after the room closes fails with `room_gone`.
+- [ ] **J6 P2 · https invite page** on the relay domain (`https://race.<domain>/ABC123` shows the code and an "Open in Tacx Desktop" button). Static, no tracking.
 
-## 2. Phase B: real-time group ride
-- [ ] **P0 · Virtual speed in Rust.** Add a physics model in the core: power + grade(d) + mass + CdA + Crr give speed, which gives `d`. Use the same function on the server (shared `tacx-proto` crate). This replaces wheel speed for MP rides and is the basis for fairness and anti-cheat. *Done when:* the same power file gives the same `d` on Tacx, Kickr and Demo (±1%).
-- [ ] **P0 · Position = distance along the canonical route** (1D `d_m`). Map position comes from `d` plus the route polyline. **No GPS is ever sent.**
-- [ ] **P0 · Rates.** The client sends `state` at **2 Hz** by default (1 Hz when the window isn't focused, 4 Hz cap). The server batches one `snapshot` per room at 2 Hz. *Done when:* a 20-rider room stays under 1 KB/s down per client.
-- [ ] **P0 · Latency.** Clock offset comes from `ping/pong` (NTP-style: keep the sample with the lowest RTT out of the last 5). Render other riders at `serverNow − 600 ms`, interpolating between snapshots. **Extrapolate** up to 2 s with the last speed, then freeze and grey the marker. Your own rider is always local and never waits on the network. *Done when:* with a 200 ms jitter netem test, markers move smoothly with no backwards jumps.
-- [ ] **P0 · Rooms, join, leave.** Private rooms only in v1: a 6-character room code bound to `routeKeyV2`, max 20 riders. The host clicks Start, the server sends `start_at` (server time), and there's a 10-s countdown. Late joiners start at d=0 and are tagged `late` (excluded from results). *Done when:* 3 clients start within 100 ms of each other.
-- [ ] **P0 · Disconnect.** With no `state` for 3 s, the server marks the rider `stale` (grey). After 60 s it drops them (`rider_left{reason:"timeout"}`). The client reconnects with backoff (1, 2, 4, 8, max 15 s) and resumes with `resume{room, last_d}`. The local ride and recording keep going; the banner reuses the existing reconnect banner style. *Done when:* pulling the network for 20 s mid-ride → automatic rejoin, ERG unaffected.
-- [ ] **P1 · Results.** The server records finish time per rider when `d ≥ dist`, shows a room results card, and saves to Supabase (service key on the server only).
-- [ ] **Drafting: NO for v1.** **P2** later: a simple rule. Within 2–10 m behind another rider, use CdA × 0.7 in the virtual-speed model, and in SIM mode also send a lower `cw` to the trainer. ERG mode doesn't change. Make it a room setting, default off.
-- [ ] **P2 · Group workout mode** (wolfv-style): the host shares a workout, everyone rides it at their own %FTP, with a synced start. No positions needed.
+## Race flow
+- [ ] **R1 P0 · Create room.** The host picks a GPX. The app makes the **canonical race route**: the Pro-polish trim (500 m off each end, GPX metadata stripped) → route key v2 computed on *this* trimmed route. `create_room` uploads the route (d/elev/lat/lon samples, ≤ 300 KB). The server keeps it **in memory** and sends it to joiners, so nobody needs the file. Each joiner recomputes the key on what it received and must match. *Done when:* a joiner with no GPX rides the same profile and the keys match; a tampered route is rejected.
+- [ ] **R2 P0 · Lobby.** Shows the players, ready toggles, route name/length/climbing, and the host's settings (max 8 players in v1). The host can Start when every present player is ready (≥ 1, so you can test solo) and can kick. *Done when:* 3 clients see ready states change within 1 s.
+- [ ] **R3 P0 · Synced countdown.** The server sends `countdown{start_at_ms}` (server clock, start = now + 10 s). Each client's clock offset comes from ping/pong (keep the sample with the lowest RTT out of 5). The 3-2-1 widget is reused. At `start_at` the client starts the route in **SIM mode** (ERG is disabled in races). *Done when:* the starts of 3 clients on different networks are within 150 ms of each other.
+- [ ] **R4 P0 · Live race at 2 Hz.** The client sends `state{seq, watts, cadence}` at 2 Hz. The **server is authoritative for distance**: it integrates speed from watts with the shared physics (F1). The client runs the same model locally so the trainer grade and your own marker respond instantly, and snaps to the server's distance if they differ by more than 5 m. The server sends `snapshot` at 2 Hz: distance, speed, place, and the **time gap** to the leader (the leader's d→t history, `timeAt`-style). Other riders are drawn 500 ms behind live, interpolated, and extrapolated ≤ 2 s. *Done when:* 8 riders at 2 Hz show smooth markers and gaps under a 200 ms jitter netem test.
+- [ ] **R5 P0 · Finish + results.** At `d ≥ dist` the server records finish time from `start_at` and broadcasts `finish{id, place, time_s}`. The race ends when everyone has finished or is DNF, or at a cutoff (leader + 15 min, 4 h hard cap). `results` lists place, nickname, time or DNF, avg W, and flags. The app shows a results screen and can save a local JSON to `Documents/Tacx Desktop/races/` (your own disk only). *Done when:* a 3-rider Demo-free test produces the correct order.
+- [ ] **R6 P0 · Disconnect.** No `state` for 3 s → the rider is "reconnecting": shown grey, distance frozen. `resume{session_token}` within **60 s** continues from the frozen distance; after that the rider is **DNF**. Riding while offline doesn't count in v1. Explicit `leave` = DNF. If the host drops on the VPS relay, the host role passes to the next player. The client uses backoff of 1/2/4/8 s and the existing banner, and the trainer keeps going. *Done when:* pulling the cable for 20 s resumes the race; for 70 s gives DNF; ERG/SIM never stalls.
+- [ ] **R7 P0 · No late joiners after the countdown** (`error{code:"race_started"}`). **P2:** spectate.
+- [ ] **R8 P0 · Room lifetime.** A lobby with no activity for 30 min is deleted; a room is deleted 5 min after results; the server keeps nothing after a restart. *Done when:* the server's memory returns to baseline after 100 simulated races.
 
-## 3. Backend options for a solo dev
-| | Effort | €/month | Scaling limit | EU residency | Lock-in |
-|---|---|---|---|---|---|
-| **Rust/axum WS on Hetzner** | Med: you run TLS (Caddy), backups, updates | CX23 €5.49 + IPv4 €0.50, 20 TB traffic | One small box handles thousands of idle WS (est.); shard rooms later | DE/FI, German company | None |
-| **Supabase** (Auth/DB/Storage/Realtime) | Low for auth and data | Free $0 (pauses after 1 wk inactivity, 200 RT conns); Pro $25 incl. 500 conns + 5 M msgs, then $2.50/M | Pro: **500 msg/s**, and every *delivered* message counts | Frankfurt/Paris/Stockholm/Ireland (AWS, US parent → SCCs/DPA) | Low–Med: Postgres is portable, self-hostable |
-| **Firebase** | Low on mobile, **bad on Linux**: FlutterFire Linux/Windows desktop is development-only | RTDB $5/GB stored, $1/GB down | RTDB 200k conns/DB | RTDB in europe-west1 (Belgium) | High (proprietary NoSQL) |
-| **P2P / WebRTC** | High: signalling + TURN, NAT pain | ~€0 + TURN relay (est.) | Mesh ~4–8 peers (globeride caps at 4) | Depends on TURN host | Low, but **no server authority** → no anti-cheat |
-- **Pick:** Phase A = **Supabase EU (Frankfurt)**, so you don't hand-roll auth; a file-only A1 needs no backend at all. Phase B = **axum relay on Hetzner (FSN/NBG)**. Server-side checks sit in the hot path, cost is flat, and the Rust code is shared with the core.
-- **Why not Supabase Realtime for B:** a room of 8 at 2 Hz = 16 sent + 112 delivered = **128 msg/s**, so 4 rooms hit the Pro 500 msg/s cap. At 1000 riders it's ~276 M msgs/mo ≈ **$700/mo (est.)**. And there's nowhere to run plausibility checks.
+## Backend (simplest first; state-light: memory only, no DB)
+| Option | Effort | Cost | Reality check |
+|---|---|---|---|
+| **1. Rust/axum WS relay on Hetzner** | Low–Med: one static binary + Caddy TLS + systemd | CX23 €5.49 + IPv4 €0.50 (20 TB traffic) | Always reachable, EU (FSN/NBG/HEL), German company. CX23 is sometimes out of stock; CAX11 (Arm) is €5.99 + IPv4 |
+| **2. Same relay run by the host player** | Low (embed the relay crate in the core: a "Host on this PC" button) | €0 | LAN works. Over the internet the host needs port forwarding. Most Belgian fixed lines have public IPv4, but forum reports show some lines behind CGNAT (10.x/100.64.x WAN), Proximus blocks some ports, and 4G/5G home internet is CGNAT. The Windows firewall prompt and Garuda firewall also need handling. Host leaves = race over |
+| **3. Public tunnel** (Cloudflare Quick Tunnel `cloudflared tunnel --url`) | Low–Med (bundle `cloudflared`, embed the tunnel host in the invite) | €0 | No account needed, but Cloudflare says "testing and development" only: no uptime guarantee, a new hostname each run, 200 in-flight requests max |
+| **4. WebRTC data channels** | High: you still need a signalling server + STUN/TURN, plus `webrtc-rs`/`flutter_webrtc` on desktop | Signalling server + TURN (Cloudflare $0.05/GB after 1000 GB free per month) | Mesh with no authority, so **server-side fairness is impossible**; NAT traversal is flaky. Not worth it at 2 Hz × 8 riders |
+- [ ] **B1 P0 · Default = option 1** (Hetzner CX23, Falkenstein or Nuremberg). `server/` crate: axum `ws`, a `HashMap<RoomCode, Room>` behind tokio tasks (one task per room, ticking at 2 Hz), Caddy for TLS, no access logs. *Done when:* `wss://race.<domain>/ws` passes the R-items end to end.
+- [ ] **B2 P1 · Fallback = option 2**, the same relay crate in-process ("Host on this PC", listening on `0.0.0.0:7878`), plus a "Direct connect host:port" field and a LAN hint. The UI is honest: "friends outside your network need port forwarding; CGNAT/4G won't work". *Done when:* a LAN race between Garuda and Windows works with no VPS.
+- [ ] **B3 P0 · Load test.** A `bot` binary simulates N riders. Target: 200 rooms × 8 bots on a CX23, p99 snapshot jitter < 50 ms, CPU < 50%. *Done when:* the numbers are recorded in the repo docs.
+- [ ] **B4 P2 · Option 3 experiment**, flag-gated, for LAN-less friends without a VPS. Never the default.
 
-## 4. Identity and auth
-- [ ] **P0 · Supabase Auth email OTP (6-digit code typed in the app).** No redirect, no deep link, no loopback, so it works the same on Garuda and Windows. Built-in email is **2/hour, test only**: plug in an EU SMTP (Brevo free tier 300/day). *Done when:* sign-in works on both OSes with no browser handoff.
-- [ ] **P0 · Token storage.** `flutter_secure_storage` (11.x) uses **libsecret** on Linux and, on Windows, an AES-GCM file whose key lives in **Credential Manager**. Give supabase_flutter a custom `LocalStorage` on top of it, never SharedPreferences. Add `libsecret` to Garuda/AUR/.deb deps. Test on KDE (KWallet Secret Service, or gnome-keyring). If no keyring exists: re-login each launch, **never plaintext**. Dart owns refresh; it passes the short-lived access JWT to Rust on `mp_connect`.
-- [ ] **P0 · Relay verifies JWTs locally** via `https://<ref>.supabase.co/auth/v1/.well-known/jwks.json` (asymmetric signing keys; cache it, it's edge-cached 10 min). Check `iss`, `aud=authenticated`, `exp`.
-- [ ] **P2 · Google OAuth** via PKCE + loopback (`http://127.0.0.1:<random>/cb`, system browser). **Do not use Strava as identity**: its API policy §2.3 allows Strava data to be shown only to that same user, so friends couldn't see names or rides. Strava stays upload-only (step 4).
+## Fairness
+- [ ] **F1 P0 · Shared physics crate `race-physics`** (a workspace crate used by the core and the server). `speed = f(watts, grade(d), mass, CdA, Crr, wind = 0)` with fixed per-race CdA/Crr. The **server recomputes speed from reported watts and ignores any client speed or distance.** This also fixes today's wheel-speed progress (`controller.rs`), so a Kickr and a Tacx compare fairly. *Done when:* the same watts file gives the same distance on server and client (±0.5%), with golden tests.
+- [ ] **F2 P0 · Sanity limits (server).** Watts 0–2000 (clamp + flag above that). Cadence 0–200. Rolling W/kg ceilings flag at 5 s > 25, 1 min > 12, 5 min > 8, 20 min > 6.5. Rider weight is **self-reported**: clamp 40–150 kg and show "weight self-reported" on results. Watts > 300 with cadence 0 for > 5 s → warn only (some trainers don't send cadence). `seq` must increase; ≤ 5 msg/s (kick above that); a state gap > 3 s counts as 0 W. Position jumps can't happen because the server owns distance. *Done when:* tampered fixtures raise the right flags.
+- [ ] **F3 P0 · Demo excluded.** The client hides Race in Demo mode, and `join` carries `demo:false`; the server refuses `demo:true`. *Done when:* tests cover both sides.
+- [ ] **F4 P0 · Honesty in the UI:** results show ⚠ for flagged riders. Say plainly that **a modded client can still send fake watts within the limits**; the defence is private codes among friends plus host kick.
 
-## 5. Anti-cheat basics (honest: a modded client can always lie)
-- [ ] **P0 · Server plausibility per `state`:** `d` must be monotonic. `Δd/Δt ≤ 25 m/s` (also ≤ physics speed(p, grade) + 15%). `p ≤ 2500 W`. Rolling W/kg ceilings (5 s > 25, 1 min > 12, 5 min > 8, 20 min > 6.5) and cadence 0 with p > 300 W for > 5 s → flag. `seq` gaps or out-of-order → drop. *Done when:* replaying tampered fixtures sets flags.
-- [ ] **P0 · Verified vs unverified.** `verified` = a live server-observed ride with no flags, not Demo, not late. Imported or uploaded ghost files are **always unverified** (show a "file" badge). Weight comes from the user and is kept in RAM only.
-- [ ] **P0 · Rate limits:** ≤ 5 msg/s per connection (else kick), ≤ 10 joins/min per user, ≤ 50 uploads/day, ≤ 1 MB per file, 20 riders/room (`tower_governor`).
-- [ ] **P1 · Social controls:** friends-only rooms, host kick, report/block. No public leaderboards until P2.
+## Privacy (no accounts, no storage)
+- [ ] **PV1 P0 · What is still personal data:** IP addresses (connections and rate limiting), nicknames and watts during a live room, self-reported weight (sent at join, used for physics, **never broadcast, never stored**). **HR is never sent** (Art. 9 health data). *Done when:* the protocol has no HR field and the server has no disk writes except the binary and its config.
+- [ ] **PV2 P0 · Minimal logs:** Caddy access log off; app logs contain no IPs or nicknames (room code + event only). The rate-limit table keys IPs in memory with a 10-min TTL. Accept Hetzner's DPA (AVV) in the console. EU hosting only.
+- [ ] **PV3 P0 · Short privacy note** (NL/EN) on the Race screen: "Your nickname, watts and cadence go to our EU server only during the race and are deleted when the room closes. Weight is used to calculate speed and is not shared. IP addresses are used briefly for abuse protection and not stored. No account, no tracking." Lawful basis: providing the race you asked for (Art. 6(1)(b)). The Belgian DPA (gegevensbeschermingsautoriteit.be) only comes in if there's a breach.
+- [ ] **PV4 P0 · Trimmed routes only** (R1), so the host's home location isn't sent to strangers.
 
-## 6. Privacy and GDPR (Belgium/EU)
-- [ ] **P0 · Lawful basis:** contract (Art. 6(1)(b)) for account + MP; consent (6(1)(a)) for optional extras. **HR is health data (Art. 9)**: v1 **never uploads HR**. If it's ever added: explicit opt-in (9(2)(a)), off by default, plus a DPIA. Treat weight as sensitive too: RAM only, never shown.
-- [ ] **P0 · No home-location leak.** Shared routes are **trimmed 500 m at start and end** (setting 200–1000 m), with GPX metadata (time/author/device/name) stripped. Offer built-in **virtual routes** (curated GPX not tied to anyone's home). Live MP sends only `d`, never lat/lon. *Done when:* a test shows the exported route's first and last points are ≥ the trim distance from the original.
-- [ ] **P0 · Retention:** live positions in RAM only. Server logs ≤ 14 days with truncated IPs. Ghosts/routes kept until deleted, and accounts deleted after 12 months of inactivity (warning email first). Supabase backups roll off at 7 days.
-- [ ] **P0 · Rights:** in-app **Export my data** (JSON zip) and **Delete account** (cascade rows + storage objects). Answer requests within 1 month (Art. 12(3)).
-- [ ] **P0 · Paperwork:** privacy policy (NL + EN) naming the processors (Supabase, Hetzner, Brevo) and their DPAs (accept them in each dashboard); a light Art. 30 record; breach notification to the **Gegevensbeschermingsautoriteit / APD** (gegevensbeschermingsautoriteit.be) within 72 h; minimum age 13 (BE digital consent age); EU hosting only.
-
-## 7. Monthly cost estimate (recommended path, ex VAT; BE VAT 21% if billed as a private person)
-Assumptions **(est.)**: 16 ride-h per rider per month, 30% of them in groups, rooms of 8, 2 Hz, a ghost file ≈ 15 KB gz.
-| Riders | Supabase | Hetzner relay | Other | Total |
-|---|---|---|---|---|
-| 10 | Free $0 (friends beta; accepts pausing) | CX23 €5.49 + IPv4 €0.50 | domain ~€1 (est.), Brevo free | **≈ €7** |
-| 100 | Pro $25 (≈ €22, est.): no pausing, backups | CX23 €5.99 + backups €1.10 | ~€1 | **≈ €30** |
-| 1000 | Pro $25, still within quotas (ghosts ≈ 0.25 GB/mo) | CX33 €8.49 + IPv4 €0.50 + backups €1.70, optional standby CX23 €5.99 | ~€1 | **≈ €35–45** |
-Relay traffic at 1000 riders ≈ 7 GB/mo (est.) vs 20 TB included. The same B load on Supabase Realtime ≈ $82/mo at 100 riders and ≈ $700/mo at 1000 (est.).
-
-## 8. Libraries (networking in Rust, behind the existing FRB 2.13 bridge)
-- **Core (`rust/src/net/`):** `tokio-tungstenite` (`rustls-tls-webpki-roots`: no OpenSSL runtime dep in the AppImage/Inno builds) on the existing tokio runtime; `serde` + `rmp-serde` (MessagePack, named fields; JSON behind a debug flag). FRB API: `mp_connect(url, jwt)`, `mp_join(code, route_key)`, `mp_peers() -> Vec<PeerState>` polled by the existing 250 ms timer (or an FRB `StreamSink` later).
-- **Shared crate `proto/` (`tacx-proto`):** message enums + the physics fn, used by both the core and the server.
-- **Server:** `axum` (feature `ws`), `tokio`, `jsonwebtoken` (ES256/JWK), `tower_governor`, `tracing`, `reqwest` for writing results to Supabase; Caddy for TLS; a systemd unit; Hetzner backups.
-- **Dart:** `supabase_flutter` (auth/postgrest/storage), `flutter_secure_storage`, `file_selector` for `.tdshare` import/export. Skip `web_socket_channel`: the socket lives in Rust.
-
-## 9. Open-source references (checked on GitHub 2026-10-08)
-- [zoffline/zwift-offline](https://github.com/zoffline/zwift-offline) (AGPL-3.0): a partial Zwift server with opt-in multiplayer. It stores **ghosts per route** (`storage/<player>/ghosts/<world>/<route>`) and replays ghosts as **bots/RoboPacers** (recorded at 1 s). Good model for ghost storage and pacer bots.
-- [wolfv/cycling-workout](https://github.com/wolfv/cycling-workout) (**no licence: read only**): a browser FTMS app with **P2P group sessions**, a host-shared workout scaled to each rider's FTP, a synced countdown start, and Cloudflare Durable Object signalling. The template for "group workout".
-- [masonwyatt23/globeride](https://github.com/masonwyatt23/globeride) (MIT): a browser GPX sim with **WebRTC mesh of up to 4 peers via room codes**, a binary state codec at 10 Hz, signed P2P race manifests, and drafting with peers. Shows the mesh ceiling and the room-code UX.
-- [emperor-hadrian/virtual_bike](https://github.com/emperor-hadrian/virtual_bike) (ex-HDrizzle, GPL-3.0, Rust/Bevy): client/server over Renet, **path-bound riders on splines with server-side physics**. This matches our server-authoritative distance-along-route model.
-- [dvmarinoff/Auuki](https://github.com/dvmarinoff/Auuki) (AGPL-3.0) and [GoldenCheetah](https://github.com/GoldenCheetah/GoldenCheetah) (GPL-2.0): **no multiplayer** in their READMEs. Useful for workout UX and metrics only. [cagnulein/qdomyos-zwift](https://github.com/cagnulein/qdomyos-zwift) (GPL-3.0) is a device bridge, not multiplayer.
-- The GPL/AGPL projects are for ideas only. Don't copy their code into this MIT repo.
-
-## 10. Message protocol sketch (v1, MessagePack over WSS, `{"type":…}`-tagged serde enum)
+## Protocol v2 (WSS; JSON first via a serde `{"t":…}`-tagged enum, MessagePack later by switching serializer: `rmp_serde::to_vec_named`, same types)
 ```
-C→S hello   {v:1, jwt, app_ver}                         S→C welcome {user_id, server_ms}
-C→S create  {route_key_v2, dist_m, profile:[d,elev]}     S→C created {room_code}
-C→S join    {room_code, route_key_v2, mass_kg}          S→C joined  {room, roster:[{id,name}], state:"lobby"|"running", start_at_ms?}
-C→S start   {}  (host only)                             S→C start   {start_at_ms}
-C→S state   {seq, client_ms, d_m, v_mps, p_w, cad}      S→C snapshot{server_ms, riders:[{id, d_m, v_mps, p_w, flags}]}  (2 Hz)
-C→S resume  {room_code, last_d_m}                       S→C rider_joined{id,name} · rider_left{id, reason:"leave"|"timeout"|"kick"}
-C→S ping    {client_ms}                                 S→C pong    {client_ms, server_ms}
-C→S leave   {}                                          S→C finish  {id, total_s, verified} · error{code, msg}
+C→S create_room {proto:2, app_version, route_key, route:{dist_m, pts:[[d,elev,lat,lon]]}, max_players}
+S→C room_created {code, session_token, server_ms}
+C→S join     {proto:2, code, nickname, route_key, app_version, mass_kg, demo:false}
+S→C joined   {session_token, server_ms, you:id, host:id, route?, players:[{id,nick,ready}]}
+C→S ready    {ready:bool}                   S→C lobby     {players:[{id,nick,ready}], host:id}
+C→S start    {}   (host only)               S→C countdown {start_at_ms, server_ms}
+C→S state    {seq, watts, cadence}          S→C snapshot  {server_ms, players:[{id, d_m, v_mps, w, place, gap_s, st:"ok"|"recon"|"fin"|"dnf"}]}  (2 Hz)
+C→S resume   {session_token}                S→C finish    {id, place, time_s}
+C→S leave    {}                             S→C results   {rows:[{place, nick, time_s|null, avg_w, flags}]}
+C→S ping     {client_ms}                    S→C pong {client_ms, server_ms} · error {code, msg} · kicked {}
 ```
-Rules: the server rejects a `join` when the route key doesn't match; `profile` is d/elev only (no lat/lon) so the server can check grades; unknown `v` → `error{code:"upgrade"}`.
+- [ ] **PR1 P0 · Protocol types live in a shared crate** (`race-proto`, serde). Unknown `proto` → `error{code:"upgrade"}`. A route key mismatch on join → `error{code:"route_mismatch"}`. *Done when:* round-trip tests in JSON and MessagePack pass.
 
-## 11. Phased recommendation
-1. **MP0 (alongside step 3):** lat/lon in FRB, `routeKeyV2`, Demo flag, virtual-speed model in Rust.
-2. **MP-A1:** `.tdshare` export/import + multi-ghost UI. No backend; ship it to 2–3 friends.
-3. **MP-A2:** Supabase EU (OTP login, share codes, export/delete, privacy policy).
-4. **MP-B1:** axum relay, private rooms, 2 Hz, interpolation, sync start, disconnect handling. No drafting.
-5. **MP-B2:** plausibility flags, verified results. **P2:** drafting, bots from ghosts, group workouts, public events.
+## Cost (recommended: Hetzner relay; host-run = €0)
+- **Bandwidth per rider (est.), 8-rider race:** about 180 B/s up (2 × ~90 B including TCP/WS overhead) and 400 B/s down (2 snapshots × ~200 B), so ≈ 0.6 KB/s ≈ **2.1 MB per rider-hour**. 20 TB/month included ≈ 9 million rider-hours, so traffic is never the limit.
+- **Capacity (est.):** one CX23 (2 shared vCPU, 4 GB) should hold **~200 concurrent 8-rider races (~1,600 riders, ~3,200 msg/s in)**, with memory and CPU as the limit, not traffic. B3 confirms it.
+- **Monthly:** the CX23 is **€5.99 ex VAT (€5.49 + €0.50 IPv4), ≈ €7.25 with 21% BE VAT**, flat whether 10, 100 or 1000 riders. Backups aren't needed (stateless; config in git). Domain ~€10–15/year (est.) or a free DNS subdomain. Above ~1,600 concurrent: CX33 €8.49 + €0.50. **Host-run and Quick Tunnel: €0.**
 
-## Top 5 ordered actions
-1. Land **`routeKeyV2`** (64-point lat/lon/elev + distance, computed on the trimmed canonical route) plus **lat/lon in FRB**. Keep v1 as an alias.
-2. Ship **`.tdshare` export/import + multi-ghost** (no backend, no HR/GPS endpoints, Demo excluded).
-3. Add the **Rust virtual-speed model** in a shared `tacx-proto` crate (fairness + anti-cheat basis).
-4. Stand up **Supabase EU Frankfurt**: email OTP via Brevo SMTP, RLS, Storage, export/delete, NL/EN privacy policy.
-5. Build the **axum WSS relay on a Hetzner CX23** (Caddy, JWKS checks, protocol v1 at 2 Hz, interpolation) and soak-test it with 50 bot clients.
+## Libraries
+- [ ] **L1 P0 · Server:** `axum` (feature `ws`, uses tokio-tungstenite under the hood), `tokio`, `serde`/`serde_json`/`rmp-serde`, `rand` (codes/tokens), `tower_governor` (per-IP limits), `tracing` (no IP fields), Caddy for TLS. Build a static musl binary and run it as a systemd unit.
+- [ ] **L2 P0 · Client networking in Rust:** `tokio-tungstenite` with `rustls-tls-webpki-roots` (no OpenSSL runtime dependency in the AppImage/Inno builds) in `rust/src/net/`. FRB API: `race_create`, `race_join`, `race_ready`, `race_send` (internal 2 Hz loop), `race_snapshot()` polled by the existing 250 ms timer (or a `StreamSink` later). Fallback if FRB gets in the way: `web_socket_channel` in Dart.
+- [ ] **L3 P1 · Deep links:** `app_links` ^7.2.2 (Linux + Windows custom schemes verified in its README; needs the runner changes in J3).
+
+## Open-source references (checked on GitHub 2026-10-08; GPL/AGPL = ideas only, don't copy code into this MIT repo)
+- [zoffline/zwift-offline](https://github.com/zoffline/zwift-offline) (AGPL-3.0): a self-hosted partial Zwift server with opt-in multiplayer. A precedent for "run your own server" (option 2) and its port-opening pain (TCP 80/443/3025, UDP 3024).
+- [masonwyatt23/globeride](https://github.com/masonwyatt23/globeride) (MIT): room codes with **no backend and no accounts**, a 4-peer WebRTC mesh, a binary state codec at 10 Hz. It shows the room-code UX and the mesh ceiling.
+- [wolfv/cycling-workout](https://github.com/wolfv/cycling-workout) (no licence, read only): P2P group sessions with a **synchronized countdown start**, plus Cloudflare Durable Object signalling.
+- [emperor-hadrian/virtual_bike](https://github.com/emperor-hadrian/virtual_bike) (GPL-3.0, Rust/Bevy/Renet): **server-side physics for path-bound riders**, the same model as the server owning distance along the route.
+- [dvmarinoff/Auuki](https://github.com/dvmarinoff/Auuki), [GoldenCheetah](https://github.com/GoldenCheetah/GoldenCheetah): no multiplayer in their READMEs; useful for trainer and metrics UX only.
+
+## Out of scope (later, optional)
+Accounts and login, global or per-route leaderboards, persistent profiles and friends lists, stored race history server-side, Strava/intervals.icu posting of results (step 4 handles local upload), drafting (CdA × 0.7 within 2–10 m), spectators, a public room browser, bots/pacers from ghosts, async ghost sharing via `.tdshare` files. See the v1 file for the accounts design if it's ever needed.
+
+## Top 5 for Build
+1. **Prerequisites:** Pro-polish RM1 + RI2 (lat/lon + route key v2 in `gpx.rs`), plus the trim function producing the **canonical race route**.
+2. **`race-physics` + `race-proto` shared crates:** power→speed model with golden tests, protocol enum (JSON + MessagePack round-trip).
+3. **`server/` axum relay:** in-memory rooms, code/token, lobby→countdown→2 Hz snapshot→finish→results, 60 s resume → DNF, idle cleanup, sanity flags, no IP logs. Plus the `bot` load test (200×8 on a CX23).
+4. **Client Race screen:** Create/Join with code + nickname, lobby/ready, synced 3-2-1, live gaps on the elevation profile/map, results. Networking in Rust over FRB. Demo hides Race.
+5. **Deploy + polish:** Hetzner CX23 (FSN/NBG) + Caddy + privacy note. Then P1: `tacxdesktop://` links (app_links + .desktop/Inno registry) and "Host on this PC" LAN fallback.

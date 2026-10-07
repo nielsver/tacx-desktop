@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tacx_desktop/src/ui/app_tokens.dart';
 
 /// Shared dark-ride palette and control chrome for the ride dashboard.
 abstract final class RideColors {
@@ -121,6 +122,7 @@ ThemeData buildRideTheme() {
   );
 
   return base.copyWith(
+    extensions: const [AppTokens()],
     textTheme: base.textTheme
         .apply(
           bodyColor: RideColors.textPrimary,

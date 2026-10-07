@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
+import 'package:tacx_desktop/src/ui/app_tokens.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 
 /// Visual effects intensity for Focus mode (P0-V3). Default [off].
@@ -373,6 +374,7 @@ class _PowerHero extends StatelessWidget {
               key: const ValueKey('focus-power'),
               style: const TextStyle(
                 fontSize: RideType.gameHero,
+                fontFeatures: kTabularFeatures,
                 fontWeight: FontWeight.w800,
                 height: 1.0,
                 letterSpacing: -2,
@@ -541,6 +543,7 @@ class _MetricPill extends StatelessWidget {
                   text: value,
                   style: const TextStyle(
                     fontSize: RideType.focusMetric,
+                    fontFeatures: kTabularFeatures,
                     fontWeight: FontWeight.w800,
                     color: RideColors.textPrimary,
                     height: 1.05,

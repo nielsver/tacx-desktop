@@ -19,6 +19,7 @@ import 'package:tacx_desktop/src/ui/elev_profile_chart.dart'
     show GhostDeltaChip;
 import 'package:tacx_desktop/src/ui/bluetooth_tips.dart';
 import 'package:tacx_desktop/src/ui/mode_copy.dart';
+import 'package:tacx_desktop/src/ui/app_tokens.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 import 'package:tacx_desktop/src/ui/window_chrome.dart';
 
@@ -2555,6 +2556,7 @@ class _MetricCard extends StatelessWidget {
                   value,
                   style: TextStyle(
                     fontSize: valueSize,
+                    fontFeatures: kTabularFeatures,
                     fontWeight: FontWeight.w800,
                     height: 1.05,
                     letterSpacing: -0.5,
@@ -2631,6 +2633,7 @@ class _ErgPanelState extends State<_ErgPanel> {
               '${widget.targetWatts}',
               style: const TextStyle(
                 fontSize: RideType.target,
+                fontFeatures: kTabularFeatures,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -1,
                 height: 1,
@@ -2858,6 +2861,7 @@ class _ResistancePanel extends StatelessWidget {
               percent.toStringAsFixed(0),
               style: const TextStyle(
                 fontSize: RideType.target,
+                fontFeatures: kTabularFeatures,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -1,
                 height: 1,

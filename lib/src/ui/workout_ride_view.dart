@@ -2,9 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:tacx_desktop/src/workout/workout_plan.dart';
+import 'package:tacx_desktop/src/ui/app_tokens.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 
-const _tabular = [FontFeature.tabularFigures()];
 
 /// Live position in a running (or just finished) workout, derived from the
 /// engine's `WorkoutStatus` (step index + time left in the step).
@@ -174,7 +174,7 @@ class IntervalTimeline extends StatelessWidget {
                 color: RideColors.textPrimary,
                 fontSize: bigSize,
                 fontWeight: FontWeight.w800,
-                fontFeatures: _tabular,
+                fontFeatures: kTabularFeatures,
                 height: 1.1,
               ),
             ),
@@ -186,7 +186,7 @@ class IntervalTimeline extends StatelessWidget {
                   color: color,
                   fontSize: RideType.label,
                   fontWeight: FontWeight.w700,
-                  fontFeatures: _tabular,
+                  fontFeatures: kTabularFeatures,
                 ),
               ),
             ],
@@ -215,7 +215,7 @@ class IntervalTimeline extends StatelessWidget {
             color: RideColors.textPrimary,
             fontSize: bigSize,
             fontWeight: FontWeight.w800,
-            fontFeatures: _tabular,
+            fontFeatures: kTabularFeatures,
             height: 1.1,
           ),
         ),
@@ -273,7 +273,7 @@ class IntervalTimeline extends StatelessWidget {
                 color: RideColors.textPrimary,
                 fontSize: large ? RideType.metric : RideType.title,
                 fontWeight: FontWeight.w700,
-                fontFeatures: _tabular,
+                fontFeatures: kTabularFeatures,
               ),
             ),
           ],
@@ -304,7 +304,7 @@ class IntervalTimeline extends StatelessWidget {
             color: RideColors.textPrimary,
             fontSize: RideType.body,
             fontWeight: FontWeight.w700,
-            fontFeatures: _tabular,
+            fontFeatures: kTabularFeatures,
           ),
         ),
         if (onEditFtp != null)
@@ -442,7 +442,7 @@ class _CountdownBadge extends StatelessWidget {
               color: RideColors.textPrimary,
               fontSize: large ? RideType.glyph : RideType.header,
               fontWeight: FontWeight.w800,
-              fontFeatures: _tabular,
+              fontFeatures: kTabularFeatures,
             ),
           ),
         ),

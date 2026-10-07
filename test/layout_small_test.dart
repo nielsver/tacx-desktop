@@ -39,8 +39,21 @@ void main() {
         expect(find.text('ERG mode'), findsOneWidget);
 
         // Expand simulation (+ advanced if present): still no overflow.
-        await tester.tap(find.text('Simulation'));
+        // Scroll the header into view first: at 1280x720 it sits below the
+        // fold and a blind tap missed it (QA F3), so Simulation never opened.
+        final simHeader = find.byKey(const ValueKey('simulation-header'));
+        await tester.ensureVisible(simHeader);
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.tap(simHeader);
         await tester.pump(const Duration(milliseconds: 200));
+        expect(
+          find.descendant(
+            of: simHeader,
+            matching: find.byIcon(Icons.expand_less),
+          ),
+          findsOneWidget,
+          reason: 'Simulation panel must actually be expanded',
+        );
         final adv = find.textContaining('Advanced');
         if (adv.evaluate().isNotEmpty) {
           await tester.ensureVisible(adv.first);

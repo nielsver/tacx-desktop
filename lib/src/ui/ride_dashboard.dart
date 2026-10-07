@@ -31,6 +31,10 @@ class _RideDashboardState extends State<RideDashboard> {
     mode: ControlMode.idle,
     deviceName: '',
     supportsSimulation: true,
+    reconnectAttempt: 0,
+    reconnectMaxAttempts: 0,
+    reconnectInS: 0,
+    reconnectGaveUp: false,
   );
   ResistanceRange _resRange = const ResistanceRange(
     minPct: 0,
@@ -88,6 +92,7 @@ class _RideDashboardState extends State<RideDashboard> {
 
   void _refresh() {
     if (!mounted) return;
+    final wasReconnecting = _snap.state == ConnectionState.reconnecting;
     setState(() {
       _metrics = api.getMetrics();
       _snap = api.getConnectionSnapshot();
@@ -97,6 +102,9 @@ class _RideDashboardState extends State<RideDashboard> {
         _simExpanded = true;
       }
     });
+    if (wasReconnecting && _snap.state == ConnectionState.connected) {
+      _toast('Trainer reconnected — previous target restored', Icons.link);
+    }
   }
 
   Future<void> _checkBluetooth() async {
@@ -313,7 +321,16 @@ class _RideDashboardState extends State<RideDashboard> {
                   ),
                 ],
               ),
-            if (_error == null &&
+            if (ReconnectBanner.shows(_snap))
+              ReconnectBanner(
+                snap: _snap,
+                busy: _busy,
+                onReconnect: () =>
+                    _run(() => api.reconnectTrainer(), label: 'Reconnecting'),
+                onDisconnect: () =>
+                    _run(() => api.disconnectTrainer(), label: 'Disconnecting'),
+              )
+            else if (_error == null &&
                 _snap.state == ConnectionState.error &&
                 (_snap.detail.toLowerCase().contains('link lost') ||
                     _snap.detail.toLowerCase().contains('control lost')))
@@ -628,6 +645,89 @@ class _StatusStrip extends StatelessWidget {
   }
 }
 
+/// P0-UX-4: automatic disconnect recovery progress ("reconnecting (2/4)…")
+/// and the final gave-up state with the manual Reconnect action.
+class ReconnectBanner extends StatelessWidget {
+  const ReconnectBanner({
+    super.key,
+    required this.snap,
+    required this.busy,
+    required this.onReconnect,
+    required this.onDisconnect,
+  });
+
+  final ConnectionSnapshot snap;
+  final bool busy;
+  final VoidCallback onReconnect;
+  final VoidCallback onDisconnect;
+
+  static bool isReconnecting(ConnectionSnapshot s) =>
+      s.state == ConnectionState.reconnecting;
+
+  static bool gaveUp(ConnectionSnapshot s) =>
+      s.state == ConnectionState.error && s.reconnectGaveUp;
+
+  static bool shows(ConnectionSnapshot s) => isReconnecting(s) || gaveUp(s);
+
+  static String message(ConnectionSnapshot s) {
+    if (gaveUp(s)) {
+      return "Couldn't reconnect after ${s.reconnectAttempt} tries. "
+          'Wake the trainer (pedal), then tap Reconnect.';
+    }
+    if (s.reconnectAttempt == 0) return 'Connection lost — reconnecting…';
+    final n = '${s.reconnectAttempt}/${s.reconnectMaxAttempts}';
+    return s.reconnectInS > 0
+        ? 'Connection lost — reconnecting ($n) in ${s.reconnectInS} s…'
+        : 'Connection lost — reconnecting ($n)…';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const white = TextStyle(color: Colors.white);
+    if (gaveUp(snap)) {
+      return _StatusStrip(
+        key: const ValueKey('reconnect-gave-up-banner'),
+        icon: Icons.link_off,
+        color: RideColors.bannerError,
+        message: message(snap),
+        actions: [
+          TextButton(
+            key: const ValueKey('reconnect-gave-up-action'),
+            onPressed: busy ? null : onReconnect,
+            child: const Text('Reconnect', style: white),
+          ),
+        ],
+      );
+    }
+    // While an attempt is mid-connect only Disconnect is offered; a manual
+    // Reconnect during the backoff wait skips the remaining delay.
+    final waiting = snap.reconnectInS > 0;
+    return _StatusStrip(
+      key: const ValueKey('auto-reconnect-banner'),
+      icon: Icons.sync,
+      color: RideColors.bannerWarn,
+      message: message(snap),
+      actions: [
+        TextButton(
+          key: const ValueKey('reconnect-now-action'),
+          onPressed: busy || !waiting ? null : onReconnect,
+          child: Text(
+            'Reconnect now',
+            style: white.copyWith(
+              color: busy || !waiting ? Colors.white70 : Colors.white,
+            ),
+          ),
+        ),
+        TextButton(
+          key: const ValueKey('reconnect-stop-action'),
+          onPressed: busy ? null : onDisconnect,
+          child: const Text('Disconnect', style: white),
+        ),
+      ],
+    );
+  }
+}
+
 class _Header extends StatelessWidget {
   const _Header({
     required this.snap,
@@ -792,9 +892,13 @@ class _ConnectionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canReconnect = !busy && !connected;
+    final reconnecting = snap.state == ConnectionState.reconnecting;
+    // Mid-attempt (no countdown) a manual Reconnect would race the auto one.
+    final canReconnect =
+        !busy && !connected && !(reconnecting && snap.reconnectInS == 0);
     final inProgress =
         busy ||
+        reconnecting ||
         snap.state == ConnectionState.scanning ||
         snap.state == ConnectionState.connecting;
 
@@ -824,6 +928,8 @@ class _ConnectionBar extends StatelessWidget {
                     detail: snap.detail,
                     busy: busy,
                     busyLabel: busyLabel,
+                    reconnectAttempt: snap.reconnectAttempt,
+                    reconnectMaxAttempts: snap.reconnectMaxAttempts,
                   ),
                 ),
                 SizedBox(
@@ -862,7 +968,10 @@ class _ConnectionBar extends StatelessWidget {
                   child: const Text('Reconnect'),
                 ),
                 OutlinedButton(
-                  onPressed: busy || !connected ? null : onDisconnect,
+                  // Disconnect also cancels a pending auto-reconnect.
+                  onPressed: busy || !(connected || reconnecting)
+                      ? null
+                      : onDisconnect,
                   child: const Text('Disconnect'),
                 ),
               ],
@@ -884,6 +993,8 @@ class ConnectionStatusIndicator extends StatelessWidget {
     this.detail = '',
     this.busy = false,
     this.busyLabel,
+    this.reconnectAttempt = 0,
+    this.reconnectMaxAttempts = 0,
   });
 
   final ConnectionState state;
@@ -891,10 +1002,15 @@ class ConnectionStatusIndicator extends StatelessWidget {
   final bool busy;
   final String? busyLabel;
 
+  /// Auto-reconnect attempt n of m (P0-UX-4); 0 when not reconnecting.
+  final int reconnectAttempt;
+  final int reconnectMaxAttempts;
+
   bool get inProgress =>
       busy ||
       state == ConnectionState.scanning ||
-      state == ConnectionState.connecting;
+      state == ConnectionState.connecting ||
+      state == ConnectionState.reconnecting;
 
   static String stateLabel(ConnectionState s) => switch (s) {
     ConnectionState.disconnected => 'Disconnected',
@@ -902,11 +1018,16 @@ class ConnectionStatusIndicator extends StatelessWidget {
     ConnectionState.connecting => 'Connecting',
     ConnectionState.connected => 'Connected',
     ConnectionState.error => 'Error',
+    ConnectionState.reconnecting => 'Reconnecting',
   };
 
   /// Label shown next to the dot/spinner.
   String get label {
     if (busy) return '${busyLabel ?? 'Working'}…';
+    if (state == ConnectionState.reconnecting && reconnectAttempt > 0) {
+      // The banner carries the full "connection lost" message.
+      return 'Reconnecting ($reconnectAttempt/$reconnectMaxAttempts)…';
+    }
     final base = stateLabel(state);
     final withEllipsis = inProgress ? '$base…' : base;
     return detail.isEmpty ? withEllipsis : '$withEllipsis · $detail';

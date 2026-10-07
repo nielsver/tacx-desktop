@@ -864,8 +864,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ConnectionSnapshot dco_decode_connection_snapshot(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return ConnectionSnapshot(
       state: dco_decode_connection_state(arr[0]),
       detail: dco_decode_String(arr[1]),
@@ -874,6 +874,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       mode: dco_decode_control_mode(arr[4]),
       deviceName: dco_decode_String(arr[5]),
       supportsSimulation: dco_decode_bool(arr[6]),
+      reconnectAttempt: dco_decode_u_32(arr[7]),
+      reconnectMaxAttempts: dco_decode_u_32(arr[8]),
+      reconnectInS: dco_decode_u_32(arr[9]),
+      reconnectGaveUp: dco_decode_bool(arr[10]),
     );
   }
 
@@ -1106,6 +1110,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_mode = sse_decode_control_mode(deserializer);
     var var_deviceName = sse_decode_String(deserializer);
     var var_supportsSimulation = sse_decode_bool(deserializer);
+    var var_reconnectAttempt = sse_decode_u_32(deserializer);
+    var var_reconnectMaxAttempts = sse_decode_u_32(deserializer);
+    var var_reconnectInS = sse_decode_u_32(deserializer);
+    var var_reconnectGaveUp = sse_decode_bool(deserializer);
     return ConnectionSnapshot(
       state: var_state,
       detail: var_detail,
@@ -1114,6 +1122,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       mode: var_mode,
       deviceName: var_deviceName,
       supportsSimulation: var_supportsSimulation,
+      reconnectAttempt: var_reconnectAttempt,
+      reconnectMaxAttempts: var_reconnectMaxAttempts,
+      reconnectInS: var_reconnectInS,
+      reconnectGaveUp: var_reconnectGaveUp,
     );
   }
 
@@ -1388,6 +1400,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_control_mode(self.mode, serializer);
     sse_encode_String(self.deviceName, serializer);
     sse_encode_bool(self.supportsSimulation, serializer);
+    sse_encode_u_32(self.reconnectAttempt, serializer);
+    sse_encode_u_32(self.reconnectMaxAttempts, serializer);
+    sse_encode_u_32(self.reconnectInS, serializer);
+    sse_encode_bool(self.reconnectGaveUp, serializer);
   }
 
   @protected

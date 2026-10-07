@@ -50,6 +50,8 @@ pub enum ConnectionState {
     Connecting,
     Connected,
     Error,
+    /// Link lost unexpectedly; automatic reconnect with backoff in progress.
+    Reconnecting,
 }
 
 impl Default for ConnectionState {
@@ -105,6 +107,14 @@ pub struct ConnectionSnapshot {
     pub device_name: String,
     /// True when FTMS Feature bit / FE-C / demo can accept simulation (grade/wind).
     pub supports_simulation: bool,
+    /// Auto-reconnect attempt (1-based) while reconnecting / after giving up; 0 otherwise.
+    pub reconnect_attempt: u32,
+    /// Attempts in the backoff schedule (0 when no auto-reconnect is active).
+    pub reconnect_max_attempts: u32,
+    /// Seconds until the next automatic attempt (0 while an attempt is running).
+    pub reconnect_in_s: u32,
+    /// Auto-reconnect exhausted its schedule — only manual Reconnect remains.
+    pub reconnect_gave_up: bool,
 }
 
 impl Default for ConnectionSnapshot {
@@ -117,6 +127,10 @@ impl Default for ConnectionSnapshot {
             mode: ControlMode::Idle,
             device_name: String::new(),
             supports_simulation: true,
+            reconnect_attempt: 0,
+            reconnect_max_attempts: 0,
+            reconnect_in_s: 0,
+            reconnect_gave_up: false,
         }
     }
 }

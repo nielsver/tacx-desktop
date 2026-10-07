@@ -27,7 +27,9 @@ void main() {
     testWidgets('state $s: spinner and label are paired', (tester) async {
       await pumpIndicator(tester, ConnectionStatusIndicator(state: s));
       final progress =
-          s == ConnectionState.scanning || s == ConnectionState.connecting;
+          s == ConnectionState.scanning ||
+          s == ConnectionState.connecting ||
+          s == ConnectionState.reconnecting;
       expect(spinner, progress ? findsOneWidget : findsNothing);
       expect(dot, progress ? findsNothing : findsOneWidget);
       final label = labelOf(tester);

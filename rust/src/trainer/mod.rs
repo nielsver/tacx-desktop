@@ -5,6 +5,7 @@ pub mod fec_rate;
 pub mod gatt;
 pub mod ftms;
 pub mod intervals;
+pub mod reconnect;
 pub mod types;
 
 pub use types::*;

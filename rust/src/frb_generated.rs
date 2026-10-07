@@ -309,7 +309,11 @@ let mut var_isDemo = <bool>::sse_decode(deserializer);
 let mut var_mode = <crate::trainer::types::ControlMode>::sse_decode(deserializer);
 let mut var_deviceName = <String>::sse_decode(deserializer);
 let mut var_supportsSimulation = <bool>::sse_decode(deserializer);
-return crate::trainer::types::ConnectionSnapshot{state: var_state, detail: var_detail, protocol: var_protocol, is_demo: var_isDemo, mode: var_mode, device_name: var_deviceName, supports_simulation: var_supportsSimulation};}
+let mut var_reconnectAttempt = <u32>::sse_decode(deserializer);
+let mut var_reconnectMaxAttempts = <u32>::sse_decode(deserializer);
+let mut var_reconnectInS = <u32>::sse_decode(deserializer);
+let mut var_reconnectGaveUp = <bool>::sse_decode(deserializer);
+return crate::trainer::types::ConnectionSnapshot{state: var_state, detail: var_detail, protocol: var_protocol, is_demo: var_isDemo, mode: var_mode, device_name: var_deviceName, supports_simulation: var_supportsSimulation, reconnect_attempt: var_reconnectAttempt, reconnect_max_attempts: var_reconnectMaxAttempts, reconnect_in_s: var_reconnectInS, reconnect_gave_up: var_reconnectGaveUp};}
                 }
                 
                 impl SseDecode for crate::trainer::types::ConnectionState {
@@ -321,6 +325,7 @@ return crate::trainer::types::ConnectionSnapshot{state: var_state, detail: var_d
 2 => crate::trainer::types::ConnectionState::Connecting,
 3 => crate::trainer::types::ConnectionState::Connected,
 4 => crate::trainer::types::ConnectionState::Error,
+5 => crate::trainer::types::ConnectionState::Reconnecting,
             _ => unreachable!("Invalid variant for ConnectionState: {}", inner),
         };}
                 }
@@ -578,7 +583,11 @@ self.protocol.into_into_dart().into_dart(),
 self.is_demo.into_into_dart().into_dart(),
 self.mode.into_into_dart().into_dart(),
 self.device_name.into_into_dart().into_dart(),
-self.supports_simulation.into_into_dart().into_dart()
+self.supports_simulation.into_into_dart().into_dart(),
+self.reconnect_attempt.into_into_dart().into_dart(),
+self.reconnect_max_attempts.into_into_dart().into_dart(),
+self.reconnect_in_s.into_into_dart().into_dart(),
+self.reconnect_gave_up.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -597,6 +606,7 @@ Self::Scanning => 1.into_dart(),
 Self::Connecting => 2.into_dart(),
 Self::Connected => 3.into_dart(),
 Self::Error => 4.into_dart(),
+Self::Reconnecting => 5.into_dart(),
                     _ => unreachable!(),
                 }
                 }
@@ -784,7 +794,11 @@ crate::trainer::types::BluetoothRadio::Unknown => { 4 }
 <bool>::sse_encode(self.is_demo, serializer);
 <crate::trainer::types::ControlMode>::sse_encode(self.mode, serializer);
 <String>::sse_encode(self.device_name, serializer);
-<bool>::sse_encode(self.supports_simulation, serializer);}
+<bool>::sse_encode(self.supports_simulation, serializer);
+<u32>::sse_encode(self.reconnect_attempt, serializer);
+<u32>::sse_encode(self.reconnect_max_attempts, serializer);
+<u32>::sse_encode(self.reconnect_in_s, serializer);
+<bool>::sse_encode(self.reconnect_gave_up, serializer);}
                 }
                 
                 impl SseEncode for crate::trainer::types::ConnectionState {
@@ -794,6 +808,7 @@ crate::trainer::types::ConnectionState::Scanning => { 1 }
 crate::trainer::types::ConnectionState::Connecting => { 2 }
 crate::trainer::types::ConnectionState::Connected => { 3 }
 crate::trainer::types::ConnectionState::Error => { 4 }
+crate::trainer::types::ConnectionState::Reconnecting => { 5 }
  _ => { unimplemented!(""); }}, serializer);}
                 }
                 

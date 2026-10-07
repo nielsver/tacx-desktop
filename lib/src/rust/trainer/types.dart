@@ -64,6 +64,18 @@ class ConnectionSnapshot {
   /// True when FTMS Feature bit / FE-C / demo can accept simulation (grade/wind).
   final bool supportsSimulation;
 
+  /// Auto-reconnect attempt (1-based) while reconnecting / after giving up; 0 otherwise.
+  final int reconnectAttempt;
+
+  /// Attempts in the backoff schedule (0 when no auto-reconnect is active).
+  final int reconnectMaxAttempts;
+
+  /// Seconds until the next automatic attempt (0 while an attempt is running).
+  final int reconnectInS;
+
+  /// Auto-reconnect exhausted its schedule — only manual Reconnect remains.
+  final bool reconnectGaveUp;
+
   const ConnectionSnapshot({
     required this.state,
     required this.detail,
@@ -72,6 +84,10 @@ class ConnectionSnapshot {
     required this.mode,
     required this.deviceName,
     required this.supportsSimulation,
+    required this.reconnectAttempt,
+    required this.reconnectMaxAttempts,
+    required this.reconnectInS,
+    required this.reconnectGaveUp,
   });
 
   @override
@@ -82,7 +98,11 @@ class ConnectionSnapshot {
       isDemo.hashCode ^
       mode.hashCode ^
       deviceName.hashCode ^
-      supportsSimulation.hashCode;
+      supportsSimulation.hashCode ^
+      reconnectAttempt.hashCode ^
+      reconnectMaxAttempts.hashCode ^
+      reconnectInS.hashCode ^
+      reconnectGaveUp.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -95,10 +115,23 @@ class ConnectionSnapshot {
           isDemo == other.isDemo &&
           mode == other.mode &&
           deviceName == other.deviceName &&
-          supportsSimulation == other.supportsSimulation;
+          supportsSimulation == other.supportsSimulation &&
+          reconnectAttempt == other.reconnectAttempt &&
+          reconnectMaxAttempts == other.reconnectMaxAttempts &&
+          reconnectInS == other.reconnectInS &&
+          reconnectGaveUp == other.reconnectGaveUp;
 }
 
-enum ConnectionState { disconnected, scanning, connecting, connected, error }
+enum ConnectionState {
+  disconnected,
+  scanning,
+  connecting,
+  connected,
+  error,
+
+  /// Link lost unexpectedly; automatic reconnect with backoff in progress.
+  reconnecting,
+}
 
 enum ControlMode {
   idle,

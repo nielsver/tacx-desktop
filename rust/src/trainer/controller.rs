@@ -6,6 +6,10 @@ use crate::trainer::fec_rate::{FecWriteRateLimiter, RateDecision};
 use crate::trainer::ftms;
 use crate::trainer::gatt;
 use crate::trainer::intervals::IntervalEngine;
+use crate::trainer::reconnect::{
+    self, AutoReconnect, BackoffPolicy, LossDecision, NextStep, ReconnectGate, ResumeTarget,
+    SimParams,
+};
 use crate::trainer::types::*;
 use btleplug::api::{
     bleuuid::uuid_from_u16, Central, CentralState, Characteristic, Manager as _, Peripheral as _, ScanFilter,
@@ -20,6 +24,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::Notify;
 
 static RUNTIME: OnceCell<Runtime> = OnceCell::new();
 static CONTROLLER: OnceCell<Arc<AsyncMutex<TrainerController>>> = OnceCell::new();
@@ -70,7 +75,12 @@ struct BleSession {
     control_lost: Arc<AtomicBool>,
     /// FTMS Feature bit 13 or FE-C path — simulation grade/wind allowed.
     simulation_supported: bool,
+    /// Signalled once by the notification pump when the link drops.
+    link_lost: Arc<Notify>,
 }
+
+const CONTROL_LOST_AT_DROP: &str =
+    "another app took the trainer. Close Zwift / Tacx Training / MyWhoosh, then tap Reconnect.";
 
 pub struct TrainerController {
     demo_mode: bool,
@@ -80,6 +90,16 @@ pub struct TrainerController {
     interval_handle: Option<tokio::task::JoinHandle<()>>,
     demo_tick_handle: Option<tokio::task::JoinHandle<()>>,
     last_device_id: Option<String>,
+    /// Invalidated by user Disconnect / demo switch / manual connect.
+    reconnect_gate: ReconnectGate,
+    backoff: BackoffPolicy,
+    auto_reconnect: AutoReconnect,
+    /// Link watcher → auto-reconnect loop for the current session.
+    link_watch_handle: Option<tokio::task::JoinHandle<()>>,
+    /// When the last automatic reconnect succeeded, and on which attempt.
+    last_auto_success: Option<(Instant, u32)>,
+    /// Last simulation parameters sent (restored after reconnect).
+    last_sim: Option<SimParams>,
 }
 
 impl TrainerController {
@@ -96,6 +116,12 @@ impl TrainerController {
             interval_handle: None,
             demo_tick_handle: None,
             last_device_id: None,
+            reconnect_gate: ReconnectGate::default(),
+            backoff: BackoffPolicy::default(),
+            auto_reconnect: AutoReconnect::Inactive,
+            link_watch_handle: None,
+            last_auto_success: None,
+            last_sim: None,
         }
     }
 
@@ -142,7 +168,7 @@ impl TrainerController {
                     format!("{} · {}", b.device_name, b.gatt_summary)
                 };
                 if !alive {
-                    ConnectionSnapshot {
+                    let lost = ConnectionSnapshot {
                         state: ConnectionState::Error,
                         detail: "Link lost — tap Reconnect to resume ERG / intervals".into(),
                         protocol: b.protocol,
@@ -150,6 +176,19 @@ impl TrainerController {
                         mode: *b.mode.lock(),
                         device_name: b.device_name.clone(),
                         supports_simulation: b.simulation_supported,
+                        ..Default::default()
+                    };
+                    match self.auto_reconnect.view(Instant::now()) {
+                        Some(v) => ConnectionSnapshot {
+                            state: v.state,
+                            detail: v.detail,
+                            reconnect_attempt: v.attempt,
+                            reconnect_max_attempts: v.max_attempts,
+                            reconnect_in_s: v.in_s,
+                            reconnect_gave_up: v.gave_up,
+                            ..lost
+                        },
+                        None => lost,
                     }
                 } else if control_lost {
                     ConnectionSnapshot {
@@ -163,6 +202,7 @@ impl TrainerController {
                         mode: *b.mode.lock(),
                         device_name: b.device_name.clone(),
                         supports_simulation: b.simulation_supported,
+                        ..Default::default()
                     }
                 } else {
                     let detail = match banner {
@@ -177,6 +217,7 @@ impl TrainerController {
                         mode: *b.mode.lock(),
                         device_name: b.device_name.clone(),
                         supports_simulation: b.simulation_supported,
+                        ..Default::default()
                     }
                 }
             }
@@ -241,6 +282,8 @@ impl TrainerController {
         device_id: Option<String>,
         preserve_intervals: bool,
     ) -> Result<(), String> {
+        // A manual connect supersedes any pending automatic reconnect.
+        self.cancel_auto_reconnect();
         if !preserve_intervals {
             self.stop_interval();
         }
@@ -289,6 +332,7 @@ impl TrainerController {
                 self.snapshot.mode = ControlMode::Idle;
                 self.last_device_id = Some(id.clone());
                 self.backend = Backend::Ble(session);
+                self.arm_link_watch();
                 Ok(())
             }
             Err(e) => {
@@ -301,6 +345,8 @@ impl TrainerController {
     }
 
     pub async fn disconnect(&mut self) -> Result<(), String> {
+        // User-initiated: never auto-reconnect after this.
+        self.cancel_auto_reconnect();
         self.stop_interval();
         if let Some(h) = self.demo_tick_handle.take() {
             h.abort();
@@ -435,6 +481,20 @@ impl TrainerController {
 
     /// Track / grade simulation: FE-C page 0x33 or FTMS Indoor Bike Simulation (`0x11`).
     pub async fn set_track_resistance(&mut self, grade_pct: f64, crr: f64) -> Result<(), String> {
+        let result = self.set_track_resistance_inner(grade_pct, crr).await;
+        if result.is_ok() {
+            let prev = self.last_sim;
+            self.last_sim = Some(SimParams {
+                wind_speed_mps: prev.map(|p| p.wind_speed_mps).unwrap_or(0.0),
+                grade_pct,
+                crr,
+                cw: prev.map(|p| p.cw).unwrap_or(ftms::DEFAULT_SIM_CW),
+            });
+        }
+        result
+    }
+
+    async fn set_track_resistance_inner(&mut self, grade_pct: f64, crr: f64) -> Result<(), String> {
         match &mut self.backend {
             Backend::Demo(d) => {
                 d.set_simulation_grade(grade_pct);
@@ -596,6 +656,27 @@ impl TrainerController {
         crr: f64,
         cw: f64,
     ) -> Result<(), String> {
+        let result = self
+            .set_indoor_bike_simulation_inner(wind_speed_mps, grade_pct, crr, cw)
+            .await;
+        if result.is_ok() {
+            self.last_sim = Some(SimParams {
+                wind_speed_mps,
+                grade_pct,
+                crr,
+                cw,
+            });
+        }
+        result
+    }
+
+    async fn set_indoor_bike_simulation_inner(
+        &mut self,
+        wind_speed_mps: f64,
+        grade_pct: f64,
+        crr: f64,
+        cw: f64,
+    ) -> Result<(), String> {
         match &mut self.backend {
             Backend::Demo(d) => {
                 d.set_simulation_grade(grade_pct);
@@ -673,7 +754,16 @@ impl TrainerController {
                     let ctrl = ctrl.clone();
                     async move {
                         let mut g = ctrl.lock().await;
-                        g.set_target_power(watts).await
+                        let r = g.set_target_power(watts).await;
+                        match r {
+                            // Keep the preset ticking through a drop; reconnect
+                            // re-applies the current phase target.
+                            Err(e) if g.link_down() => {
+                                log::warn!("Interval target {watts} W deferred — link down ({e})");
+                                Ok(())
+                            }
+                            r => r,
+                        }
                     }
                 })
                 .await;
@@ -686,8 +776,9 @@ impl TrainerController {
             .last_device_id
             .clone()
             .ok_or_else(|| "Nothing to reconnect — scan and connect first".to_string())?;
-        let resume_watts = self.resume_watts();
-        let preserve = self.intervals.status().running || resume_watts.is_some();
+        self.cancel_auto_reconnect();
+        let resume = self.resume_target();
+        let preserve = self.intervals.status().running || resume.is_some();
         // Drop existing BLE session without aborting an active interval preset.
         if let Backend::Ble(b) = &self.backend {
             b.alive.store(false, Ordering::SeqCst);
@@ -695,21 +786,106 @@ impl TrainerController {
         }
         self.backend = Backend::Demo(DemoTrainer::new());
         self.connect_inner(Some(id), preserve).await?;
-        if let Some(w) = resume_watts {
-            self.set_target_power(w).await.map_err(|e| {
-                format!("Reconnected but failed to restore ERG target {w} W: {e}")
-            })?;
+        if let Some(t) = resume {
+            self.apply_resume_target(t).await?;
         }
         Ok(())
     }
 
-    fn resume_watts(&self) -> Option<u32> {
-        if let Some(w) = self.intervals.current_target_watts() {
-            return Some(w);
+    /// Control target to restore after reconnect: running interval phase
+    /// watts, else the last ERG watts / resistance % / simulation grade.
+    fn resume_target(&self) -> Option<ResumeTarget> {
+        let (mode, m) = match &self.backend {
+            Backend::Demo(d) => (d.snapshot.lock().mode, d.metrics.lock().clone()),
+            Backend::Ble(b) => (*b.mode.lock(), b.metrics.lock().clone()),
+        };
+        reconnect::pick_resume_target(
+            self.intervals.current_target_watts(),
+            mode,
+            m.target_power_w,
+            m.resistance_pct,
+            self.last_sim,
+        )
+    }
+
+    async fn apply_resume_target(&mut self, t: ResumeTarget) -> Result<(), String> {
+        match t {
+            ResumeTarget::Erg(w) => self.set_target_power(w).await.map_err(|e| {
+                format!("Reconnected but failed to restore ERG target {w} W: {e}")
+            }),
+            ResumeTarget::Resistance(p) => self.set_resistance(p).await.map_err(|e| {
+                format!("Reconnected but failed to restore resistance {p:.0} %: {e}")
+            }),
+            ResumeTarget::Simulation(sp) => self
+                .set_indoor_bike_simulation(sp.wind_speed_mps, sp.grade_pct, sp.crr, sp.cw)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Reconnected but failed to restore simulation grade {:.1} %: {e}",
+                        sp.grade_pct
+                    )
+                }),
         }
-        match &self.backend {
-            Backend::Demo(d) => d.metrics.lock().target_power_w.map(|w| w as u32),
-            Backend::Ble(b) => b.metrics.lock().target_power_w.map(|w| w as u32),
+    }
+
+    /// Live BLE session whose link has dropped.
+    fn link_down(&self) -> bool {
+        matches!(&self.backend, Backend::Ble(b) if !b.alive.load(Ordering::SeqCst))
+    }
+
+    /// Cancel any pending automatic reconnect (user Disconnect, demo switch,
+    /// manual connect / Reconnect). A retry sleeping in its backoff is aborted;
+    /// an attempt already mid-connect sees the stale token afterwards and
+    /// releases its link itself (aborting it could orphan a BLE connection).
+    fn cancel_auto_reconnect(&mut self) {
+        self.reconnect_gate.cancel();
+        let attempting = matches!(self.auto_reconnect, AutoReconnect::Attempting { .. });
+        if let Some(h) = self.link_watch_handle.take() {
+            if !attempting {
+                h.abort();
+            }
+        }
+        self.auto_reconnect = AutoReconnect::Inactive;
+        self.last_auto_success = None;
+    }
+
+    /// Watch the current BLE session; on unexpected link loss run the
+    /// bounded auto-reconnect loop.
+    fn arm_link_watch(&mut self) {
+        let Backend::Ble(b) = &self.backend else {
+            return;
+        };
+        let lost = b.link_lost.clone();
+        let token = self.reconnect_gate.token();
+        // Replacing (not aborting) the old handle: it may be the auto-reconnect
+        // task that is calling us right now.
+        self.link_watch_handle = Some(tokio::spawn(async move {
+            lost.notified().await;
+            auto_reconnect_loop(token).await;
+        }));
+    }
+
+    /// Install a session obtained by the auto-reconnect loop and restore the
+    /// previous control target (interval preset keeps running).
+    async fn finish_auto_reconnect(&mut self, session: BleSession, attempt: u32) {
+        let resume = self.resume_target();
+        self.snapshot.state = ConnectionState::Connected;
+        self.snapshot.detail = session.device_name.clone();
+        self.snapshot.device_name = session.device_name.clone();
+        self.snapshot.protocol = session.protocol;
+        self.snapshot.mode = ControlMode::Idle;
+        self.backend = Backend::Ble(session);
+        self.auto_reconnect = AutoReconnect::Inactive;
+        self.last_auto_success = Some((Instant::now(), attempt));
+        self.arm_link_watch();
+        log::info!("Auto-reconnect succeeded on attempt {attempt}; restoring {resume:?}");
+        if let Some(t) = resume {
+            if let Err(e) = self.apply_resume_target(t).await {
+                log::warn!("{e}");
+                if let Backend::Ble(b) = &self.backend {
+                    *b.status_banner.lock() = Some(e);
+                }
+            }
         }
     }
 
@@ -868,6 +1044,23 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
         .connect()
         .await
         .map_err(|e| format!("Connect failed (busy trainer?): {e}"))?;
+    match open_session(&central, peripheral.clone(), device_id).await {
+        Ok(session) => Ok(session),
+        Err(e) => {
+            // Don't leave a half-open link behind (auto-reconnect retries).
+            let _ = peripheral.disconnect().await;
+            central.stop_scan().await.ok();
+            Err(e)
+        }
+    }
+}
+
+/// GATT discovery, subscriptions and control handshake on a connected peripheral.
+async fn open_session(
+    central: &Adapter,
+    peripheral: Peripheral,
+    device_id: &str,
+) -> Result<BleSession, String> {
     peripheral
         .discover_services()
         .await
@@ -912,6 +1105,7 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
     let fec_flush_armed = Arc::new(AtomicBool::new(false));
     let status_banner: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let control_lost = Arc::new(AtomicBool::new(false));
+    let link_lost = Arc::new(Notify::new());
     let mut simulation_supported = false;
 
     if has_ftms {
@@ -984,6 +1178,7 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
         let alive_n = alive.clone();
         let banner_n = status_banner.clone();
         let lost_n = control_lost.clone();
+        let lost_tx = link_lost.clone();
         let peri_n = peripheral.clone();
         tokio::spawn(async move {
             if let Ok(mut stream) = peri_n.notifications().await {
@@ -1014,6 +1209,7 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
                 }
             }
             alive_n.store(false, Ordering::SeqCst);
+            lost_tx.notify_one();
             log::warn!("FTMS notification stream ended — trainer link lost");
         });
 
@@ -1071,6 +1267,7 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             status_banner,
             control_lost,
             simulation_supported,
+            link_lost,
         });
     }
 
@@ -1093,6 +1290,7 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
 
         let metrics_n = metrics.clone();
         let alive_n = alive.clone();
+        let lost_tx = link_lost.clone();
         let peri_n = peripheral.clone();
         tokio::spawn(async move {
             if let Ok(mut stream) = peri_n.notifications().await {
@@ -1119,6 +1317,7 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
                 }
             }
             alive_n.store(false, Ordering::SeqCst);
+            lost_tx.notify_one();
             log::warn!("FE-C notification stream ended — trainer link lost");
         });
 
@@ -1147,6 +1346,7 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             status_banner,
             control_lost,
             simulation_supported,
+            link_lost,
         });
     }
 
@@ -1156,6 +1356,130 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
     ))
 }
 
+/// Automatic disconnect recovery (P0-UX-4 / P1-BLE-4): bounded backoff from
+/// [`BackoffPolicy`]; stops on a stale token (user Disconnect / demo / manual
+/// connect), on NOCTRL, or when the schedule is exhausted.
+async fn auto_reconnect_loop(token: u64) {
+    let ctrl = controller();
+    let (id, policy, mut attempt) = {
+        let mut g = ctrl.lock().await;
+        let (alive, control_lost, old) = match &g.backend {
+            Backend::Ble(b) => (
+                b.alive.load(Ordering::SeqCst),
+                b.control_lost.load(Ordering::SeqCst),
+                Some(b.peripheral.clone()),
+            ),
+            Backend::Demo(_) => (true, false, None),
+        };
+        match reconnect::on_link_lost(
+            g.reconnect_gate.is_current(token),
+            g.demo_mode,
+            alive,
+            control_lost,
+            g.last_device_id.is_some(),
+        ) {
+            LossDecision::Ignore => return,
+            LossDecision::Blocked => {
+                g.auto_reconnect = AutoReconnect::Blocked {
+                    message: CONTROL_LOST_AT_DROP.into(),
+                };
+                return;
+            }
+            LossDecision::Retry => {}
+        }
+        // Release the stale link so the OS stack can reconnect cleanly.
+        if let Some(p) = old {
+            let _ = p.disconnect().await;
+        }
+        let policy = g.backoff.clone();
+        let since = g
+            .last_auto_success
+            .map(|(at, n)| (at.elapsed(), n));
+        let first = reconnect::starting_attempt(since);
+        match policy.delay_before(first) {
+            Some(d) => {
+                g.auto_reconnect = AutoReconnect::Waiting {
+                    attempt: first,
+                    max: policy.max_attempts(),
+                    next_at: Instant::now() + d,
+                };
+            }
+            None => {
+                g.auto_reconnect = AutoReconnect::GaveUp {
+                    attempts: policy.max_attempts(),
+                    last_error: "link keeps dropping right after reconnect".into(),
+                };
+                return;
+            }
+        }
+        (g.last_device_id.clone().unwrap_or_default(), policy, first)
+    };
+    let max = policy.max_attempts();
+    log::warn!("Trainer link lost — auto-reconnect to {id} (attempt {attempt}/{max})");
+    let mut delay = policy.delay_before(attempt).unwrap_or_default();
+    loop {
+        tokio::time::sleep(delay).await;
+        {
+            let mut g = ctrl.lock().await;
+            if !g.reconnect_gate.is_current(token) {
+                return;
+            }
+            g.auto_reconnect = AutoReconnect::Attempting { attempt, max };
+        }
+        // BLE connect runs without the controller lock so the UI keeps
+        // polling the snapshot ("reconnecting (n/m)…").
+        let res = connect_ble(&id).await;
+        let mut g = ctrl.lock().await;
+        if !g.reconnect_gate.is_current(token) {
+            // Cancelled mid-attempt: release the link unless the rider's own
+            // connect already uses the same trainer.
+            if let Ok(s) = res {
+                let in_use = matches!(&g.backend, Backend::Ble(b)
+                    if b.peripheral.id() == s.peripheral.id() && b.alive.load(Ordering::SeqCst));
+                if !in_use {
+                    let _ = s.peripheral.disconnect().await;
+                }
+            }
+            return;
+        }
+        match res {
+            Ok(session) => {
+                g.finish_auto_reconnect(session, attempt).await;
+                return;
+            }
+            Err(e) => {
+                log::warn!("Auto-reconnect attempt {attempt}/{max} failed: {e}");
+                match policy.after_failure(attempt, reconnect::classify_failure(&e)) {
+                    NextStep::Retry {
+                        attempt: next,
+                        delay: d,
+                    } => {
+                        g.auto_reconnect = AutoReconnect::Waiting {
+                            attempt: next,
+                            max,
+                            next_at: Instant::now() + d,
+                        };
+                        attempt = next;
+                        delay = d;
+                    }
+                    NextStep::GiveUp => {
+                        g.auto_reconnect = AutoReconnect::GaveUp {
+                            attempts: attempt,
+                            last_error: e,
+                        };
+                        return;
+                    }
+                    NextStep::Blocked => {
+                        g.auto_reconnect = AutoReconnect::Blocked {
+                            message: friendly_ble_error(&e),
+                        };
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// FE-C UART write with ~4 Hz latest-wins coalescing (non-blocking when throttled).
 async fn write_fec_throttled(b: &BleSession, payload: Vec<u8>) -> Result<(), String> {
@@ -1254,5 +1578,83 @@ fn merge_ftms_metrics(m: &mut TrainerMetrics, data: &[u8]) {
     }
     if flags & 0x0040 != 0 {
         m.power_w = parsed.power_w;
+    }
+}
+
+#[cfg(test)]
+mod auto_reconnect_tests {
+    use super::*;
+    use tokio::sync::oneshot;
+
+    /// Fake pending auto-reconnect task; the receiver errors once it is aborted.
+    fn pending_task(c: &mut TrainerController, state: AutoReconnect) -> oneshot::Receiver<()> {
+        let (tx, rx) = oneshot::channel::<()>();
+        c.auto_reconnect = state;
+        c.link_watch_handle = Some(tokio::spawn(async move {
+            let _tx = tx;
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        }));
+        rx
+    }
+
+    fn waiting() -> AutoReconnect {
+        AutoReconnect::Waiting {
+            attempt: 2,
+            max: 4,
+            next_at: Instant::now() + Duration::from_secs(3),
+        }
+    }
+
+    #[tokio::test]
+    async fn user_disconnect_cancels_pending_retry() {
+        let mut c = TrainerController::new();
+        let token = c.reconnect_gate.token();
+        let rx = pending_task(&mut c, waiting());
+        c.disconnect().await.unwrap();
+        assert!(!c.reconnect_gate.is_current(token));
+        assert_eq!(c.auto_reconnect, AutoReconnect::Inactive);
+        let r = tokio::time::timeout(Duration::from_secs(1), rx).await.unwrap();
+        assert!(r.is_err(), "backoff sleep must be aborted");
+    }
+
+    #[tokio::test]
+    async fn demo_switch_and_manual_connect_cancel() {
+        let mut c = TrainerController::new();
+        let t0 = c.reconnect_gate.token();
+        let rx = pending_task(&mut c, waiting());
+        c.set_demo_mode(true).await;
+        assert!(!c.reconnect_gate.is_current(t0));
+        assert!(tokio::time::timeout(Duration::from_secs(1), rx).await.unwrap().is_err());
+
+        let t1 = c.reconnect_gate.token();
+        let rx = pending_task(&mut c, waiting());
+        c.connect(Some("demo".into())).await.unwrap();
+        assert!(!c.reconnect_gate.is_current(t1));
+        assert_eq!(c.auto_reconnect, AutoReconnect::Inactive);
+        assert!(tokio::time::timeout(Duration::from_secs(1), rx).await.unwrap().is_err());
+        c.disconnect().await.ok();
+    }
+
+    #[tokio::test]
+    async fn cancel_mid_attempt_invalidates_token_without_abort() {
+        let mut c = TrainerController::new();
+        let token = c.reconnect_gate.token();
+        let mut rx = pending_task(&mut c, AutoReconnect::Attempting { attempt: 1, max: 4 });
+        c.disconnect().await.unwrap();
+        tokio::task::yield_now().await;
+        // Not aborted (could orphan a half-open BLE link) — it will see the
+        // stale token and clean up itself.
+        assert!(matches!(rx.try_recv(), Err(oneshot::error::TryRecvError::Empty)));
+        assert!(!c.reconnect_gate.is_current(token));
+        assert_eq!(c.auto_reconnect, AutoReconnect::Inactive);
+    }
+
+    #[test]
+    fn demo_snapshot_never_reports_reconnecting() {
+        let mut c = TrainerController::new();
+        c.auto_reconnect = waiting();
+        let s = c.snapshot();
+        assert_ne!(s.state, ConnectionState::Reconnecting);
+        assert_eq!(s.reconnect_attempt, 0);
     }
 }

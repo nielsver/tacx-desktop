@@ -21,7 +21,7 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 | Exclusive-control messaging | Hint banner | Clear errors for busy trainer / NOCTRL |
 | FTMS Control Point indications | — | Parsed (`0x80`); NOCTRL / failures surface in UI |
 | GATT inventory on connect | — | UUID/property table + FTMS vs FE-C class in logs |
-| Link-lost → Reconnect | Simulated disconnect N/A | Auto Error state; Reconnect restores interval ERG |
+| Link-lost → auto-reconnect | Simulated disconnect N/A | Backoff 1/3/8/15 s, restores ERG/resistance/grade; then manual Reconnect |
 | FE-C write rate limit | — | ~4 Hz latest-wins coalesce on UART WithoutResponse |
 | FE-C Track / Wind / User-config | Demo simulates grade | Pages `0x33` / `0x32` / `0x37` + Flutter Simulation panel |
 | FTMS Indoor Bike Simulation | Demo grade feel | Opcode `0x11` + Crr/Cw sliders when Feature bit 13 set |
@@ -253,8 +253,10 @@ Use one FTMS trainer and one legacy FE-C-only Tacx to fill your lab matrix. Dual
 
 ### Disconnect + reconnect during intervals
 
-- When the BLE notification stream ends (trainer asleep / out of range / other app), connection state becomes **Error** with “Link lost — tap Reconnect…”.
-- **Reconnect** keeps an active interval preset and restores the current phase ERG target (or last manual ERG watts) after the link is back.
+- When the BLE notification stream ends (trainer asleep / out of range), the app **auto-reconnects** with bounded backoff (~1 s, 3 s, 8 s, 15 s → 4 attempts). The dashboard shows “Connection lost — reconnecting (2/4) in 3 s…” with **Reconnect now** / **Disconnect**; the policy lives in `rust/src/trainer/reconnect.rs`.
+- On success the previous target is restored — current interval-phase ERG watts (the preset keeps running through the drop), else last ERG watts / resistance % / simulation grade.
+- After the last attempt it gives up and shows “Couldn't reconnect after 4 tries … tap Reconnect”; manual **Reconnect** restores the same target.
+- No auto-retry after a user Disconnect, in demo mode, after a new manual connect, or when another app holds control (FTMS Control Permission Lost / Request Control rejected — NOCTRL message instead).
 - Quit other apps first; exclusive control still applies after reconnect.
 
 ### Demo mode

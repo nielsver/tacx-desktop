@@ -138,6 +138,20 @@ impl IntervalEngine {
         g.phase = Phase::Idle;
     }
 
+    /// Watts the interval engine currently wants applied (for reconnect resume).
+    pub fn current_target_watts(&self) -> Option<u32> {
+        let g = self.inner.lock();
+        if !g.running {
+            return None;
+        }
+        let p = g.preset.as_ref()?;
+        match g.phase {
+            Phase::Work => Some(p.work_watts),
+            Phase::Rest => Some(p.rest_watts),
+            Phase::Idle | Phase::Done => None,
+        }
+    }
+
     /// Returns current target watts when phase changes / on tick; caller applies ERG.
     pub async fn run<F, Fut>(&self, key: &str, mut on_target: F) -> Result<(), String>
     where
@@ -219,5 +233,26 @@ impl IntervalEngine {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn current_target_watts_work_phase() {
+        let engine = IntervalEngine::new();
+        let eng = engine.clone();
+        let handle = tokio::spawn(async move {
+            let _ = eng
+                .run("10x30_30", |_w| async { Ok(()) })
+                .await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(engine.current_target_watts(), Some(280));
+        engine.stop();
+        let _ = handle.await;
+        assert_eq!(engine.current_target_watts(), None);
     }
 }

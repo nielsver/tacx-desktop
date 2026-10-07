@@ -3,6 +3,7 @@
 use crate::trainer::demo::DemoTrainer;
 use crate::trainer::fec;
 use crate::trainer::ftms;
+use crate::trainer::gatt;
 use crate::trainer::intervals::IntervalEngine;
 use crate::trainer::types::*;
 use btleplug::api::{
@@ -13,8 +14,9 @@ use btleplug::platform::{Adapter, Manager, Peripheral};
 use futures::StreamExt;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -52,6 +54,11 @@ struct BleSession {
     metrics: Arc<Mutex<TrainerMetrics>>,
     mode: Arc<Mutex<ControlMode>>,
     device_name: String,
+    /// Cleared when notification stream ends or peripheral disconnects.
+    alive: Arc<AtomicBool>,
+    /// Last FTMS Control Point indication: (request_op, result).
+    last_cp: Arc<Mutex<Option<(u8, u8)>>>,
+    gatt_summary: String,
 }
 
 pub struct TrainerController {
@@ -113,14 +120,32 @@ impl TrainerController {
                 s.protocol = ProtocolKind::Demo;
                 s
             }
-            Backend::Ble(b) => ConnectionSnapshot {
-                state: ConnectionState::Connected,
-                detail: b.device_name.clone(),
-                protocol: b.protocol,
-                is_demo: false,
-                mode: *b.mode.lock(),
-                device_name: b.device_name.clone(),
-            },
+            Backend::Ble(b) => {
+                let alive = b.alive.load(Ordering::SeqCst);
+                if alive {
+                    ConnectionSnapshot {
+                        state: ConnectionState::Connected,
+                        detail: if b.gatt_summary.is_empty() {
+                            b.device_name.clone()
+                        } else {
+                            format!("{} · {}", b.device_name, b.gatt_summary)
+                        },
+                        protocol: b.protocol,
+                        is_demo: false,
+                        mode: *b.mode.lock(),
+                        device_name: b.device_name.clone(),
+                    }
+                } else {
+                    ConnectionSnapshot {
+                        state: ConnectionState::Error,
+                        detail: "Link lost — tap Reconnect to resume ERG / intervals".into(),
+                        protocol: b.protocol,
+                        is_demo: false,
+                        mode: *b.mode.lock(),
+                        device_name: b.device_name.clone(),
+                    }
+                }
+            }
         }
     }
 
@@ -174,7 +199,17 @@ impl TrainerController {
     }
 
     pub async fn connect(&mut self, device_id: Option<String>) -> Result<(), String> {
-        self.stop_interval();
+        self.connect_inner(device_id, false).await
+    }
+
+    async fn connect_inner(
+        &mut self,
+        device_id: Option<String>,
+        preserve_intervals: bool,
+    ) -> Result<(), String> {
+        if !preserve_intervals {
+            self.stop_interval();
+        }
         if let Some(h) = self.demo_tick_handle.take() {
             h.abort();
         }
@@ -264,7 +299,12 @@ impl TrainerController {
                 Ok(())
             }
             Backend::Ble(b) => {
-                let w = watts.clamp(b.power_range.min_w, b.power_range.max_w);
+                if !b.alive.load(Ordering::SeqCst) {
+                    return Err(
+                        "Trainer link lost — tap Reconnect, then re-apply ERG".into(),
+                    );
+                }
+                let w = ftms::clamp_target_power(watts, &b.power_range);
                 match b.protocol {
                     ProtocolKind::Ftms => {
                         let ch = b
@@ -272,10 +312,13 @@ impl TrainerController {
                             .as_ref()
                             .ok_or_else(|| "FTMS Control Point missing".to_string())?;
                         let payload = ftms::encode_set_target_power(w as i16);
+                        *b.last_cp.lock() = None;
                         b.peripheral
                             .write(ch, &payload, WriteType::WithResponse)
                             .await
                             .map_err(|e| format!("FTMS set power failed: {e}"))?;
+                        await_cp_result(&b.last_cp, ftms::OP_SET_TARGET_POWER, Duration::from_secs(3))
+                            .await?;
                     }
                     ProtocolKind::TacxFecBle => {
                         let ch = b
@@ -306,7 +349,12 @@ impl TrainerController {
                 Ok(())
             }
             Backend::Ble(b) => {
-                let p = percent.clamp(b.resistance_range.min_pct, b.resistance_range.max_pct);
+                if !b.alive.load(Ordering::SeqCst) {
+                    return Err(
+                        "Trainer link lost — tap Reconnect, then re-apply resistance".into(),
+                    );
+                }
+                let p = ftms::clamp_resistance_percent(percent, &b.resistance_range);
                 match b.protocol {
                     ProtocolKind::Ftms => {
                         let ch = b
@@ -314,10 +362,17 @@ impl TrainerController {
                             .as_ref()
                             .ok_or_else(|| "FTMS Control Point missing".to_string())?;
                         let payload = ftms::encode_set_resistance(p, b.max_resistance_raw);
+                        *b.last_cp.lock() = None;
                         b.peripheral
                             .write(ch, &payload, WriteType::WithResponse)
                             .await
                             .map_err(|e| format!("FTMS set resistance failed: {e}"))?;
+                        await_cp_result(
+                            &b.last_cp,
+                            ftms::OP_SET_TARGET_RESISTANCE,
+                            Duration::from_secs(3),
+                        )
+                        .await?;
                     }
                     ProtocolKind::TacxFecBle => {
                         let ch = b
@@ -368,7 +423,31 @@ impl TrainerController {
             .last_device_id
             .clone()
             .ok_or_else(|| "Nothing to reconnect — scan and connect first".to_string())?;
-        self.connect(Some(id)).await
+        let resume_watts = self.resume_watts();
+        let preserve = self.intervals.status().running || resume_watts.is_some();
+        // Drop existing BLE session without aborting an active interval preset.
+        if let Backend::Ble(b) = &self.backend {
+            b.alive.store(false, Ordering::SeqCst);
+            let _ = b.peripheral.disconnect().await;
+        }
+        self.backend = Backend::Demo(DemoTrainer::new());
+        self.connect_inner(Some(id), preserve).await?;
+        if let Some(w) = resume_watts {
+            self.set_target_power(w).await.map_err(|e| {
+                format!("Reconnected but failed to restore ERG target {w} W: {e}")
+            })?;
+        }
+        Ok(())
+    }
+
+    fn resume_watts(&self) -> Option<u32> {
+        if let Some(w) = self.intervals.current_target_watts() {
+            return Some(w);
+        }
+        match &self.backend {
+            Backend::Demo(d) => d.metrics.lock().target_power_w.map(|w| w as u32),
+            Backend::Ble(b) => b.metrics.lock().target_power_w.map(|w| w as u32),
+        }
     }
 
     pub fn stop_interval(&mut self) {
@@ -386,19 +465,28 @@ fn friendly_ble_error(err: &str) -> String {
             "Trainer busy or already connected elsewhere. Close Zwift / Tacx Training / MyWhoosh / TrainerRoad and retry. ({err})"
         );
     }
-    if lower.contains("permission") || lower.contains("not authorized") {
+    if lower.contains("permission")
+        || lower.contains("not authorized")
+        || lower.contains("tcc")
+        || lower.contains("denied")
+    {
         return format!(
-            "Bluetooth permission denied. On macOS enable Bluetooth for the app; on Linux ensure BlueZ + user in `bluetooth` group. ({err})"
+            "Bluetooth permission denied. macOS: System Settings → Privacy & Security → Bluetooth → allow Tacx Desktop (TCC). Linux: BlueZ + D-Bus session, user in `bluetooth` group. Windows: enable Bluetooth in Settings. ({err})"
         );
     }
-    if lower.contains("adapter") || lower.contains("no bluetooth") {
+    if lower.contains("adapter") || lower.contains("no bluetooth") || lower.contains("powered off") {
         return format!(
-            "No Bluetooth adapter found. Enable Bluetooth (BlueZ on Linux). ({err})"
+            "No Bluetooth adapter / radio off. Enable Bluetooth (BlueZ on Linux; Windows Settings → Bluetooth; macOS menu bar Bluetooth). ({err})"
         );
     }
     if lower.contains("control") || lower.contains("noctrl") {
         return format!(
-            "Could not take exclusive control (NOCTRL). Disconnect other FTMS clients and retry. ({err})"
+            "Could not take exclusive control (NOCTRL). Disconnect other FTMS clients and retry. On Windows: do NOT OS-pair the trainer in Settings → Bluetooth — leave it unpaired and connect only from this app. ({err})"
+        );
+    }
+    if lower.contains("paired") || lower.contains("bonding") {
+        return format!(
+            "OS Bluetooth pairing can break FTMS control. Windows: remove/forget the trainer in Settings → Bluetooth so it is unpaired, then Connect from Tacx Desktop only. macOS: Forget This Device if control fails after system pairing. ({err})"
         );
     }
     err.to_string()
@@ -500,6 +588,11 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
         .map_err(|e| format!("Service discovery failed: {e}"))?;
 
     let chars: Vec<Characteristic> = peripheral.characteristics().into_iter().collect();
+    let inventory_table = gatt::format_inventory_table(&chars);
+    let gatt_summary = gatt::format_inventory_summary(&chars);
+    log::info!("{inventory_table}");
+    eprintln!("[tacx-desktop] {inventory_table}");
+
     let ftms_bike = uuid_from_u16(ftms::INDOOR_BIKE_DATA);
     let ftms_cp = uuid_from_u16(ftms::CONTROL_POINT);
     let ftms_res = uuid_from_u16(ftms::SUPPORTED_RESISTANCE_RANGE);
@@ -507,8 +600,15 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
     let fec_rx = fec::tacx_uart_rx();
     let fec_tx = fec::tacx_uart_tx();
 
-    let has_ftms = chars.iter().any(|c| c.uuid == ftms_bike || c.uuid == ftms_cp);
-    let has_fec = chars.iter().any(|c| c.uuid == fec_rx || c.uuid == fec_tx);
+    let class = gatt::classify_chars(&chars);
+    let has_ftms = matches!(
+        class,
+        gatt::TrainerGattClass::Ftms | gatt::TrainerGattClass::Dual
+    );
+    let has_fec = matches!(
+        class,
+        gatt::TrainerGattClass::FecOnly | gatt::TrainerGattClass::Dual
+    );
 
     let name = peripheral
         .properties()
@@ -520,9 +620,11 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
 
     let metrics = Arc::new(Mutex::new(TrainerMetrics::default()));
     let mode = Arc::new(Mutex::new(ControlMode::Idle));
+    let alive = Arc::new(AtomicBool::new(true));
+    let last_cp: Arc<Mutex<Option<(u8, u8)>>> = Arc::new(Mutex::new(None));
 
     if has_ftms {
-        // Prefer FTMS
+        // Prefer FTMS (even on Dual — FE-C UART stays unused while FTMS works).
         let mut resistance_range = ResistanceRange::default();
         let mut power_range = PowerRange::default();
         let mut max_resistance_raw: i16 = 1000;
@@ -555,9 +657,42 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             .subscribe(&bike_ch)
             .await
             .map_err(|e| format!("Subscribe Indoor Bike Data failed: {e}"))?;
-        let _ = peripheral.subscribe(&cp_ch).await;
+        peripheral
+            .subscribe(&cp_ch)
+            .await
+            .map_err(|e| format!("Subscribe FTMS Control Point failed: {e}"))?;
 
-        // Request control + start/resume
+        // Notification pump: Indoor Bike Data + CP indications; mark link lost on stream end.
+        let metrics_n = metrics.clone();
+        let last_cp_n = last_cp.clone();
+        let alive_n = alive.clone();
+        let peri_n = peripheral.clone();
+        tokio::spawn(async move {
+            if let Ok(mut stream) = peri_n.notifications().await {
+                while let Some(n) = stream.next().await {
+                    if n.uuid == ftms_bike {
+                        let mut m = metrics_n.lock();
+                        merge_ftms_metrics(&mut m, &n.value);
+                    } else if n.uuid == ftms_cp {
+                        if let Some((op, result)) = ftms::parse_cp_indication(&n.value) {
+                            log::info!(
+                                "FTMS CP indication: {}",
+                                ftms::format_cp_response(op, result)
+                            );
+                            *last_cp_n.lock() = Some((op, result));
+                        }
+                    }
+                    if !peri_n.is_connected().await.unwrap_or(true) {
+                        break;
+                    }
+                }
+            }
+            alive_n.store(false, Ordering::SeqCst);
+            log::warn!("FTMS notification stream ended — trainer link lost");
+        });
+
+        // Live ERG validation path: Request Control → Start/Resume (CP results checked).
+        *last_cp.lock() = None;
         peripheral
             .write(
                 &cp_ch,
@@ -566,33 +701,29 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             )
             .await
             .map_err(|e| format!("Request Control failed (NOCTRL?): {e}"))?;
-        let _ = peripheral
+        await_cp_result(&last_cp, ftms::OP_REQUEST_CONTROL, Duration::from_secs(3))
+            .await
+            .map_err(|e| {
+                friendly_ble_error(&format!(
+                    "Request Control rejected: {e}. Close other apps; on Windows leave trainer unpaired."
+                ))
+            })?;
+
+        *last_cp.lock() = None;
+        peripheral
             .write(
                 &cp_ch,
                 &ftms::encode_start_resume(),
                 WriteType::WithResponse,
             )
-            .await;
-
-        // Notification pump
-        let metrics_n = metrics.clone();
-        let peri_n = peripheral.clone();
-        tokio::spawn(async move {
-            if let Ok(mut stream) = peri_n.notifications().await {
-                while let Some(n) = stream.next().await {
-                    if n.uuid == ftms_bike {
-                        let parsed = ftms::parse_indoor_bike_data(&n.value);
-                        let mut m = metrics_n.lock();
-                        if parsed.power_w != 0.0 || m.power_w == 0.0 {
-                            // always apply parsed fields that were present — parser zeros missing
-                            // Better: merge non-default. For simplicity overwrite when flags had data.
-                        }
-                        // Merge carefully: parser returns 0 for missing; use bit presence via re-parse flags
-                        merge_ftms_metrics(&mut m, &n.value);
-                    }
-                }
-            }
-        });
+            .await
+            .map_err(|e| format!("Start/Resume failed: {e}"))?;
+        // Some trainers omit Start/Resume response — soft-fail with log only.
+        if let Err(e) =
+            await_cp_result(&last_cp, ftms::OP_START_RESUME, Duration::from_secs(2)).await
+        {
+            log::warn!("Start/Resume CP: {e} (continuing)");
+        }
 
         central.stop_scan().await.ok();
         return Ok(BleSession {
@@ -606,6 +737,9 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             metrics,
             mode,
             device_name: name,
+            alive,
+            last_cp,
+            gatt_summary,
         });
     }
 
@@ -627,6 +761,7 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             .map_err(|e| format!("Subscribe Tacx FE-C TX failed: {e}"))?;
 
         let metrics_n = metrics.clone();
+        let alive_n = alive.clone();
         let peri_n = peripheral.clone();
         tokio::spawn(async move {
             if let Ok(mut stream) = peri_n.notifications().await {
@@ -647,8 +782,13 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
                             }
                         }
                     }
+                    if !peri_n.is_connected().await.unwrap_or(true) {
+                        break;
+                    }
                 }
             }
+            alive_n.store(false, Ordering::SeqCst);
+            log::warn!("FE-C notification stream ended — trainer link lost");
         });
 
         central.stop_scan().await.ok();
@@ -667,13 +807,43 @@ async fn connect_ble(device_id: &str) -> Result<BleSession, String> {
             metrics,
             mode,
             device_name: format!("{name} (FE-C)"),
+            alive,
+            last_cp,
+            gatt_summary,
         });
     }
 
     let _ = peripheral.disconnect().await;
-    Err(
-        "Trainer has neither FTMS (0x1826) nor Tacx FE-C UART. Unsupported device.".into(),
-    )
+    Err(format!(
+        "Trainer has neither FTMS (0x1826) nor Tacx FE-C UART. Unsupported device. GATT: {gatt_summary}"
+    ))
+}
+
+/// Wait for FTMS Control Point indication matching `expected_op`.
+async fn await_cp_result(
+    last_cp: &Arc<Mutex<Option<(u8, u8)>>>,
+    expected_op: u8,
+    timeout: Duration,
+) -> Result<(), String> {
+    let start = Instant::now();
+    loop {
+        if let Some((op, result)) = *last_cp.lock() {
+            if op == expected_op {
+                if ftms::cp_success(result) {
+                    return Ok(());
+                }
+                return Err(ftms::format_cp_response(op, result));
+            }
+        }
+        if start.elapsed() > timeout {
+            return Err(format!(
+                "FTMS Control Point timeout waiting for 0x{expected_op:02X} ({})",
+                ftms::format_cp_response(expected_op, 0xFF)
+            )
+            .replace("unknown control-point result", "no indication received"));
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
 }
 
 fn merge_ftms_metrics(m: &mut TrainerMetrics, data: &[u8]) {

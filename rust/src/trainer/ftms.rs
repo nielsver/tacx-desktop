@@ -132,6 +132,56 @@ pub fn describe_cp_result(result: u8) -> &'static str {
     }
 }
 
+/// Parse FTMS Control Point indication/notification.
+/// Layout: `[0x80, request_op, result, ...optional params]`.
+pub fn parse_cp_indication(data: &[u8]) -> Option<(u8, u8)> {
+    if data.len() < 3 || data[0] != OP_RESPONSE {
+        return None;
+    }
+    Some((data[1], data[2]))
+}
+
+/// Human-readable CP response for logs / UI errors.
+pub fn format_cp_response(request_op: u8, result: u8) -> String {
+    let op_name = match request_op {
+        OP_REQUEST_CONTROL => "Request Control",
+        OP_SET_TARGET_RESISTANCE => "Set Target Resistance",
+        OP_SET_TARGET_POWER => "Set Target Power",
+        OP_START_RESUME => "Start/Resume",
+        0x11 => "Indoor Bike Simulation",
+        _ => "Control Point op",
+    };
+    format!("{op_name} → {}", describe_cp_result(result))
+}
+
+/// Clamp target watts to Supported Power Range (min/max/step).
+pub fn clamp_target_power(watts: u32, range: &PowerRange) -> u32 {
+    let w = watts.clamp(range.min_w, range.max_w);
+    if range.step_w <= 1 {
+        return w;
+    }
+    let base = range.min_w;
+    let steps = (w.saturating_sub(base) + range.step_w / 2) / range.step_w;
+    (base + steps * range.step_w).clamp(range.min_w, range.max_w)
+}
+
+/// Clamp resistance percent to Supported Resistance Range.
+pub fn clamp_resistance_percent(percent: f64, range: &ResistanceRange) -> f64 {
+    let p = percent.clamp(range.min_pct, range.max_pct);
+    if range.step_pct <= 0.0 {
+        return p;
+    }
+    let base = range.min_pct;
+    let steps = ((p - base) / range.step_pct).round();
+    (base + steps * range.step_pct).clamp(range.min_pct, range.max_pct)
+}
+
+/// True when CP result means the write was accepted.
+pub fn cp_success(result: u8) -> bool {
+    result == RESULT_SUCCESS
+}
+
+
 pub fn encode_request_control() -> Vec<u8> {
     vec![OP_REQUEST_CONTROL]
 }
@@ -208,6 +258,42 @@ mod tests {
         let m = parse_indoor_bike_data(&payload);
         assert!((m.power_w - 185.0).abs() < 0.01);
         assert_eq!(m.speed_kmh, 0.0);
+    }
+
+    #[test]
+    fn parse_cp_success_and_noctrl() {
+        assert_eq!(parse_cp_indication(&[0x80, 0x00, 0x01]), Some((0x00, 0x01)));
+        assert_eq!(parse_cp_indication(&[0x80, 0x05, 0x05]), Some((0x05, 0x05)));
+        assert!(parse_cp_indication(&[0x00, 0x01]).is_none());
+        assert!(parse_cp_indication(&[]).is_none());
+        let msg = format_cp_response(0x05, 0x05);
+        assert!(msg.contains("Set Target Power"));
+        assert!(msg.contains("NOCTRL"));
+        assert!(cp_success(0x01));
+        assert!(!cp_success(0x05));
+    }
+
+    #[test]
+    fn clamp_power_to_step() {
+        let range = PowerRange {
+            min_w: 0,
+            max_w: 1000,
+            step_w: 5,
+        };
+        assert_eq!(clamp_target_power(152, &range), 150);
+        assert_eq!(clamp_target_power(153, &range), 155);
+        assert_eq!(clamp_target_power(5000, &range), 1000);
+    }
+
+    #[test]
+    fn clamp_resistance_to_range() {
+        let range = ResistanceRange {
+            min_pct: 0.0,
+            max_pct: 100.0,
+            step_pct: 1.0,
+        };
+        assert!((clamp_resistance_percent(40.4, &range) - 40.0).abs() < 0.01);
+        assert!((clamp_resistance_percent(200.0, &range) - 100.0).abs() < 0.01);
     }
 
 }

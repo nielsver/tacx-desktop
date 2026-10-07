@@ -246,3 +246,24 @@ mod bluetooth_status_tests {
         assert!(s.hint.contains("No Bluetooth adapter found"));
     }
 }
+
+/// Running totals for the current ride (since connect or the last Reset).
+/// Time only accumulates while a trainer is connected; reconnect gaps pause it.
+#[derive(Clone, Debug, Default)]
+pub struct RideStats {
+    /// Connected time, seconds.
+    pub elapsed_s: u32,
+    /// Seconds with power or cadence above zero.
+    pub moving_s: u32,
+    /// Time-weighted average power over moving time, W.
+    pub avg_power_w: f64,
+    pub max_power_w: f64,
+    /// Time-weighted average cadence while pedalling, rpm.
+    pub avg_cadence_rpm: f64,
+    /// Mechanical work, kJ (≈ kcal burned for a typical rider).
+    pub energy_kj: f64,
+    /// Integrated from trainer speed, km.
+    pub distance_km: f64,
+    /// True while samples are being added (trainer connected).
+    pub recording: bool,
+}

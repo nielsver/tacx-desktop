@@ -104,6 +104,12 @@ void stopInterval() => RustLib.instance.api.crateApiTrainerStopInterval();
 IntervalStatus getIntervalStatus() =>
     RustLib.instance.api.crateApiTrainerGetIntervalStatus();
 
+/// Ride totals since connect / last reset (1 Hz sampler in Rust).
+RideStats getRideStats() => RustLib.instance.api.crateApiTrainerGetRideStats();
+
+/// Zero the ride totals (keeps recording if a trainer is connected).
+void resetRideStats() => RustLib.instance.api.crateApiTrainerResetRideStats();
+
 /// Headless smoke test used by CI / README.
 Future<String> runHeadlessDemoSmoke() =>
     RustLib.instance.api.crateApiTrainerRunHeadlessDemoSmoke();

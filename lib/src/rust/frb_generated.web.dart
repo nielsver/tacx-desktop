@@ -92,6 +92,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ResistanceRange dco_decode_resistance_range(dynamic raw);
 
   @protected
+  RideStats dco_decode_ride_stats(dynamic raw);
+
+  @protected
   TrainerMetrics dco_decode_trainer_metrics(dynamic raw);
 
   @protected
@@ -179,6 +182,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ResistanceRange sse_decode_resistance_range(SseDeserializer deserializer);
+
+  @protected
+  RideStats sse_decode_ride_stats(SseDeserializer deserializer);
 
   @protected
   TrainerMetrics sse_decode_trainer_metrics(SseDeserializer deserializer);
@@ -293,6 +299,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ResistanceRange self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_ride_stats(RideStats self, SseSerializer serializer);
 
   @protected
   void sse_encode_trainer_metrics(

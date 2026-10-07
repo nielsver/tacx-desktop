@@ -16,6 +16,11 @@ class RideDashboard extends StatefulWidget {
 
 class _RideDashboardState extends State<RideDashboard> {
   Timer? _poll;
+
+  /// Shared by the compact-mode Scrollbar and scroll view so switching
+  /// between roomy and compact layouts never leaves the Scrollbar without a
+  /// ScrollPosition (opening Simulation / resizing the window).
+  final _scroll = ScrollController();
   List<DiscoveredDevice> _devices = [];
   DiscoveredDevice? _selected;
   TrainerMetrics _metrics = const TrainerMetrics(
@@ -47,6 +52,16 @@ class _RideDashboardState extends State<RideDashboard> {
     statusText: 'Idle',
     repeatIndex: 0,
     remainingS: 0,
+  );
+  RideStats _ride = const RideStats(
+    elapsedS: 0,
+    movingS: 0,
+    avgPowerW: 0,
+    maxPowerW: 0,
+    avgCadenceRpm: 0,
+    energyKj: 0,
+    distanceKm: 0,
+    recording: false,
   );
   final _presets = api.listIntervalPresets();
 
@@ -87,6 +102,7 @@ class _RideDashboardState extends State<RideDashboard> {
   @override
   void dispose() {
     _poll?.cancel();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -98,6 +114,7 @@ class _RideDashboardState extends State<RideDashboard> {
       _snap = api.getConnectionSnapshot();
       _resRange = api.getResistanceRange();
       _interval = api.getIntervalStatus();
+      _ride = api.getRideStats();
       if (_snap.mode == ControlMode.simulation) {
         _simExpanded = true;
       }
@@ -366,7 +383,9 @@ class _RideDashboardState extends State<RideDashboard> {
                     final needed = simOpen
                         ? (_simAdvanced ? 900.0 : 780.0)
                         : 520.0;
-                    final compact = box.maxHeight < needed;
+                    // Ride summary strip sits between metrics and controls.
+                    final neededWithRide = needed + 56;
+                    final compact = box.maxHeight < neededWithRide;
                     final body = Column(
                       children: [
                         _ConnectionBar(
@@ -410,6 +429,15 @@ class _RideDashboardState extends State<RideDashboard> {
                         ],
                         const SizedBox(height: 12),
                         _MetricsRow(metrics: _metrics, snap: _snap),
+                        const SizedBox(height: 8),
+                        RideSummaryStrip(
+                          key: const ValueKey('ride-summary'),
+                          stats: _ride,
+                          onReset: () {
+                            api.resetRideStats();
+                            _refresh();
+                          },
+                        ),
                         const SizedBox(height: 12),
                         _FlexOrFixed(
                           key: const ValueKey('controls-row'),
@@ -565,8 +593,10 @@ class _RideDashboardState extends State<RideDashboard> {
                     );
                     if (!compact) return body;
                     return Scrollbar(
+                      controller: _scroll,
                       child: SingleChildScrollView(
                         key: const ValueKey('dashboard-scroll'),
+                        controller: _scroll,
                         padding: const EdgeInsets.only(right: 8),
                         child: body,
                       ),
@@ -1176,7 +1206,6 @@ class _SignalBars extends StatelessWidget {
   }
 }
 
-
 String _bleFootnote() {
   switch (defaultTargetPlatform) {
     case TargetPlatform.linux:
@@ -1430,6 +1459,105 @@ class _MetricsRow extends StatelessWidget {
               accent: RideColors.control,
               valueSize: RideType.body,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Ride totals under the live metrics: time, avg/max power, cadence, kJ, km.
+class RideSummaryStrip extends StatelessWidget {
+  const RideSummaryStrip({
+    super.key,
+    required this.stats,
+    required this.onReset,
+  });
+
+  final RideStats stats;
+  final VoidCallback onReset;
+
+  static String clock(int seconds) {
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    final s = seconds % 60;
+    final mm = m.toString().padLeft(2, '0');
+    final ss = s.toString().padLeft(2, '0');
+    return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <(String, String)>[
+      ('Ride', clock(stats.elapsedS)),
+      ('Avg', '${stats.avgPowerW.toStringAsFixed(0)} W'),
+      ('Max', '${stats.maxPowerW.toStringAsFixed(0)} W'),
+      ('Cad', '${stats.avgCadenceRpm.toStringAsFixed(0)} rpm'),
+      ('Work', '${stats.energyKj.toStringAsFixed(0)} kJ'),
+      ('Dist', '${stats.distanceKm.toStringAsFixed(2)} km'),
+    ];
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.only(left: 12, right: 2),
+      decoration: BoxDecoration(
+        color: RideColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: RideColors.border),
+      ),
+      child: Row(
+        children: [
+          Tooltip(
+            message: stats.recording
+                ? 'Recording while the trainer is connected'
+                : 'Paused — connect a trainer to record',
+            child: Icon(
+              stats.recording
+                  ? Icons.fiber_manual_record
+                  : Icons.pause_circle_outline,
+              size: 14,
+              color: stats.recording ? RideColors.power : RideColors.textMuted,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Row(
+                children: [
+                  for (final (label, value) in items) ...[
+                    Text(
+                      label.toUpperCase(),
+                      style: const TextStyle(
+                        color: RideColors.textSecondary,
+                        fontSize: RideType.footnote,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      value,
+                      key: ValueKey('ride-${label.toLowerCase()}'),
+                      style: const TextStyle(
+                        color: RideColors.textPrimary,
+                        fontSize: RideType.body,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    const SizedBox(width: 18),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          TextButton.icon(
+            key: const ValueKey('ride-reset'),
+            onPressed: onReset,
+            style: TextButton.styleFrom(minimumSize: const Size(88, 44)),
+            icon: const Icon(Icons.restart_alt, size: 16),
+            label: const Text('Reset'),
           ),
         ],
       ),

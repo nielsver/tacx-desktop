@@ -68,7 +68,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 45587322;
+  int get rustContentHash => 996916450;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -96,6 +96,8 @@ abstract class RustLibApi extends BaseApi {
 
   ResistanceRange crateApiTrainerGetResistanceRange();
 
+  RideStats crateApiTrainerGetRideStats();
+
   String crateApiSimpleGreet({required String name});
 
   Future<void> crateApiSimpleInitApp();
@@ -105,6 +107,8 @@ abstract class RustLibApi extends BaseApi {
   List<IntervalPresetInfo> crateApiTrainerListIntervalPresets();
 
   Future<void> crateApiTrainerReconnectTrainer();
+
+  void crateApiTrainerResetRideStats();
 
   Future<String> crateApiTrainerRunHeadlessDemoSmoke();
 
@@ -349,13 +353,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "get_resistance_range", argNames: []);
 
   @override
+  RideStats crateApiTrainerGetRideStats() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_ride_stats,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTrainerGetRideStatsConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerGetRideStatsConstMeta =>
+      const TaskConstMeta(debugName: "get_ride_stats", argNames: []);
+
+  @override
   String crateApiSimpleGreet({required String name}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -380,7 +406,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 11,
             port: port_,
           );
         },
@@ -404,7 +430,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -426,7 +452,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_interval_preset_info,
@@ -451,7 +477,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 14,
             port: port_,
           );
         },
@@ -470,6 +496,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "reconnect_trainer", argNames: []);
 
   @override
+  void crateApiTrainerResetRideStats() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 15)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTrainerResetRideStatsConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTrainerResetRideStatsConstMeta =>
+      const TaskConstMeta(debugName: "reset_ride_stats", argNames: []);
+
+  @override
   Future<String> crateApiTrainerRunHeadlessDemoSmoke() {
     return handler.executeNormal(
       NormalTask(
@@ -478,7 +526,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 14,
+            funcId: 16,
             port: port_,
           );
         },
@@ -508,7 +556,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 15,
+            funcId: 17,
             port: port_,
           );
         },
@@ -533,7 +581,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_bool(enabled, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -567,7 +615,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 17,
+            funcId: 19,
             port: port_,
           );
         },
@@ -598,7 +646,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 18,
+            funcId: 20,
             port: port_,
           );
         },
@@ -629,7 +677,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 19,
+            funcId: 21,
             port: port_,
           );
         },
@@ -661,7 +709,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 20,
+            funcId: 22,
             port: port_,
           );
         },
@@ -700,7 +748,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 21,
+            funcId: 23,
             port: port_,
           );
         },
@@ -742,7 +790,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 22,
+            funcId: 24,
             port: port_,
           );
         },
@@ -777,7 +825,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 23,
+            funcId: 25,
             port: port_,
           );
         },
@@ -801,7 +849,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 24)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 26)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1017,6 +1065,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       minPct: dco_decode_f_64(arr[0]),
       maxPct: dco_decode_f_64(arr[1]),
       stepPct: dco_decode_f_64(arr[2]),
+    );
+  }
+
+  @protected
+  RideStats dco_decode_ride_stats(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    return RideStats(
+      elapsedS: dco_decode_u_32(arr[0]),
+      movingS: dco_decode_u_32(arr[1]),
+      avgPowerW: dco_decode_f_64(arr[2]),
+      maxPowerW: dco_decode_f_64(arr[3]),
+      avgCadenceRpm: dco_decode_f_64(arr[4]),
+      energyKj: dco_decode_f_64(arr[5]),
+      distanceKm: dco_decode_f_64(arr[6]),
+      recording: dco_decode_bool(arr[7]),
     );
   }
 
@@ -1310,6 +1376,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RideStats sse_decode_ride_stats(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_elapsedS = sse_decode_u_32(deserializer);
+    var var_movingS = sse_decode_u_32(deserializer);
+    var var_avgPowerW = sse_decode_f_64(deserializer);
+    var var_maxPowerW = sse_decode_f_64(deserializer);
+    var var_avgCadenceRpm = sse_decode_f_64(deserializer);
+    var var_energyKj = sse_decode_f_64(deserializer);
+    var var_distanceKm = sse_decode_f_64(deserializer);
+    var var_recording = sse_decode_bool(deserializer);
+    return RideStats(
+      elapsedS: var_elapsedS,
+      movingS: var_movingS,
+      avgPowerW: var_avgPowerW,
+      maxPowerW: var_maxPowerW,
+      avgCadenceRpm: var_avgCadenceRpm,
+      energyKj: var_energyKj,
+      distanceKm: var_distanceKm,
+      recording: var_recording,
+    );
+  }
+
+  @protected
   TrainerMetrics sse_decode_trainer_metrics(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_powerW = sse_decode_f_64(deserializer);
@@ -1561,6 +1650,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_f_64(self.minPct, serializer);
     sse_encode_f_64(self.maxPct, serializer);
     sse_encode_f_64(self.stepPct, serializer);
+  }
+
+  @protected
+  void sse_encode_ride_stats(RideStats self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.elapsedS, serializer);
+    sse_encode_u_32(self.movingS, serializer);
+    sse_encode_f_64(self.avgPowerW, serializer);
+    sse_encode_f_64(self.maxPowerW, serializer);
+    sse_encode_f_64(self.avgCadenceRpm, serializer);
+    sse_encode_f_64(self.energyKj, serializer);
+    sse_encode_f_64(self.distanceKm, serializer);
+    sse_encode_bool(self.recording, serializer);
   }
 
   @protected

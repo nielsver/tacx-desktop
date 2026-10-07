@@ -304,6 +304,68 @@ class ResistanceRange {
           stepPct == other.stepPct;
 }
 
+/// Running totals for the current ride (since connect or the last Reset).
+/// Time only accumulates while a trainer is connected; reconnect gaps pause it.
+class RideStats {
+  /// Connected time, seconds.
+  final int elapsedS;
+
+  /// Seconds with power or cadence above zero.
+  final int movingS;
+
+  /// Time-weighted average power over moving time, W.
+  final double avgPowerW;
+  final double maxPowerW;
+
+  /// Time-weighted average cadence while pedalling, rpm.
+  final double avgCadenceRpm;
+
+  /// Mechanical work, kJ (≈ kcal burned for a typical rider).
+  final double energyKj;
+
+  /// Integrated from trainer speed, km.
+  final double distanceKm;
+
+  /// True while samples are being added (trainer connected).
+  final bool recording;
+
+  const RideStats({
+    required this.elapsedS,
+    required this.movingS,
+    required this.avgPowerW,
+    required this.maxPowerW,
+    required this.avgCadenceRpm,
+    required this.energyKj,
+    required this.distanceKm,
+    required this.recording,
+  });
+
+  @override
+  int get hashCode =>
+      elapsedS.hashCode ^
+      movingS.hashCode ^
+      avgPowerW.hashCode ^
+      maxPowerW.hashCode ^
+      avgCadenceRpm.hashCode ^
+      energyKj.hashCode ^
+      distanceKm.hashCode ^
+      recording.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RideStats &&
+          runtimeType == other.runtimeType &&
+          elapsedS == other.elapsedS &&
+          movingS == other.movingS &&
+          avgPowerW == other.avgPowerW &&
+          maxPowerW == other.maxPowerW &&
+          avgCadenceRpm == other.avgCadenceRpm &&
+          energyKj == other.energyKj &&
+          distanceKm == other.distanceKm &&
+          recording == other.recording;
+}
+
 class TrainerMetrics {
   final double powerW;
   final double cadenceRpm;

@@ -26,6 +26,7 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 | FE-C Track / Wind / User-config | Demo simulates grade | Pages `0x33` / `0x32` / `0x37` + Flutter Simulation panel |
 | FTMS Indoor Bike Simulation | Demo grade feel | Opcode `0x11` + Crr/Cw sliders when Feature bit 13 set |
 | Fitness Machine Status | — | Subscribe `0x2ADA`; stop/pause banner; control-lost → Error |
+| Ride totals | Yes | 1 Hz sampler while connected: ride time, avg/max power, avg cadence, kJ, distance; reconnect gaps paused; Reset |
 | DEMO badge | Always when demo on | — |
 
 ## Platforms

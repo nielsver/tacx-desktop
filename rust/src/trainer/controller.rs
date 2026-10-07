@@ -6,6 +6,7 @@ use crate::trainer::fec_rate::{FecWriteRateLimiter, RateDecision};
 use crate::trainer::ftms;
 use crate::trainer::gatt;
 use crate::trainer::intervals::IntervalEngine;
+use crate::trainer::ride;
 use crate::trainer::reconnect::{
     self, AutoReconnect, BackoffPolicy, LossDecision, NextStep, ReconnectGate, ResumeTarget,
     SimParams,
@@ -45,6 +46,32 @@ pub fn ensure_runtime() {
             ..Default::default()
         }))
     });
+    RIDE_TICKER.get_or_init(|| {
+        RUNTIME.get().unwrap().spawn(ride_ticker());
+    });
+}
+
+static RIDE_TICKER: OnceCell<()> = OnceCell::new();
+
+/// 1 Hz sampler feeding ride totals; never waits on the controller mutex.
+async fn ride_ticker() {
+    let mut iv = tokio::time::interval(Duration::from_secs(1));
+    iv.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        iv.tick().await;
+        let tick = match CONTROLLER.get().map(|c| c.try_lock()) {
+            Some(Ok(g)) => {
+                if g.snapshot().state == ConnectionState::Connected {
+                    ride::Tick::Connected(g.metrics())
+                } else {
+                    ride::Tick::Idle
+                }
+            }
+            Some(Err(_)) => ride::Tick::Busy,
+            None => ride::Tick::Idle,
+        };
+        ride::record(tick);
+    }
 }
 
 fn publish_snapshot(s: &ConnectionSnapshot) {

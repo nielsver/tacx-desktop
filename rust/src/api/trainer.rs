@@ -171,6 +171,19 @@ pub fn get_interval_status() -> IntervalStatus {
     crate::trainer::controller::try_interval_status()
 }
 
+/// Ride totals since connect / last reset (1 Hz sampler in Rust).
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_ride_stats() -> RideStats {
+    ensure_runtime();
+    crate::trainer::ride::stats()
+}
+
+/// Zero the ride totals (keeps recording if a trainer is connected).
+#[flutter_rust_bridge::frb(sync)]
+pub fn reset_ride_stats() {
+    crate::trainer::ride::reset();
+}
+
 /// Headless smoke test used by CI / README.
 pub async fn run_headless_demo_smoke() -> Result<String, String> {
     {

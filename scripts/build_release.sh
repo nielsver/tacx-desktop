@@ -7,6 +7,25 @@ cd "$ROOT"
 
 target="${1:-linux}"
 
+zip_dir() {
+  local src="$1"
+  local out="$2"
+  if [[ ! -d "$src" ]]; then
+    echo "Missing output dir: $src" >&2
+    return 1
+  fi
+  rm -f "$out"
+  if command -v zip >/dev/null 2>&1; then
+    (cd "$src" && zip -qr "$ROOT/$out" .)
+  elif command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command "Compress-Archive -Path '$src\\*' -DestinationPath '$ROOT\\$out' -Force"
+  else
+    echo "Install 'zip' to auto-pack; folder ready at: $src"
+    return 0
+  fi
+  echo "Zip: $ROOT/$out"
+}
+
 build_one() {
   local os="$1"
   echo "==> flutter build $os --release"
@@ -15,13 +34,15 @@ build_one() {
       flutter build linux --release
       echo "Bundle: build/linux/x64/release/bundle/"
       echo "Ship the whole bundle/ folder (includes lib/ with Rust cdylib)."
+      zip_dir "build/linux/x64/release/bundle" "tacx-desktop-linux-x64.zip" || true
       ;;
     windows)
       flutter build windows --release
       echo "Output: build/windows/x64/runner/Release/"
-      echo "Zip the entire Release/ folder (exe + DLLs + data + Rust cdylib)."
       echo "Bluetooth: leave trainers UNPAIRED in Windows Settings → Bluetooth."
       echo "Quit Zwift/Tacx/MyWhoosh before first Connect."
+      echo "CI alternative: Actions → 'Windows release' (workflow_dispatch) uploads a zip artifact."
+      zip_dir "build/windows/x64/runner/Release" "tacx-desktop-windows-x64.zip" || true
       ;;
     macos)
       flutter build macos --release

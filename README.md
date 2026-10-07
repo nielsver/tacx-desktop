@@ -39,6 +39,25 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 “All distros” on Linux means: a portable Flutter Linux binary **or** `flutter run -d linux` / source build on common distros with BlueZ. We do not ship every distro’s native `.deb`/`.rpm` packager.
 
 
+
+## First-run checklist (`flutter doctor`)
+
+Run `flutter doctor -v` after installing the toolchain. You want these green before `flutter run`:
+
+| Check | Windows | Linux | macOS |
+| --- | --- | --- | --- |
+| Flutter / Dart SDK | 3.29+ stable | same | same |
+| Visual Studio | **Desktop development with C++** workload (MSVC, Windows SDK, CMake) | — | — |
+| Linux toolchain | — | `clang`, `cmake`, `ninja-build`, `pkg-config`, GTK 3.0 dev (`libgtk-3-dev`) | — |
+| Xcode | — | — | Xcode + CocoaPods as Flutter asks |
+| Chrome / network | optional | optional | optional |
+| Rust | `rustup` stable (`rustc --version`) | same | same |
+| Bluetooth | Adapter on; **trainer unpaired** in OS Settings | BlueZ + user session / `bluetooth` group | TCC Bluetooth allow for the app |
+
+**Demo-first path:** `flutter pub get` → `flutter run -d windows` (or `linux` / `macos`) → leave **DEMO** on → exercise ERG / Resistance / Intervals / Simulation. Then Demo **off** for live BLE (quit other apps; Windows: forget OS pairing).
+
+**Release on Windows without local VS:** GitHub Actions → **Windows release** → *Run workflow* (manual) downloads `tacx-desktop-windows-x64` artifact. Local: `./scripts/build_release.sh windows`.
+
 ## Windows quickstart
 
 1. **Prereqs:** Flutter 3.29+, Rust (`rustup`), Visual Studio **Desktop development with C++**, Windows 10/11 BLE.
@@ -247,10 +266,11 @@ Use one FTMS trainer and one legacy FE-C-only Tacx to fill your lab matrix. Dual
 
 GitHub Actions (`.github/workflows/ci.yml`):
 
-| Job | What |
+| Job / workflow | What |
 | --- | --- |
-| **Rust** | `cargo test` in `rust/` |
-| **Flutter** | `flutter pub get`, `flutter analyze`, `flutter test`, Linux desktop deps as needed |
+| **Rust** (on push) | `cargo test` in `rust/` |
+| **Flutter** (on push) | `flutter analyze` + `flutter test` (Linux; builds Rust cdylib) |
+| **Windows release** (manual / `v*` tags) | `flutter build windows --release` → zip artifact — not on every push |
 
 ## Protocol context
 

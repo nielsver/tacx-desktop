@@ -38,6 +38,36 @@ static CONTROLLER: OnceCell<Arc<AsyncMutex<TrainerController>>> = OnceCell::new(
 /// 250 ms timer never blocks behind a long BlueZ connect/scan holding the
 /// async mutex (manual Connect freeze on Linux).
 static PUBLISHED_SNAPSHOT: OnceCell<Arc<Mutex<ConnectionSnapshot>>> = OnceCell::new();
+/// The process-wide workout engine. It has its own small lock, so the UI's
+/// `get_workout_status` never waits on (or fails against) the controller
+/// mutex while a BLE write / Control Point indication is in flight.
+static WORKOUT_ENGINE: OnceCell<WorkoutEngine> = OnceCell::new();
+/// Same for the interval engine.
+static INTERVAL_ENGINE: OnceCell<IntervalEngine> = OnceCell::new();
+/// Last route status written by the global controller (lock-free UI reads:
+/// a busy lock must never look like "route stopped", QA G1).
+static PUBLISHED_ROUTE: OnceCell<Mutex<RouteStatus>> = OnceCell::new();
+/// Last metrics read under the controller lock, plus the live BLE metrics
+/// cell, so `get_metrics` never returns a zeroed default when the lock is busy.
+static METRICS_CACHE: OnceCell<Mutex<MetricsCache>> = OnceCell::new();
+
+#[derive(Default)]
+struct MetricsCache {
+    last: TrainerMetrics,
+    live: Option<Arc<Mutex<TrainerMetrics>>>,
+}
+
+fn global_workout_engine() -> WorkoutEngine {
+    WORKOUT_ENGINE.get_or_init(WorkoutEngine::new).clone()
+}
+
+fn global_interval_engine() -> IntervalEngine {
+    INTERVAL_ENGINE.get_or_init(IntervalEngine::new).clone()
+}
+
+fn published_route() -> &'static Mutex<RouteStatus> {
+    PUBLISHED_ROUTE.get_or_init(Default::default)
+}
 
 pub fn ensure_runtime() {
     RUNTIME.get_or_init(|| Runtime::new().expect("tokio runtime"));
@@ -100,10 +130,27 @@ pub fn try_snapshot() -> ConnectionSnapshot {
 
 pub fn try_metrics() -> TrainerMetrics {
     ensure_runtime();
+    let cache = METRICS_CACHE.get_or_init(Default::default);
     match CONTROLLER.get().unwrap().try_lock() {
-        Ok(g) => g.metrics(),
+        Ok(g) => {
+            let m = g.metrics();
+            let mut c = cache.lock();
+            c.last = m.clone();
+            c.live = match &g.backend {
+                Backend::Ble(b) => Some(b.metrics.clone()),
+                Backend::Demo(_) => None,
+            };
+            m
+        }
         Err(_) => {
-            let mut m = TrainerMetrics::default();
+            // Busy (BLE write in flight): live BLE values if we have the
+            // cell, else the last known metrics — never a zeroed default.
+            let c = cache.lock();
+            let mut m = match &c.live {
+                Some(live) => live.lock().clone(),
+                None => c.last.clone(),
+            };
+            drop(c);
             crate::trainer::hr_strap::overlay(&mut m);
             m
         }
@@ -126,28 +173,22 @@ pub fn try_power_range() -> PowerRange {
     }
 }
 
+/// Lock-free: reads the shared engine directly (see [`WORKOUT_ENGINE`]).
 pub fn try_workout_status() -> WorkoutStatus {
     ensure_runtime();
-    match CONTROLLER.get().unwrap().try_lock() {
-        Ok(g) => g.workout_status(),
-        Err(_) => WorkoutStatus::default(),
-    }
+    global_workout_engine().status()
 }
 
+/// Lock-free: the last route status the controller published.
 pub fn try_route_status() -> RouteStatus {
     ensure_runtime();
-    match CONTROLLER.get().unwrap().try_lock() {
-        Ok(g) => g.route_status(),
-        Err(_) => RouteStatus::default(),
-    }
+    published_route().lock().clone()
 }
 
+/// Lock-free: reads the shared interval engine directly.
 pub fn try_interval_status() -> IntervalStatus {
     ensure_runtime();
-    match CONTROLLER.get().unwrap().try_lock() {
-        Ok(g) => g.interval_status(),
-        Err(_) => IntervalStatus::default(),
-    }
+    global_interval_engine().status()
 }
 
 pub fn runtime() -> &'static Runtime {
@@ -169,7 +210,8 @@ enum Backend {
 /// ready for an unlocked `connect_ble` call.
 enum ConnectPrep {
     Done,
-    Ble(String),
+    /// Device id plus the connect generation captured at prepare time.
+    Ble(String, u64),
 }
 
 struct BleSession {
@@ -236,6 +278,10 @@ pub struct TrainerController {
     /// Only the process-wide controller publishes to [`PUBLISHED_SNAPSHOT`];
     /// scratch instances (tests, tools) must not clobber the UI's fallback copy.
     publishes: bool,
+    /// Bumped by every prepare_connect / disconnect / demo toggle. A BLE
+    /// handshake that ran without the lock may only install its session if
+    /// the generation is unchanged (Demo isolation, B3).
+    connect_gen: u64,
 }
 
 impl TrainerController {
@@ -243,6 +289,8 @@ impl TrainerController {
     fn new_global() -> Self {
         Self {
             publishes: true,
+            workout_engine: global_workout_engine(),
+            intervals: global_interval_engine(),
             ..Self::new()
         }
     }
@@ -250,6 +298,13 @@ impl TrainerController {
     fn publish(&self) {
         if self.publishes {
             publish_snapshot(&self.snapshot);
+        }
+    }
+
+    /// Publishes `route_status` for lock-free UI reads (global controller only).
+    fn publish_route(&self) {
+        if self.publishes {
+            *published_route().lock() = self.route_status.clone();
         }
     }
 
@@ -282,6 +337,7 @@ impl TrainerController {
             last_auto_success: None,
             last_sim: None,
             publishes: false,
+            connect_gen: 0,
         }
     }
 
@@ -460,14 +516,11 @@ impl TrainerController {
     ) -> Result<(), String> {
         match self.prepare_connect(device_id, preserve_intervals).await? {
             ConnectPrep::Done => Ok(()),
-            ConnectPrep::Ble(id) => {
+            ConnectPrep::Ble(id, gen) => {
                 // Holding &mut self: callers that care about UI responsiveness
                 // must use connect_trainer_unlocked instead.
                 match connect_ble(&id).await {
-                    Ok(session) => {
-                        self.install_ble_session(session, id);
-                        Ok(())
-                    }
+                    Ok(session) => self.install_ble_session(session, id, gen).await,
                     Err(e) => Err(self.fail_connect(e)),
                 }
             }
@@ -483,6 +536,7 @@ impl TrainerController {
         preserve_intervals: bool,
     ) -> Result<ConnectPrep, String> {
         self.cancel_auto_reconnect();
+        self.connect_gen += 1;
         if !preserve_intervals {
             self.stop_interval();
         }
@@ -523,10 +577,31 @@ impl TrainerController {
         self.snapshot.detail = format!("Connecting to {id}…");
         self.snapshot.is_demo = false;
         self.publish();
-        Ok(ConnectPrep::Ble(id))
+        Ok(ConnectPrep::Ble(id, self.connect_gen))
     }
 
-    fn install_ble_session(&mut self, session: BleSession, id: String) {
+    /// True while the connect started at generation [gen] is still wanted:
+    /// no disconnect / demo toggle / newer connect happened meanwhile.
+    fn connect_still_wanted(&self, gen: u64) -> bool {
+        gen == self.connect_gen && !self.demo_mode
+    }
+
+    /// Installs a freshly connected BLE session, unless the rider changed
+    /// their mind during the unlocked handshake (Demo switched on,
+    /// Disconnect, another Connect). Then the new link is dropped so no
+    /// orphaned session keeps trainer control.
+    async fn install_ble_session(
+        &mut self,
+        session: BleSession,
+        id: String,
+        gen: u64,
+    ) -> Result<(), String> {
+        if !self.connect_still_wanted(gen) {
+            session.alive.store(false, Ordering::SeqCst);
+            let _ = session.peripheral.disconnect().await;
+            log::info!("Connect to {id} cancelled (gen {gen} → {})", self.connect_gen);
+            return Err("Connect cancelled".into());
+        }
         self.snapshot.state = ConnectionState::Connected;
         self.snapshot.detail = session.device_name.clone();
         self.snapshot.device_name = session.device_name.clone();
@@ -537,6 +612,7 @@ impl TrainerController {
         self.backend = Backend::Ble(session);
         self.publish();
         self.arm_link_watch();
+        Ok(())
     }
 
     fn fail_connect(&mut self, e: String) -> String {
@@ -550,6 +626,7 @@ impl TrainerController {
     pub async fn disconnect(&mut self) -> Result<(), String> {
         // User-initiated: never auto-reconnect after this.
         self.cancel_auto_reconnect();
+        self.connect_gen += 1;
         self.stop_interval();
         self.stop_workout();
         self.stop_gpx_route();
@@ -1016,9 +1093,22 @@ impl TrainerController {
         Ok(())
     }
 
-    /// Control target to restore after reconnect: running interval phase
-    /// watts, else the last ERG watts / resistance % / simulation grade.
+    /// Control target to restore after reconnect: the current workout step
+    /// (if a workout is running), else the interval phase, else the last
+    /// ERG / resistance / simulation that was sent.
     fn resume_target(&self) -> Option<ResumeTarget> {
+        if let Some(cmd) = self.workout_engine.current_command() {
+            return Some(match cmd {
+                WorkoutCommand::Erg(w) => ResumeTarget::Erg(w),
+                WorkoutCommand::Resistance(p) => ResumeTarget::Resistance(p),
+                WorkoutCommand::SimGrade(grade) => ResumeTarget::Simulation(SimParams {
+                    wind_speed_mps: 0.0,
+                    grade_pct: grade,
+                    crr: ftms::DEFAULT_SIM_CRR,
+                    cw: ftms::DEFAULT_SIM_CW,
+                }),
+            });
+        }
         let (mode, m) = match &self.backend {
             Backend::Demo(d) => (d.snapshot.lock().mode, d.metrics.lock().clone()),
             Backend::Ble(b) => (*b.mode.lock(), b.metrics.lock().clone()),
@@ -1150,10 +1240,13 @@ impl TrainerController {
         let ctrl = controller();
         let engine = self.workout_engine.clone();
         self.workout_handle = Some(tokio::spawn(async move {
-            let _ = engine
+            match engine
                 .run(workout, |cmd| {
                     let ctrl = ctrl.clone();
                     async move {
+                        // UI reads (workout status, metrics) no longer go
+                        // through this mutex, so holding it across the FTMS
+                        // Control Point write + indication is safe for the UI.
                         let mut g = ctrl.lock().await;
                         let r = match cmd {
                             WorkoutCommand::Erg(w) => g.set_target_power(w).await,
@@ -1169,6 +1262,8 @@ impl TrainerController {
                             }
                         };
                         match r {
+                            // Link dropped: auto-reconnect resumes the current
+                            // step from the engine (resume_target).
                             Err(e) if g.link_down() => {
                                 log::warn!("Workout command deferred — link down ({e})");
                                 Ok(())
@@ -1177,7 +1272,11 @@ impl TrainerController {
                         }
                     }
                 })
-                .await;
+                .await
+            {
+                Ok(()) => {}
+                Err(e) => log::warn!("Workout finished with error: {e}"),
+            }
         }));
         Ok(())
     }
@@ -1201,6 +1300,7 @@ impl TrainerController {
         self.route_profile = None;
         self.route_grade = 0.0;
         self.route_status = RouteStatus::default();
+        self.publish_route();
     }
 
     pub async fn start_gpx_route(&mut self, profile: GpxProfileInfo) -> Result<(), String> {
@@ -1225,17 +1325,28 @@ impl TrainerController {
             status_text: format!("{name} · starting…"),
         };
         self.route_grade = 0.0;
+        self.publish_route();
         let ctrl = controller();
         self.route_handle = Some(tokio::spawn(async move {
             let mut last = Instant::now();
-            let start_dist = {
-                let s = ride::stats();
-                s.distance_km * 1000.0
-            };
+            // Progress accumulates per-tick ride-distance deltas, so a ride
+            // stats Reset mid-route can't stall or rewind it (QA G7).
+            let mut prev_dist_m = ride::stats().distance_km * 1000.0;
+            let mut progress = 0.0_f64;
+            // Distance actually ridden since the route started.
+            let mut ridden = 0.0_f64;
+            let mut sent: Option<(RouteCmd, Instant)> = None;
             loop {
                 tokio::time::sleep(Duration::from_millis(250)).await;
                 let dt = last.elapsed().as_secs_f64();
                 last = Instant::now();
+                let stats = ride::stats();
+                let dist_m = stats.distance_km * 1000.0;
+                let step = dist_m - prev_dist_m;
+                prev_dist_m = dist_m;
+                // Negative = stats were reset: ignore that tick, keep going.
+                let step = if step.is_finite() { step.clamp(0.0, 100.0) } else { 0.0 };
+
                 let mut g = ctrl.lock().await;
                 let Some(profile) = g.route_profile.clone() else {
                     break;
@@ -1243,75 +1354,33 @@ impl TrainerController {
                 if !g.route_status.running {
                     break;
                 }
-                let stats = ride::stats();
-                let progress = (stats.distance_km * 1000.0 - start_dist).max(0.0);
-                // Demo / no-speed fallback: creep ~5 m/s so routes still complete.
-                if progress < 0.5 && g.demo_mode {
-                    // Advance synthetic progress via wall time from route start stored in status.
-                    // Use grade driver elapsed approximation: accumulate in progress_m field.
-                    let prev = g.route_status.progress_m;
-                    let creep = prev + 5.0 * dt; // ~18 km/h
-                    let progress = creep;
-                    if progress >= profile.distance_m {
-                        g.route_grade = 0.0;
-                        let _ = g
-                            .set_indoor_bike_simulation(
-                                0.0,
-                                0.0,
-                                ftms::DEFAULT_SIM_CRR,
-                                ftms::DEFAULT_SIM_CW,
-                            )
-                            .await;
-                        g.route_status.running = false;
-                        g.route_status.complete = true;
-                        g.route_status.grade_pct = 0.0;
-                        g.route_status.progress_m = profile.distance_m;
-                        g.route_status.status_text =
-                            format!("{} · Route complete", profile.name);
-                        break;
-                    }
-                    let target = grade_at_distance(&profile, progress, 25.0);
-                    let grade = slew_grade(g.route_grade, target, dt, 2.0);
-                    g.route_grade = grade;
-                    g.route_status.progress_m = progress;
-                    g.route_status.grade_pct = grade;
-                    g.route_status.status_text = format!(
-                        "{} · {:.1}/{:.1} km · {grade:.1}%",
-                        profile.name,
-                        progress / 1000.0,
-                        profile.distance_m / 1000.0
-                    );
-                    if g.erg_from_grade {
-                        let speed = 5.0;
-                        let w = gpx::watts_from_grade(grade, speed, g.rider_mass_kg);
-                        let _ = g.set_target_power(w).await;
-                    } else {
-                        let _ = g
-                            .set_indoor_bike_simulation(
-                                0.0,
-                                grade,
-                                ftms::DEFAULT_SIM_CRR,
-                                ftms::DEFAULT_SIM_CW,
-                            )
-                            .await;
-                    }
-                    continue;
+                ridden += step;
+                if g.demo_mode && ridden < 0.5 {
+                    // Demo / no-speed fallback: creep ~5 m/s so routes finish.
+                    progress += 5.0 * dt;
+                } else {
+                    progress += step;
                 }
+
                 if progress >= profile.distance_m {
                     g.route_grade = 0.0;
-                    let _ = g
+                    g.route_status.running = false;
+                    g.route_status.complete = true;
+                    g.route_status.grade_pct = 0.0;
+                    g.route_status.progress_m = profile.distance_m;
+                    g.route_status.status_text = format!("{} · Route complete", profile.name);
+                    g.publish_route();
+                    if let Err(e) = g
                         .set_indoor_bike_simulation(
                             0.0,
                             0.0,
                             ftms::DEFAULT_SIM_CRR,
                             ftms::DEFAULT_SIM_CW,
                         )
-                        .await;
-                    g.route_status.running = false;
-                    g.route_status.complete = true;
-                    g.route_status.grade_pct = 0.0;
-                    g.route_status.progress_m = profile.distance_m;
-                    g.route_status.status_text = format!("{} · Route complete", profile.name);
+                        .await
+                    {
+                        log::warn!("Route end: could not flatten grade: {e}");
+                    }
                     break;
                 }
                 let target = grade_at_distance(&profile, progress, 25.0);
@@ -1325,29 +1394,64 @@ impl TrainerController {
                     progress / 1000.0,
                     profile.distance_m / 1000.0
                 );
-                if g.erg_from_grade {
-                    let speed = (stats.distance_km.max(0.001) / (stats.elapsed_s.max(1) as f64 / 3600.0))
+                // Publish before any BLE await: UI reads never see a gap.
+                g.publish_route();
+
+                let cmd = if g.erg_from_grade {
+                    let avg = (stats.distance_km.max(0.001)
+                        / (stats.elapsed_s.max(1) as f64 / 3600.0))
                         / 3.6;
-                    let speed = if speed.is_finite() && speed > 0.5 {
-                        speed
-                    } else {
-                        5.0
-                    };
-                    let w = gpx::watts_from_grade(grade, speed, g.rider_mass_kg);
-                    let _ = g.set_target_power(w).await;
+                    let speed = if avg.is_finite() && avg > 0.5 { avg } else { 5.0 };
+                    RouteCmd::Erg(gpx::watts_from_grade(grade, speed, g.rider_mass_kg))
                 } else {
-                    let _ = g
-                        .set_indoor_bike_simulation(
+                    RouteCmd::Grade((grade * 10.0).round() / 10.0)
+                };
+                // At most 1 trainer write per second, and only on a change
+                // (0.1 % grade / 2 W): fewer BLE writes under the lock.
+                if !route_cmd_due(sent.as_ref(), &cmd, Instant::now()) {
+                    continue;
+                }
+                let r = match cmd {
+                    RouteCmd::Erg(w) => g.set_target_power(w).await,
+                    RouteCmd::Grade(gr) => {
+                        g.set_indoor_bike_simulation(
                             0.0,
-                            grade,
+                            gr,
                             ftms::DEFAULT_SIM_CRR,
                             ftms::DEFAULT_SIM_CW,
                         )
-                        .await;
+                        .await
+                    }
+                };
+                match r {
+                    Ok(()) => sent = Some((cmd, Instant::now())),
+                    Err(e) => log::debug!("Route command skipped: {e}"),
                 }
             }
         }));
         Ok(())
+    }
+}
+
+/// A trainer command from the GPX route loop.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RouteCmd {
+    Erg(u32),
+    Grade(f64),
+}
+
+/// Whether [cmd] should be written now, given the last successful write.
+fn route_cmd_due(last: Option<&(RouteCmd, Instant)>, cmd: &RouteCmd, now: Instant) -> bool {
+    let Some((prev, at)) = last else {
+        return true;
+    };
+    if now.duration_since(*at) < Duration::from_secs(1) {
+        return false;
+    }
+    match (prev, cmd) {
+        (RouteCmd::Erg(a), RouteCmd::Erg(b)) => a.abs_diff(*b) >= 2,
+        (RouteCmd::Grade(a), RouteCmd::Grade(b)) => (a - b).abs() >= 0.1 - 1e-9,
+        _ => true,
     }
 }
 
@@ -1404,13 +1508,14 @@ pub async fn connect_trainer_unlocked(device_id: Option<String>) -> Result<(), S
     };
     match prep {
         ConnectPrep::Done => Ok(()),
-        ConnectPrep::Ble(id) => {
+        ConnectPrep::Ble(id, gen) => {
             let result = connect_ble(&id).await;
             let mut g = ctrl.lock().await;
             match result {
-                Ok(session) => {
-                    g.install_ble_session(session, id);
-                    Ok(())
+                Ok(session) => g.install_ble_session(session, id, gen).await,
+                Err(e) if !g.connect_still_wanted(gen) => {
+                    log::info!("Connect to {id} failed after cancel: {e}");
+                    Err("Connect cancelled".into())
                 }
                 Err(e) => Err(g.fail_connect(e)),
             }
@@ -1432,12 +1537,12 @@ pub async fn reconnect_trainer_unlocked() -> Result<(), String> {
     };
     match prep {
         ConnectPrep::Done => Ok(()),
-        ConnectPrep::Ble(id) => {
+        ConnectPrep::Ble(id, gen) => {
             let result = connect_ble(&id).await;
             let mut g = ctrl.lock().await;
             match result {
                 Ok(session) => {
-                    g.install_ble_session(session, id);
+                    g.install_ble_session(session, id, gen).await?;
                     if let Some(t) = resume {
                         g.apply_resume_target(t).await?;
                     }
@@ -2332,6 +2437,7 @@ mod ui_poll_freeze_tests {
 
     #[tokio::test]
     async fn try_snapshot_works_while_controller_locked() {
+        let _serial = super::GLOBAL_TEST_LOCK.lock().await;
         ensure_runtime();
         let ctrl = controller();
         {
@@ -2377,6 +2483,7 @@ mod ui_poll_freeze_tests {
 
     #[tokio::test]
     async fn unlocked_demo_connect_publishes_connected() {
+        let _serial = super::GLOBAL_TEST_LOCK.lock().await;
         ensure_runtime();
         let ctrl = controller();
         {
@@ -2391,3 +2498,219 @@ mod ui_poll_freeze_tests {
         assert!(snap.is_demo);
     }
 }
+
+/// Tests that drive the process-wide controller / engines run one at a time.
+#[cfg(test)]
+pub(crate) static GLOBAL_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[cfg(test)]
+mod qa_regression_tests {
+    use super::*;
+    use crate::trainer::workouts::{WorkoutFile, WorkoutStep};
+
+    fn wf(steps: Vec<WorkoutStep>) -> WorkoutFile {
+        WorkoutFile {
+            version: 1,
+            id: "qa".into(),
+            name: "QA".into(),
+            description: String::new(),
+            builtin: false,
+            steps,
+        }
+    }
+
+    /// B2: after a reconnect mid-workout, restore the *current* step.
+    #[tokio::test(start_paused = true)]
+    async fn resume_after_reconnect_uses_current_workout_step() {
+        let c = TrainerController::new();
+        let engine = c.workout_engine.clone();
+        let h = tokio::spawn(async move {
+            engine
+                .run(
+                    wf(vec![
+                        WorkoutStep::erg(10, 150),
+                        WorkoutStep::erg(10, 250),
+                    ]),
+                    |_| async { Ok(()) },
+                )
+                .await
+        });
+        tokio::time::sleep(Duration::from_secs(12)).await;
+        assert_eq!(c.workout_engine.status().step_index, 1);
+        match c.resume_target() {
+            Some(ResumeTarget::Erg(w)) => assert_eq!(w, 250),
+            other => panic!("expected Erg(250), got {other:?}"),
+        }
+        c.workout_engine.stop();
+        let _ = h.await;
+    }
+
+    /// B4: the UI's workout status never depends on the controller mutex.
+    #[tokio::test]
+    async fn workout_status_readable_while_controller_locked() {
+        let _serial = super::GLOBAL_TEST_LOCK.lock().await;
+        ensure_runtime();
+        let engine = global_workout_engine();
+        let e2 = engine.clone();
+        let h = tokio::spawn(async move {
+            e2.run(wf(vec![WorkoutStep::erg(30, 222)]), |_| async { Ok(()) })
+                .await
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        {
+            let ctrl = controller();
+            let _g = ctrl.lock().await;
+            let st = try_workout_status();
+            assert!(st.running, "{st:?}");
+            assert_eq!(st.workout_id, "qa");
+            assert_eq!(st.target_watts, Some(222));
+        }
+        engine.stop();
+        let _ = h.await;
+    }
+
+    /// B4: metrics keep their last value instead of a zeroed default.
+    #[tokio::test]
+    async fn metrics_readable_while_controller_locked() {
+        let _serial = super::GLOBAL_TEST_LOCK.lock().await;
+        ensure_runtime();
+        let cache = METRICS_CACHE.get_or_init(Default::default);
+        {
+            let ctrl = controller();
+            let _g = ctrl.lock().await;
+            {
+                let mut c = cache.lock();
+                c.live = None;
+                c.last = TrainerMetrics {
+                    power_w: 213.0,
+                    cadence_rpm: 88.0,
+                    ..Default::default()
+                };
+            }
+            let m = try_metrics();
+            assert_eq!(m.power_w, 213.0);
+            assert_eq!(m.cadence_rpm, 88.0);
+        }
+    }
+
+    /// B3: a BLE handshake that finishes after Demo / Disconnect / another
+    /// connect must not install its session.
+    #[tokio::test]
+    async fn demo_toggle_during_ble_handshake_cancels_install() {
+        let mut c = TrainerController::new();
+        let ConnectPrep::Ble(_, gen) = c
+            .prepare_connect(Some("AA:BB".into()), false)
+            .await
+            .unwrap()
+        else {
+            panic!("expected BLE prep");
+        };
+        assert!(c.connect_still_wanted(gen));
+        c.set_demo_mode(true).await;
+        assert!(!c.connect_still_wanted(gen), "demo toggle must cancel");
+
+        let mut c = TrainerController::new();
+        let ConnectPrep::Ble(_, gen) =
+            c.prepare_connect(Some("AA:BB".into()), false).await.unwrap()
+        else {
+            panic!()
+        };
+        let _ = c.disconnect().await;
+        assert!(!c.connect_still_wanted(gen), "disconnect must cancel");
+
+        let mut c = TrainerController::new();
+        let ConnectPrep::Ble(_, g1) =
+            c.prepare_connect(Some("AA:BB".into()), false).await.unwrap()
+        else {
+            panic!()
+        };
+        let ConnectPrep::Ble(_, g2) =
+            c.prepare_connect(Some("CC:DD".into()), false).await.unwrap()
+        else {
+            panic!()
+        };
+        assert!(!c.connect_still_wanted(g1) && c.connect_still_wanted(g2));
+    }
+
+    /// Demo mode routes ERG / resistance / sim to the demo trainer only.
+    #[tokio::test]
+    async fn demo_mode_never_routes_commands_to_ble() {
+        let mut c = TrainerController::new();
+        c.set_demo_mode(true).await;
+        c.connect(None).await.unwrap();
+        c.set_target_power(234).await.unwrap();
+        assert!(matches!(c.backend, Backend::Demo(_)));
+        assert_eq!(c.metrics().target_power_w, Some(234.0));
+        let _ = c.disconnect().await;
+    }
+
+    /// Toggling Demo stops workout, interval and route.
+    #[tokio::test]
+    async fn set_demo_mode_stops_workout() {
+        let mut c = TrainerController::new();
+        let engine = c.workout_engine.clone();
+        let h = tokio::spawn(async move {
+            engine
+                .run(wf(vec![WorkoutStep::erg(30, 200)]), |_| async { Ok(()) })
+                .await
+        });
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(c.workout_status().running);
+        c.set_demo_mode(true).await;
+        assert!(!c.workout_status().running);
+        assert!(!c.interval_status().running);
+        assert!(!c.route_status().running);
+        let _ = h.await;
+    }
+
+    /// QA G1 (cycle 2): a busy controller must not read as "route stopped".
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn route_status_readable_while_controller_locked() {
+        let _serial = super::GLOBAL_TEST_LOCK.lock().await;
+        ensure_runtime();
+        let gpx = r#"<gpx version="1.1"><trk><name>G</name><trkseg>
+<trkpt lat="50.0" lon="4.0"><ele>100</ele></trkpt>
+<trkpt lat="50.01" lon="4.0"><ele>110</ele></trkpt>
+<trkpt lat="50.02" lon="4.0"><ele>120</ele></trkpt>
+</trkseg></trk></gpx>"#;
+        let ctrl = controller();
+        {
+            let mut g = ctrl.lock().await;
+            g.set_demo_mode(true).await;
+            g.connect(None).await.unwrap();
+            let p = crate::trainer::gpx::parse_gpx(gpx).unwrap();
+            g.start_gpx_route(p).await.unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert!(try_route_status().running);
+        {
+            let _g = ctrl.lock().await; // e.g. route loop mid BLE write
+            for _ in 0..20 {
+                let st = try_route_status();
+                assert!(st.running, "busy lock read as stopped: {st:?}");
+                assert_eq!(st.route_name, "G");
+            }
+        }
+        let mut g = ctrl.lock().await;
+        g.stop_gpx_route();
+        assert!(!try_route_status().running, "stop is published too");
+        let _ = g.disconnect().await;
+        g.set_demo_mode(false).await;
+    }
+
+    #[test]
+    fn route_commands_rate_limited_and_deduped() {
+        let t0 = Instant::now();
+        let s = Duration::from_millis(1000);
+        assert!(route_cmd_due(None, &RouteCmd::Grade(2.0), t0));
+        let last = (RouteCmd::Grade(2.0), t0);
+        assert!(!route_cmd_due(Some(&last), &RouteCmd::Grade(5.0), t0 + s / 2));
+        assert!(!route_cmd_due(Some(&last), &RouteCmd::Grade(2.0), t0 + s * 2));
+        assert!(route_cmd_due(Some(&last), &RouteCmd::Grade(2.1), t0 + s));
+        let last = (RouteCmd::Erg(200), t0);
+        assert!(!route_cmd_due(Some(&last), &RouteCmd::Erg(201), t0 + s * 2));
+        assert!(route_cmd_due(Some(&last), &RouteCmd::Erg(202), t0 + s * 2));
+        assert!(route_cmd_due(Some(&last), &RouteCmd::Grade(0.0), t0 + s));
+    }
+}
+

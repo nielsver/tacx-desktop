@@ -110,6 +110,8 @@ void main() {
       -120,
       scrollable: panelScroll.first,
     );
+    await tester.ensureVisible(find.byKey(const ValueKey('gpx-start')));
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('gpx-start')));
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 1600)),

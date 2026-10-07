@@ -21,6 +21,7 @@ import 'package:tacx_desktop/src/ui/bluetooth_tips.dart';
 import 'package:tacx_desktop/src/ui/mode_copy.dart';
 import 'package:tacx_desktop/src/ui/app_tokens.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
+import 'package:tacx_desktop/src/ui/route_map.dart';
 import 'package:tacx_desktop/src/ui/window_chrome.dart';
 
 
@@ -145,6 +146,11 @@ class _RideDashboardState extends State<RideDashboard> {
   double? _notRunningSinceS;
   double? _ghostM;
   double? _ghostDeltaS;
+  /// Route map: geometry built once per shown GPX; rider / ghost positions
+  /// drive only the dot layer (no dashboard rebuild).
+  RouteGeo? _geo;
+  final ValueNotifier<double?> _mapRiderM = ValueNotifier(null);
+  final ValueNotifier<double?> _mapGhostM = ValueNotifier(null);
   bool _ergFromGrade = false;
 
   HrStrapStatus _strap = const HrStrapStatus(
@@ -216,6 +222,8 @@ class _RideDashboardState extends State<RideDashboard> {
     _trend.dispose();
     _wTrace.dispose();
     _workoutN.dispose();
+    _mapRiderM.dispose();
+    _mapGhostM.dispose();
     super.dispose();
   }
 
@@ -234,6 +242,9 @@ class _RideDashboardState extends State<RideDashboard> {
     final ride = api.getRideStats();
     final strap = api.getHeartRateStrapStatus();
     final ghostChanged = _trackGhost(route);
+    _mapRiderM.value =
+        route.running || route.complete ? route.progressM : null;
+    _mapGhostM.value = route.running ? _ghostM : null;
     final plan = _planFor(workout);
     // Only real samples go on the trace: no default / disconnected zeros.
     if (plan != null &&
@@ -308,6 +319,15 @@ class _RideDashboardState extends State<RideDashboard> {
   /// The route whose best / markers are shown: the one being ridden, else
   /// the loaded GPX.
   GpxProfileInfo? get _shownGpx => _ridingGpx ?? _gpx;
+
+  /// Route geometry for [_shownGpx], rebuilt only when that route changes.
+  RouteGeo? get _routeGeo {
+    final p = _shownGpx;
+    if (p == null || p.samples.length < 2) return _geo = null;
+    final g = _geo;
+    if (g != null && identical(g.samples, p.samples)) return g;
+    return _geo = RouteGeo(p.samples);
+  }
 
   /// Loads the stored best (v2 key, legacy fallback) for [_shownGpx].
   void _loadBestForGpx() {
@@ -1265,6 +1285,13 @@ class _RideDashboardState extends State<RideDashboard> {
                                   onResetBest: _best == null ? null : _resetBest,
                                   onExportGhost: _best == null ? null : _exportGhost,
                                   onImportGhost: _routeKey == null ? null : _importGhost,
+                                  routeMap: _routeGeo == null
+                                      ? null
+                                      : RouteMap(
+                                          geo: _routeGeo!,
+                                          progressM: _mapRiderM,
+                                          ghostM: _mapGhostM,
+                                        ),
                                   ergFromGrade: _ergFromGrade,
                                   enabled: connected && !_busy,
                                   supportsSimulation: simSupported,

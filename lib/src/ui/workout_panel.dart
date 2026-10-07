@@ -32,6 +32,7 @@ class WorkoutPanel extends StatelessWidget {
     this.onResetBest,
     this.onExportGhost,
     this.onImportGhost,
+    this.routeMap,
   });
 
   final List<WorkoutInfo> workouts;
@@ -66,6 +67,9 @@ class WorkoutPanel extends StatelessWidget {
   final VoidCallback? onResetBest;
   final VoidCallback? onExportGhost;
   final VoidCallback? onImportGhost;
+
+  /// Offline route map (drawn above the elevation profile when given).
+  final Widget? routeMap;
 
   @override
   Widget build(BuildContext context) {
@@ -225,6 +229,18 @@ class WorkoutPanel extends StatelessWidget {
                   ),
                   if (gpxProfile != null) ...[
                     const SizedBox(height: 6),
+                    if (routeMap != null)
+                      Container(
+                        key: const ValueKey('route-map'),
+                        height: 140,
+                        margin: const EdgeInsets.only(bottom: 6),
+                        decoration: BoxDecoration(
+                          color: RideColors.bg,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: RideColors.border),
+                        ),
+                        child: routeMap,
+                      ),
                     ElevProfileChart(
                       profile: gpxProfile!,
                       progressM: routeStatus.running || routeStatus.complete

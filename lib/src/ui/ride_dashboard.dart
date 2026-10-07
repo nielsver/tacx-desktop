@@ -22,6 +22,7 @@ import 'package:tacx_desktop/src/ui/mode_copy.dart';
 import 'package:tacx_desktop/src/ui/app_tokens.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 import 'package:tacx_desktop/src/ui/route_map.dart';
+import 'package:tacx_desktop/src/ui/status_bar.dart';
 import 'package:tacx_desktop/src/ui/window_chrome.dart';
 
 
@@ -1453,6 +1454,8 @@ class _RideDashboardState extends State<RideDashboard> {
                 ),
               ),
             ),
+            if (!_inFocus)
+              RideStatusBar(snap: _snap, strap: _strap, ride: _rideN),
           ],
         ),
       ),

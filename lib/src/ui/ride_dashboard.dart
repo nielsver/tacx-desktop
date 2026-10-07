@@ -55,12 +55,14 @@ class _RideDashboardState extends State<RideDashboard> {
   final double _wheelDiameterM = 0.7;
   bool _busy = false;
   String? _error;
+  BluetoothStatus? _bt;
 
   @override
   void initState() {
     super.initState();
     api.setDemoMode(enabled: true);
     _refresh();
+    _checkBluetooth();
     _poll = Timer.periodic(const Duration(milliseconds: 250), (_) => _refresh());
   }
 
@@ -80,6 +82,18 @@ class _RideDashboardState extends State<RideDashboard> {
     });
   }
 
+  Future<void> _checkBluetooth() async {
+    try {
+      final st = await api.bluetoothStatus();
+      if (mounted) setState(() => _bt = st);
+    } catch (_) {
+      // Probe failures fall back to letting the user try a scan.
+      if (mounted) setState(() => _bt = null);
+    }
+  }
+
+  bool get _canScan => _bt?.canScan ?? true;
+
   Future<void> _run(Future<void> Function() action) async {
     setState(() {
       _busy = true;
@@ -98,6 +112,8 @@ class _RideDashboardState extends State<RideDashboard> {
   }
 
   Future<void> _scan() async {
+    await _checkBluetooth();
+    if (!_canScan) return;
     await _run(() async {
       final list = await api.scanTrainers(timeoutMs: 8000);
       setState(() {
@@ -142,8 +158,32 @@ class _RideDashboardState extends State<RideDashboard> {
                   _error = null;
                 });
                 _refresh();
+                _checkBluetooth();
               },
             ),
+            if (_bt != null &&
+                !_snap.isDemo &&
+                (_bt!.radio == BluetoothRadio.off ||
+                    _bt!.radio == BluetoothRadio.noAdapter))
+              MaterialBanner(
+                leading: const Icon(Icons.bluetooth_disabled, color: Colors.white),
+                content: Text(_bt!.hint, style: const TextStyle(color: Colors.white)),
+                backgroundColor: const Color(0xFF455A64),
+                actions: [
+                  TextButton(
+                    onPressed: _checkBluetooth,
+                    child: const Text('Check again', style: TextStyle(color: Colors.white)),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      api.setDemoMode(enabled: true);
+                      _refresh();
+                      _checkBluetooth();
+                    },
+                    child: const Text('Use demo', style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
             if (_error != null)
               MaterialBanner(
                 content: Text(_error!, style: const TextStyle(color: Colors.white)),
@@ -186,6 +226,7 @@ class _RideDashboardState extends State<RideDashboard> {
                       connected: connected,
                       snap: _snap,
                       onSelect: (d) => setState(() => _selected = d),
+                      canScan: _canScan,
                       onScan: _scan,
                       onConnect: _connect,
                       onReconnect: () => _run(() => api.reconnectTrainer()),
@@ -370,6 +411,7 @@ class _ConnectionBar extends StatelessWidget {
     required this.snap,
     required this.onSelect,
     required this.onScan,
+    this.canScan = true,
     required this.onConnect,
     required this.onReconnect,
     required this.onDisconnect,
@@ -382,6 +424,7 @@ class _ConnectionBar extends StatelessWidget {
   final ConnectionSnapshot snap;
   final ValueChanged<DiscoveredDevice?> onSelect;
   final VoidCallback onScan;
+  final bool canScan;
   final VoidCallback onConnect;
   final VoidCallback onReconnect;
   final VoidCallback onDisconnect;
@@ -440,7 +483,7 @@ class _ConnectionBar extends StatelessWidget {
               ),
             ),
             FilledButton.tonal(
-              onPressed: busy ? null : onScan,
+              onPressed: (busy || !canScan) ? null : onScan,
               child: const Text('Scan'),
             ),
             FilledButton(

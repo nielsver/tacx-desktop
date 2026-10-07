@@ -141,3 +141,73 @@ pub struct IntervalStatus {
     pub repeat_index: u32,
     pub remaining_s: f64,
 }
+
+/// Host Bluetooth radio state, checked before scanning so the UI can show an
+/// empty state instead of a cryptic scan error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BluetoothRadio {
+    /// Demo mode: no radio needed.
+    NotNeeded,
+    /// Adapter present and powered on.
+    On,
+    /// Adapter present but powered off (Windows Settings / macOS menu bar / bluetoothctl).
+    Off,
+    /// No adapter found (no dongle, driver missing, BlueZ not running).
+    NoAdapter,
+    /// Adapter present but the OS did not report a state (common on BlueZ / older WinRT).
+    Unknown,
+}
+
+#[derive(Clone, Debug)]
+pub struct BluetoothStatus {
+    pub radio: BluetoothRadio,
+    /// Human-readable hint for the empty-state banner (English, short).
+    pub hint: String,
+    /// Whether the Scan button should be enabled (false when off / no adapter).
+    pub can_scan: bool,
+}
+
+impl BluetoothStatus {
+    pub fn from_radio(radio: BluetoothRadio, detail: Option<String>) -> Self {
+        let hint = match radio {
+            BluetoothRadio::NotNeeded => "Demo mode — no Bluetooth needed.".to_string(),
+            BluetoothRadio::On => "Bluetooth is on.".to_string(),
+            BluetoothRadio::Off => "Bluetooth is off. Turn it on (Windows: Settings → Bluetooth & devices; macOS: menu bar Bluetooth; Linux: `bluetoothctl power on`), then check again.".to_string(),
+            BluetoothRadio::NoAdapter => {
+                let base = "No Bluetooth adapter found. Plug in a BLE 4.0+ dongle or enable the adapter/driver (Linux: start bluetoothd), then check again.";
+                match detail {
+                    Some(d) if !d.is_empty() => format!("{base} ({d})"),
+                    _ => base.to_string(),
+                }
+            }
+            BluetoothRadio::Unknown => "Bluetooth state unknown — scanning anyway may still work.".to_string(),
+        };
+        let can_scan = !matches!(radio, BluetoothRadio::Off | BluetoothRadio::NoAdapter);
+        Self { radio, hint, can_scan }
+    }
+}
+
+#[cfg(test)]
+mod bluetooth_status_tests {
+    use super::*;
+
+    #[test]
+    fn off_and_missing_block_scan() {
+        assert!(!BluetoothStatus::from_radio(BluetoothRadio::Off, None).can_scan);
+        assert!(!BluetoothStatus::from_radio(BluetoothRadio::NoAdapter, None).can_scan);
+    }
+
+    #[test]
+    fn on_unknown_demo_allow_scan() {
+        for r in [BluetoothRadio::On, BluetoothRadio::Unknown, BluetoothRadio::NotNeeded] {
+            assert!(BluetoothStatus::from_radio(r, None).can_scan, "{r:?}");
+        }
+    }
+
+    #[test]
+    fn no_adapter_hint_includes_detail() {
+        let s = BluetoothStatus::from_radio(BluetoothRadio::NoAdapter, Some("No Bluetooth adapter found".into()));
+        assert!(s.hint.contains("dongle"));
+        assert!(s.hint.contains("No Bluetooth adapter found"));
+    }
+}

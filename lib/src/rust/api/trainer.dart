@@ -14,6 +14,10 @@ void setDemoMode({required bool enabled}) =>
 
 bool isDemoMode() => RustLib.instance.api.crateApiTrainerIsDemoMode();
 
+/// Host Bluetooth radio state for the empty-state banner (demo → NotNeeded).
+Future<BluetoothStatus> bluetoothStatus() =>
+    RustLib.instance.api.crateApiTrainerBluetoothStatus();
+
 Future<List<DiscoveredDevice>> scanTrainers({required int timeoutMs}) =>
     RustLib.instance.api.crateApiTrainerScanTrainers(timeoutMs: timeoutMs);
 
@@ -32,7 +36,7 @@ Future<void> setTargetPower({required int watts}) =>
 Future<void> setResistancePercent({required double percent}) =>
     RustLib.instance.api.crateApiTrainerSetResistancePercent(percent: percent);
 
-/// FE-C Track Resistance (page 0x33). No-op path on FTMS until Indoor Bike Simulation lands.
+/// Track/grade simulation: FE-C page 0x33 or FTMS Indoor Bike Simulation (0x11).
 Future<void> setTrackResistance({
   required double gradePct,
   required double crr,

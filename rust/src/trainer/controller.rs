@@ -8,7 +8,7 @@ use crate::trainer::gatt;
 use crate::trainer::intervals::IntervalEngine;
 use crate::trainer::types::*;
 use btleplug::api::{
-    bleuuid::uuid_from_u16, Central, Characteristic, Manager as _, Peripheral as _, ScanFilter,
+    bleuuid::uuid_from_u16, Central, CentralState, Characteristic, Manager as _, Peripheral as _, ScanFilter,
     WriteType,
 };
 use btleplug::platform::{Adapter, Manager, Peripheral};
@@ -769,8 +769,31 @@ async fn adapter() -> Result<Adapter, String> {
         .ok_or_else(|| "No Bluetooth adapter found".to_string())
 }
 
+/// Map btleplug's adapter state onto the UI-facing radio enum.
+pub fn radio_from_central(state: &CentralState) -> BluetoothRadio {
+    match state {
+        CentralState::PoweredOn => BluetoothRadio::On,
+        CentralState::PoweredOff => BluetoothRadio::Off,
+        CentralState::Unknown => BluetoothRadio::Unknown,
+    }
+}
+
+/// Probe the host Bluetooth radio without scanning (cheap; safe to call on startup).
+pub async fn probe_bluetooth() -> BluetoothStatus {
+    match adapter().await {
+        Err(e) => BluetoothStatus::from_radio(BluetoothRadio::NoAdapter, Some(e)),
+        Ok(central) => match central.adapter_state().await {
+            Ok(st) => BluetoothStatus::from_radio(radio_from_central(&st), None),
+            Err(_) => BluetoothStatus::from_radio(BluetoothRadio::Unknown, None),
+        },
+    }
+}
+
 async fn scan_ble(timeout_ms: u32) -> Result<Vec<DiscoveredDevice>, String> {
     let central = adapter().await?;
+    if let Ok(CentralState::PoweredOff) = central.adapter_state().await {
+        return Err(BluetoothStatus::from_radio(BluetoothRadio::Off, None).hint);
+    }
     central
         .start_scan(ScanFilter::default())
         .await

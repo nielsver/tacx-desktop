@@ -6,6 +6,53 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+/// Host Bluetooth radio state, checked before scanning so the UI can show an
+/// empty state instead of a cryptic scan error.
+enum BluetoothRadio {
+  /// Demo mode: no radio needed.
+  notNeeded,
+
+  /// Adapter present and powered on.
+  on_,
+
+  /// Adapter present but powered off (Windows Settings / macOS menu bar / bluetoothctl).
+  off,
+
+  /// No adapter found (no dongle, driver missing, BlueZ not running).
+  noAdapter,
+
+  /// Adapter present but the OS did not report a state (common on BlueZ / older WinRT).
+  unknown,
+}
+
+class BluetoothStatus {
+  final BluetoothRadio radio;
+
+  /// Human-readable hint for the empty-state banner (English, short).
+  final String hint;
+
+  /// Whether the Scan button should be enabled (false when off / no adapter).
+  final bool canScan;
+
+  const BluetoothStatus({
+    required this.radio,
+    required this.hint,
+    required this.canScan,
+  });
+
+  @override
+  int get hashCode => radio.hashCode ^ hint.hashCode ^ canScan.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BluetoothStatus &&
+          runtimeType == other.runtimeType &&
+          radio == other.radio &&
+          hint == other.hint &&
+          canScan == other.canScan;
+}
+
 class ConnectionSnapshot {
   final ConnectionState state;
   final String detail;

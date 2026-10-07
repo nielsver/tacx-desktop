@@ -30,6 +30,19 @@ pub fn is_demo_mode() -> bool {
     })
 }
 
+/// Host Bluetooth radio state for the empty-state banner (demo → NotNeeded).
+pub async fn bluetooth_status() -> BluetoothStatus {
+    let demo = {
+        let ctrl = controller();
+        let g = ctrl.lock().await;
+        g.is_demo()
+    };
+    if demo {
+        return BluetoothStatus::from_radio(BluetoothRadio::NotNeeded, None);
+    }
+    crate::trainer::controller::probe_bluetooth().await
+}
+
 pub async fn scan_trainers(timeout_ms: u32) -> Result<Vec<DiscoveredDevice>, String> {
     let ctrl = controller();
     let mut g = ctrl.lock().await;

@@ -21,6 +21,11 @@ fi
 # Debian version: tags like v0.2.1 → 0.2.1; local builds keep digits/dots/+~
 VERSION="$(echo "$VERSION" | sed -E 's/^v//; s/[^0-9A-Za-z.+~-]/./g')"
 [[ -n "$VERSION" ]] || VERSION="0.2.1"
+# dpkg requires the version to start with a digit; branch builds (e.g. main-bc64814)
+# become a pre-release of the base version: 0.2.1~main.bc64814
+if [[ ! "$VERSION" =~ ^[0-9] ]]; then
+  VERSION="0.2.1~${VERSION//-/.}"
+fi
 
 [[ -d "$BUNDLE" ]] || { echo "Bundle missing: $BUNDLE" >&2; exit 1; }
 [[ -f "$BUNDLE/tacx_desktop" ]] || { echo "Binary missing" >&2; exit 1; }

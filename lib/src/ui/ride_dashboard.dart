@@ -12,7 +12,10 @@ import 'package:tacx_desktop/src/ui/hr_strap_bar.dart';
 import 'package:tacx_desktop/src/ui/live_trend_chart.dart';
 import 'package:tacx_desktop/src/ui/workout_panel.dart';
 import 'package:tacx_desktop/src/ui/workout_ride_view.dart';
+import 'package:tacx_desktop/src/workout/route_ghost.dart';
 import 'package:tacx_desktop/src/workout/workout_plan.dart';
+import 'package:tacx_desktop/src/ui/elev_profile_chart.dart'
+    show GhostDeltaChip;
 import 'package:tacx_desktop/src/ui/bluetooth_tips.dart';
 import 'package:tacx_desktop/src/ui/mode_copy.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
@@ -120,6 +123,15 @@ class _RideDashboardState extends State<RideDashboard> {
   final WorkoutTrace _wTrace = WorkoutTrace();
   /// Rider FTP for zone colours (persisted).
   int _ftp = 200;
+
+  /// Ghost race on a repeated GPX route (best attempt, live attempt).
+  GhostStore? _ghostStore;
+  String? _routeKey;
+  GhostTrack? _best;
+  final AttemptRecorder _attempt = AttemptRecorder();
+  DateTime? _routeStartedAt;
+  double? _ghostM;
+  double? _ghostDeltaS;
   bool _ergFromGrade = false;
 
   HrStrapStatus _strap = const HrStrapStatus(
@@ -204,6 +216,7 @@ class _RideDashboardState extends State<RideDashboard> {
     final route = api.getRouteStatus();
     final ride = api.getRideStats();
     final strap = api.getHeartRateStrapStatus();
+    final ghostChanged = _trackGhost(route, DateTime.now());
     final plan = _planFor(workout);
     if (plan != null && workout.running) {
       _wTrace.offer(
@@ -230,6 +243,7 @@ class _RideDashboardState extends State<RideDashboard> {
         route != _route ||
         strap != _strap ||
         !identical(plan, _plan) ||
+        ghostChanged ||
         metrics.targetPowerW != _metrics.targetPowerW;
     _metricsN.value = metrics;
     _rideN.value = ride;
@@ -252,6 +266,76 @@ class _RideDashboardState extends State<RideDashboard> {
     if (wasReconnecting && _snap.state == ConnectionState.connected) {
       _toast('Trainer reconnected — previous target restored', Icons.link);
     }
+  }
+
+  GhostStore? get _ghosts {
+    if (_ghostStore != null) return _ghostStore;
+    try {
+      return _ghostStore = GhostStore.besideWorkouts(api.workoutsDir());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Loads the stored best for the current GPX (if any).
+  void _loadBestForGpx() {
+    final p = _gpx;
+    _routeKey = p == null || p.samples.length < 2 ? null : routeKey(p);
+    final key = _routeKey;
+    _best = key == null ? null : _ghosts?.load(key);
+  }
+
+  /// Ghost race bookkeeping for one poll. Returns true when the visible
+  /// ghost state (marker / delta) changed.
+  bool _trackGhost(RouteStatus route, DateTime now) {
+    final oldM = _ghostM, oldD = _ghostDeltaS;
+    final started = route.running && !_route.running;
+    final finished = route.complete && !_route.complete;
+    final stopped = !route.running && !route.complete && _route.running;
+    if (started) {
+      _attempt.reset();
+      _routeStartedAt = now;
+      _loadBestForGpx();
+    }
+    final t0 = _routeStartedAt;
+    if (route.running && t0 != null) {
+      final t = now.difference(t0).inMilliseconds / 1000.0;
+      _attempt.offer(t, route.progressM);
+      final best = _best;
+      if (best != null && !best.isEmpty) {
+        _ghostM = best.distanceAt(t);
+        _ghostDeltaS = ghostDeltaS(best, route.progressM, t);
+      } else {
+        _ghostM = null;
+        _ghostDeltaS = null;
+      }
+    }
+    if (finished && t0 != null) {
+      final t = now.difference(t0).inMilliseconds / 1000.0;
+      _attempt.finish(t, route.distanceM);
+      final key = _routeKey;
+      final store = _ghosts;
+      if (key != null && store != null) {
+        final prev = _best;
+        if (store.saveIfBest(
+          key,
+          route.routeName,
+          route.distanceM,
+          _attempt.toTrack(),
+        )) {
+          _best = store.load(key);
+          final gain = prev == null ? '' : ' (${fmtDelta(t - prev.totalS)})';
+          _toast('New best on ${route.routeName}: ${fmtClock(t)}$gain',
+              Icons.emoji_events_outlined);
+        }
+      }
+    }
+    if (finished || stopped) {
+      _routeStartedAt = null;
+      _ghostM = null;
+      _ghostDeltaS = null;
+    }
+    return oldM != _ghostM || oldD?.round() != _ghostDeltaS?.round();
   }
 
   /// Planned steps for the workout in [st] (cached per workout id). Null
@@ -782,6 +866,9 @@ class _RideDashboardState extends State<RideDashboard> {
                       workoutView: _plan == null
                           ? null
                           : _workoutView(large: true),
+                      routeChip: _ghostDeltaS == null
+                          ? null
+                          : GhostDeltaChip(deltaS: _ghostDeltaS!, large: true),
                       onExitFocus: _toggleFocusMode,
                       onDisconnect: () => _run(
                         () => api.disconnectTrainer(),
@@ -1025,7 +1112,12 @@ class _RideDashboardState extends State<RideDashboard> {
                                   onImportGpxXml: (xml) {
                                     try {
                                       final p = api.parseGpxXml(xml: xml);
-                                      setState(() => _gpx = p);
+                                      setState(() {
+                                        _gpx = p;
+                                        // Mid-route paste must not swap the
+                                        // ghost of the route being ridden.
+                                        if (!_route.running) _loadBestForGpx();
+                                      });
                                       _toast(
                                         'GPX loaded · ${(p.distanceM / 1000).toStringAsFixed(1)} km',
                                         Icons.terrain,
@@ -1057,6 +1149,9 @@ class _RideDashboardState extends State<RideDashboard> {
                                     setState(() => _ergFromGrade = v);
                                     api.setErgFromGrade(enabled: v);
                                   },
+                                  ghostM: _ghostM,
+                                  ghostDeltaS: _ghostDeltaS,
+                                  bestS: _best?.totalS,
                                   onSaveAsCopy: (info) {
                                     try {
                                       final json =

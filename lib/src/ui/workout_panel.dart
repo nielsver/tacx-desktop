@@ -4,6 +4,7 @@ import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
 import 'package:tacx_desktop/src/ui/elev_profile_chart.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
+import 'package:tacx_desktop/src/workout/workout_plan.dart' show fmtClock;
 
 /// Workouts + GPX setup (edit only outside Focus).
 class WorkoutPanel extends StatelessWidget {
@@ -24,6 +25,9 @@ class WorkoutPanel extends StatelessWidget {
     required this.onStopRoute,
     required this.onErgFromGrade,
     required this.onSaveAsCopy,
+    this.ghostM,
+    this.ghostDeltaS,
+    this.bestS,
   });
 
   final List<WorkoutInfo> workouts;
@@ -41,6 +45,15 @@ class WorkoutPanel extends StatelessWidget {
   final VoidCallback onStopRoute;
   final ValueChanged<bool> onErgFromGrade;
   final ValueChanged<WorkoutInfo> onSaveAsCopy;
+
+  /// Ghost (best attempt) position on the loaded route, metres.
+  final double? ghostM;
+
+  /// Seconds behind (+) / ahead (−) of the best attempt while riding.
+  final double? ghostDeltaS;
+
+  /// Best time on the loaded route, seconds (null = no attempt yet).
+  final double? bestS;
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +85,14 @@ class WorkoutPanel extends StatelessWidget {
                 color: RideColors.textPrimary,
               ),
             ),
+            if (ghostDeltaS != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: GhostDeltaChip(deltaS: ghostDeltaS!),
+                ),
+              ),
             if (routeStatus.complete)
               const Padding(
                 padding: EdgeInsets.only(top: 6),
@@ -197,6 +218,20 @@ class WorkoutPanel extends StatelessWidget {
                       progressM: routeStatus.running || routeStatus.complete
                           ? routeStatus.progressM
                           : null,
+                      ghostM: routeStatus.running ? ghostM : null,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        bestS == null
+                            ? 'No best yet — finish the route to set a ghost'
+                            : 'Best ${fmtClock(bestS!)} · ghost ◦ on the profile',
+                        key: const ValueKey('route-best'),
+                        style: const TextStyle(
+                          color: RideColors.textMuted,
+                          fontSize: RideType.caption,
+                        ),
+                      ),
                     ),
                   ],
                 ],

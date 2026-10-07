@@ -29,6 +29,7 @@ class FocusRideView extends StatelessWidget {
     required this.onStopInterval,
     this.intervalRunning = false,
     this.workoutView,
+    this.routeChip,
   });
 
   final TrainerMetrics metrics;
@@ -50,6 +51,9 @@ class FocusRideView extends StatelessWidget {
   /// Planned-vs-actual workout graph + step strip, shown under the power
   /// hero while a structured workout runs.
   final Widget? workoutView;
+
+  /// "+/- vs best" ghost chip while a GPX route with a stored best runs.
+  final Widget? routeChip;
 
   @override
   Widget build(BuildContext context) {
@@ -83,6 +87,7 @@ class FocusRideView extends StatelessWidget {
                     onDisconnect: onDisconnect,
                     onStopInterval: onStopInterval,
                     intervalRunning: intervalRunning,
+                    routeChip: routeChip,
                   ),
                   Expanded(
                     child: Center(
@@ -183,8 +188,10 @@ class _FocusChrome extends StatelessWidget {
     required this.onDisconnect,
     required this.onStopInterval,
     required this.intervalRunning,
+    this.routeChip,
   });
 
+  final Widget? routeChip;
   final ConnectionSnapshot snap;
   final bool busy;
   final VoidCallback onExitFocus;
@@ -232,6 +239,7 @@ class _FocusChrome extends StatelessWidget {
         _StatusPill(connected: connected || snap.isDemo, label: name),
         const SizedBox(width: 8),
         _ModeChip(mode: snap.mode),
+        if (routeChip != null) ...[const SizedBox(width: 8), routeChip!],
         const Spacer(),
         if (intervalRunning)
           TextButton(

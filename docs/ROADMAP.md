@@ -10,11 +10,13 @@ Rules for every step: widget/unit tests, `flutter analyze` clean, CI green on
 **Demo OFF by default** and the existing charts working. Tick the box and record
 the SHA here when a step lands.
 
-**Current step:** 3 — Pro polish (design tokens → offline RouteMap →
-ride summary). Ghost QA (cycle 2 G1–G9) and Research route-key v2 land
-first; checklists in [`pro-polish.md`](pro-polish.md) and
-[`multiplayer.md`](multiplayer.md).
-**Last SHA:** see Log
+**Current step:** 3 — Pro polish. Done: design tokens (`3ac394f`), offline
+route map with dot-only repaint (`06561a9`), Rust `ride_summary`
+(NP / IF / TSS, mean-max 5 s–20 min, zones; `641e816`).
+**Next:** always-visible status bar → post-ride summary screen (Save TCX /
+Done, DEMO tag) → subtle motion (reduced-motion aware). Checklists in
+[`pro-polish.md`](pro-polish.md) and [`multiplayer.md`](multiplayer.md).
+**Last SHA:** `641e816`
 
 ## Steps
 
@@ -47,4 +49,5 @@ first; checklists in [`pro-polish.md`](pro-polish.md) and
 | 0. Installers + v0.2.1 release | done | `fdb57de` (tag `v0.2.1`) | CI 37675496926, Release 37675940929 |
 | 1. Pro workout view | done | `d40f621` | CI 37692811589 (success) |
 | 2. Ghost race | done | `155eeba` | CI 37693301137 (success) |
-| 2b. Ghost QA + route key v2 + .tdshare | in progress | — | — |
+| 2b. Ghost QA + route key v2 + .tdshare | done | `0ced1b4` `9e0c93f` `ccb2b7c` `2655760` `acdddb8` `4de468e` `e5787c4` `561fbaf` | CI 37694601586, 37695497136 (success) |
+| 3. Pro polish | in progress | tokens `3ac394f`, map `06561a9`, ride_summary `641e816` | CI 37695662694 (success), 37695966929 |

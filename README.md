@@ -23,6 +23,7 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 | GATT inventory on connect | — | UUID/property table + FTMS vs FE-C class in logs |
 | Link-lost → Reconnect | Simulated disconnect N/A | Auto Error state; Reconnect restores interval ERG |
 | FE-C write rate limit | — | ~4 Hz latest-wins coalesce on UART WithoutResponse |
+| FE-C Track / Wind / User-config | Demo stub grade→% | Pages `0x33` / `0x32` / `0x37` (public ANT+ FE-C); UI hooks after FRB regen |
 | Fitness Machine Status | — | Subscribe `0x2ADA`; stop/pause banner; control-lost → Error |
 | DEMO badge | Always when demo on | — |
 
@@ -126,6 +127,51 @@ Ship the Linux `bundle/` folder as-is (includes `lib/` + the Rust **cdylib**). O
 - After editing `rust/src/api/`, regenerate: `./scripts/gen_bridge.sh` (or `flutter_rust_bridge_codegen generate`).
 - Linux runners / local: ensure `LD_LIBRARY_PATH` includes `rust/target/debug` (or release) when loading the native lib outside a full Flutter bundle — see `scripts/test_all.sh`.
 
+
+## Windows build, run & release (primary desktop target)
+
+### Day-to-day
+
+```powershell
+git clone https://github.com/nielsver/tacx-desktop.git
+cd tacx-desktop
+flutter pub get
+flutter run -d windows
+```
+
+Requirements: Flutter 3.29+, Rust 1.75+, Visual Studio **Desktop development with C++**, Windows 10/11 BLE.
+
+### Bluetooth — leave the trainer unpaired
+
+1. Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad.
+2. In **Settings → Bluetooth & devices**, **Remove** / forget the trainer if it appears as a paired OS device.
+3. Power the trainer, **Scan** → **Connect** from Tacx Desktop only.
+
+OS pairing often breaks FTMS exclusive control on Windows.
+
+### Release zip
+
+```powershell
+# From Git Bash / WSL / or run the flutter command directly:
+flutter build windows --release
+# Artifact folder:
+#   build\windows\x64\runner\Release\
+# Zip that entire Release\ folder (exe + DLLs + data). Helper script:
+#   ./scripts/build_release.sh windows   # prints the same path
+```
+
+Ship the whole `Release\` directory — it includes the Flutter runner and the Rust **cdylib**.
+
+### Known toolchain pins
+
+| Pin | Why |
+| --- | --- |
+| `btleplug = "0.13"` | BLE stack (Windows WinRT / Linux BlueZ / macOS) |
+| `uuid = "=1.26.1"` | Keep MSRV on Rust **1.85+**; uuid 1.27 wants rustc 1.89 |
+| `flutter_rust_bridge = "=2.13.0"` | Matches generated bindings under `lib/src/rust/` |
+
+After editing `rust/src/api/`, run `./scripts/gen_bridge.sh` before relying on new Dart APIs.
+
 ## Architecture
 
 ```
@@ -150,9 +196,10 @@ Rust crate tacx_desktop_core
    - **Request Control** (`0x00`) → parse CP response (`0x80 …`); fail loudly on **NOCTRL** (`0x05`).
    - **Start/Resume** (`0x07`) → then notify stream for power/cadence/speed.
    - **Set Target Power** (`0x05`) / **Set Resistance** (`0x04`) clamp to Supported Power / Resistance Range and check CP result.
-   - Subscribe **Fitness Machine Status** (`0x2ADA`) when present — stop/pause surfaces in UI; **Control Permission Lost** (`0xFF`) → Error + Reconnect.
-4. Else if Tacx UART RX/TX (`6e40fec3…` / `6e40fec2…`) → **FE-C-over-BLE** path (pages 16+25; cmds `0x30` / `0x31`).
+   - Subscribe **Fitness Machine Status** (`0x2ADA`) when present — stop/pause surfaces in UI; **Control Permission Lost** (`0xFF`) → Error + Reconnect. If the characteristic is missing or subscribe fails, connect/control **continues** (soft-fail).
+4. Else if Tacx UART RX/TX (`6e40fec3…` / `6e40fec2…`) → **FE-C-over-BLE** path (pages 16+25; cmds `0x30` / `0x31`; simulation `0x32` Wind / `0x33` Track / `0x37` User Configuration).
    FE-C writes are rate-limited to **~4 Hz** with latest-wins coalescing so interval engines cannot flood the UART.
+   **Deferred:** Tacx NEO Road Feel / isokinetic (`0xFC` private-ish); FTMS Indoor Bike Simulation (`0x11`) UI.
 5. Else error: unsupported device (GATT summary included).
 
 ### Trainer inventory (FTMS vs FE-C-only)

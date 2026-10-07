@@ -19,7 +19,9 @@ build_one() {
     windows)
       flutter build windows --release
       echo "Output: build/windows/x64/runner/Release/"
-      echo "Zip the Release/ folder. Leave trainers unpaired in OS Bluetooth."
+      echo "Zip the entire Release/ folder (exe + DLLs + data + Rust cdylib)."
+      echo "Bluetooth: leave trainers UNPAIRED in Windows Settings → Bluetooth."
+      echo "Quit Zwift/Tacx/MyWhoosh before first Connect."
       ;;
     macos)
       flutter build macos --release

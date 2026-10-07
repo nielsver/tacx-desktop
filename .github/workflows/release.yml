@@ -2,7 +2,8 @@ name: Release
 
 # Builds ready-to-run desktop packages for Windows, Linux and macOS.
 # Run manually from the Actions tab (artifacts only), or push a tag like
-# v0.1.0 to also attach packages to a GitHub Release.
+# v0.1.0 to also publish a GitHub Release with all packages attached
+# (single `publish` job at the end).
 #
 # Linux (Garuda first): tar.gz + AppImage + .deb
 # Windows: zip + Inno Setup installer (Setup.exe)
@@ -64,14 +65,6 @@ jobs:
             ${{ env.PKG }}
             ${{ env.INSTALLER }}
           retention-days: 30
-      - name: Attach to GitHub Release (tags only)
-        if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            ${{ env.PKG }}
-            ${{ env.INSTALLER }}
-          generate_release_notes: true
 
   linux:
     name: Linux x64 release
@@ -149,15 +142,6 @@ jobs:
             ${{ env.APPIMAGE }}
             ${{ env.DEB }}
           retention-days: 30
-      - name: Attach to GitHub Release (tags only)
-        if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            ${{ env.PKG }}
-            ${{ env.APPIMAGE }}
-            ${{ env.DEB }}
-          generate_release_notes: true
 
   macos:
     name: macOS release (ad-hoc signed, not notarized)
@@ -199,9 +183,34 @@ jobs:
           name: tacx-desktop-macos
           path: ${{ env.PKG }}
           retention-days: 30
-      - name: Attach to GitHub Release (tags only)
-        if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+
+  # One job creates/updates the GitHub Release after the builds finish, so the
+  # parallel build jobs never race to create the same release. Windows + Linux
+  # are required; the macOS zip is attached when that job succeeded.
+  publish:
+    name: Publish GitHub Release (tags only)
+    needs: [windows, linux, macos]
+    if: >-
+      always() && github.ref_type == 'tag' &&
+      needs.windows.result == 'success' && needs.linux.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          files: ${{ env.PKG }}
+          path: artifacts
+      - name: Collect release assets
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec mv -t release/ {} +
+          ls -la release
+          for pat in '*.AppImage' '*_amd64.deb' 'tacx-desktop-linux-x64-*.tar.gz' 'TacxDesktop-Setup-*.exe'; do
+            compgen -G "release/$pat" >/dev/null \
+              || { echo "::error::release asset $pat missing"; exit 1; }
+          done
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
           generate_release_notes: true

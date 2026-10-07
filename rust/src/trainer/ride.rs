@@ -27,6 +27,9 @@ pub struct RideAccumulator {
     max_power_w: f64,
     max_speed_kmh: f64,
     distance_m: f64,
+    hr_s: f64,
+    hr_bs: f64,
+    max_hr_bpm: u32,
     recording: bool,
 }
 
@@ -61,6 +64,11 @@ impl RideAccumulator {
             self.max_speed_kmh = v;
         }
         self.distance_m += v / 3.6 * dt;
+        if let Some(hr) = m.heart_rate_bpm.filter(|h| (25..=250).contains(h)) {
+            self.hr_s += dt;
+            self.hr_bs += hr as f64 * dt;
+            self.max_hr_bpm = self.max_hr_bpm.max(hr);
+        }
     }
 
     pub fn set_recording(&mut self, on: bool) {
@@ -85,6 +93,8 @@ impl RideAccumulator {
             max_power_w: s.max_power_w,
             avg_cadence_rpm: s.avg_cadence_rpm,
             energy_kj: s.energy_kj,
+            avg_heart_rate_bpm: s.avg_heart_rate_bpm,
+            max_heart_rate_bpm: s.max_heart_rate_bpm,
         }
     }
 
@@ -101,6 +111,8 @@ impl RideAccumulator {
             },
             energy_kj: self.power_ws / 1000.0,
             distance_km: self.distance_m / 1000.0,
+            avg_heart_rate_bpm: if self.hr_s > 0.0 { self.hr_bs / self.hr_s } else { 0.0 },
+            max_heart_rate_bpm: self.max_hr_bpm,
             recording: self.recording,
         }
     }
@@ -151,6 +163,7 @@ impl RideRecorder {
                         cadence_rpm: m.cadence_rpm,
                         speed_kmh: m.speed_kmh,
                         distance_m: self.acc.distance_m(),
+                        heart_rate_bpm: m.heart_rate_bpm,
                     });
                 }
             }
@@ -291,6 +304,26 @@ mod tests {
         assert!((s.avg_cadence_rpm - 90.0).abs() < 1e-9);
         assert_eq!(s.max_power_w, 200.0);
         assert!(s.recording);
+    }
+
+    #[test]
+    fn heart_rate_average_and_max_skip_missing_readings() {
+        let mut a = RideAccumulator::new();
+        let hr = |bpm: Option<u32>| TrainerMetrics { heart_rate_bpm: bpm, ..m(200.0, 90.0, 30.0) };
+        for _ in 0..30 {
+            a.add_sample(&hr(Some(120)), 1.0);
+        }
+        for _ in 0..30 {
+            a.add_sample(&hr(Some(160)), 1.0);
+        }
+        a.add_sample(&hr(None), 1.0); // strap dropped
+        a.add_sample(&hr(Some(255)), 1.0); // garbage
+        let s = a.stats();
+        assert!((s.avg_heart_rate_bpm - 140.0).abs() < 1e-9);
+        assert_eq!(s.max_heart_rate_bpm, 160);
+        let lap = a.lap_summary();
+        assert_eq!(lap.max_heart_rate_bpm, 160);
+        assert_eq!(RideAccumulator::new().stats().max_heart_rate_bpm, 0);
     }
 
     #[test]

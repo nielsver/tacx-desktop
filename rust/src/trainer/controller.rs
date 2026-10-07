@@ -1643,6 +1643,9 @@ async fn open_session(
                             if let Some(spd) = fec::parse_general_fe_speed(&msg) {
                                 m.speed_kmh = spd;
                             }
+                            if let Some(hr) = fec::parse_general_fe_heart_rate(&msg) {
+                                m.heart_rate_bpm = hr;
+                            }
                         }
                     }
                     if !peri_n.is_connected().await.unwrap_or(true) {
@@ -1912,6 +1915,9 @@ fn merge_ftms_metrics(m: &mut TrainerMetrics, data: &[u8]) {
     }
     if flags & 0x0040 != 0 {
         m.power_w = parsed.power_w;
+    }
+    if flags & 0x0200 != 0 {
+        m.heart_rate_bpm = parsed.heart_rate_bpm;
     }
 }
 

@@ -21,6 +21,7 @@ abstract final class RideColors {
   static const cadence = Color(0xFF81C784);
   static const speed = Color(0xFF64B5F6);
   static const control = Color(0xFFCE93D8);
+  static const heart = Color(0xFFF06292);
   static const danger = Color(0xFFEF5350);
   static const warn = Color(0xFFFFB74D);
   static const ok = Color(0xFF66BB6A);

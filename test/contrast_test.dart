@@ -19,6 +19,7 @@ void main() {
     'danger': RideColors.danger,
     'warn': RideColors.warn,
     'control': RideColors.control,
+    'heart': RideColors.heart,
   };
 
   for (final fg in aa.entries) {

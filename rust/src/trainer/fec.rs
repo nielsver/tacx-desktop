@@ -160,6 +160,15 @@ pub fn parse_general_fe_speed(message_data: &[u8]) -> Option<f64> {
     Some(mps * 3.6)
 }
 
+/// Parse page 16 general FE data for heart rate (byte 6). Outer `None` = not
+/// page 16; inner `None` = trainer reports no HR (0xFF / 0).
+pub fn parse_general_fe_heart_rate(message_data: &[u8]) -> Option<Option<u32>> {
+    if message_data.is_empty() || message_data[0] != 16 || message_data.len() < 7 {
+        return None;
+    }
+    Some(crate::trainer::ftms::valid_heart_rate(message_data[6]))
+}
+
 /// Extract FE-C payload from Tacx UART notification (ANT+ serial frame).
 pub fn extract_fec_message_data(packet: &[u8]) -> Option<Vec<u8>> {
     if packet.len() < 5 {
@@ -225,6 +234,17 @@ mod tests {
         assert_eq!(msg[0], 16);
         let spd = parse_general_fe_speed(&msg).unwrap();
         assert!((spd - 36.0).abs() < 0.05);
+        assert_eq!(parse_general_fe_heart_rate(&msg), Some(None), "0xFF = no HR");
+    }
+
+    #[test]
+    fn general_fe_heart_rate() {
+        let msg = [16u8, 25, 0, 0, 0x10, 0x27, 142, 0x20];
+        assert_eq!(parse_general_fe_heart_rate(&msg), Some(Some(142)));
+        let zero = [16u8, 25, 0, 0, 0x10, 0x27, 0, 0x20];
+        assert_eq!(parse_general_fe_heart_rate(&zero), Some(None));
+        let page25 = [25u8, 1, 90, 0, 0, 250, 0, 0];
+        assert_eq!(parse_general_fe_heart_rate(&page25), None);
     }
 
     #[test]

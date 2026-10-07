@@ -76,8 +76,28 @@ pub fn parse_indoor_bike_data(data: &[u8]) -> TrainerMetrics {
         }
         let raw = i16::from_le_bytes([data[offset], data[offset + 1]]);
         m.power_w = raw as f64;
+        offset += 2;
+    }
+    if flags & 0x0080 != 0 {
+        // Average Power (sint16)
+        offset += 2;
+    }
+    if flags & 0x0100 != 0 {
+        // Expended Energy: total uint16 + per hour uint16 + per minute uint8
+        offset += 5;
+    }
+    if flags & 0x0200 != 0 {
+        m.heart_rate_bpm = data.get(offset).copied().and_then(valid_heart_rate);
     }
     m
+}
+
+/// 0 means "no reading" on both FTMS and FE-C; 0xFF is FE-C "invalid".
+pub fn valid_heart_rate(raw: u8) -> Option<u32> {
+    match raw {
+        0 | 0xFF => None,
+        bpm => Some(bpm as u32),
+    }
 }
 
 pub fn parse_resistance_range(data: &[u8]) -> (ResistanceRange, i16) {
@@ -369,6 +389,37 @@ mod tests {
         assert!((m.speed_kmh - 30.0).abs() < 0.01);
         assert!((m.cadence_rpm - 90.0).abs() < 0.01);
         assert!((m.power_w - 200.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn parse_heart_rate_after_power_avg_and_energy() {
+        // speed, cadence, power, avg power, expended energy, heart rate
+        let flags: u16 = 0x0004 | 0x0040 | 0x0080 | 0x0100 | 0x0200;
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&flags.to_le_bytes());
+        payload.extend_from_slice(&3000u16.to_le_bytes());
+        payload.extend_from_slice(&180u16.to_le_bytes());
+        payload.extend_from_slice(&210i16.to_le_bytes());
+        payload.extend_from_slice(&190i16.to_le_bytes()); // avg power
+        payload.extend_from_slice(&[0x2C, 0x01, 0xFF, 0xFF, 0xFF]); // energy
+        payload.push(148);
+        let m = parse_indoor_bike_data(&payload);
+        assert!((m.power_w - 210.0).abs() < 0.01);
+        assert_eq!(m.heart_rate_bpm, Some(148));
+
+        // HR flag without energy fields; 0 = no reading; truncated = None.
+        let flags: u16 = 0x0040 | 0x0200;
+        let mut p2 = Vec::new();
+        p2.extend_from_slice(&flags.to_le_bytes());
+        p2.extend_from_slice(&1000u16.to_le_bytes());
+        p2.extend_from_slice(&150i16.to_le_bytes());
+        let truncated = p2.clone();
+        p2.push(0);
+        assert_eq!(parse_indoor_bike_data(&p2).heart_rate_bpm, None);
+        assert_eq!(parse_indoor_bike_data(&truncated).heart_rate_bpm, None);
+        p2.pop();
+        p2.push(97);
+        assert_eq!(parse_indoor_bike_data(&p2).heart_rate_bpm, Some(97));
     }
 
     #[test]

@@ -168,5 +168,14 @@ impl DemoTrainer {
                 m.target_power_w = None;
             }
         }
+        // Simulated chest strap: drifts 1 bpm per tick toward a power-based target.
+        let target_hr = (88.0 + m.power_w * 0.3).clamp(60.0, 185.0);
+        let prev = m.heart_rate_bpm.unwrap_or(95) as f64;
+        let next = if (target_hr - prev).abs() >= 1.0 {
+            prev + (target_hr - prev).signum()
+        } else {
+            prev
+        };
+        m.heart_rate_bpm = Some(next as u32);
     }
 }

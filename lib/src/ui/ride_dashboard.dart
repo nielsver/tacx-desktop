@@ -61,6 +61,8 @@ class _RideDashboardState extends State<RideDashboard> {
     avgCadenceRpm: 0,
     energyKj: 0,
     distanceKm: 0,
+    avgHeartRateBpm: 0,
+    maxHeartRateBpm: 0,
     recording: false,
   );
   final _presets = api.listIntervalPresets();
@@ -1461,6 +1463,18 @@ class _MetricsRow extends StatelessWidget {
               valueSize: RideType.metric,
             ),
           ),
+          if (metrics.heartRateBpm != null) ...[
+            const SizedBox(width: 12),
+            Expanded(
+              child: _MetricCard(
+                label: 'Heart rate',
+                value: '${metrics.heartRateBpm}',
+                unit: 'bpm',
+                accent: RideColors.heart,
+                valueSize: RideType.metric,
+              ),
+            ),
+          ],
           const SizedBox(width: 12),
           Expanded(
             child: _MetricCard(
@@ -1477,7 +1491,8 @@ class _MetricsRow extends StatelessWidget {
   }
 }
 
-/// Ride totals under the live metrics: time, avg/max power, cadence, kJ, km.
+/// Ride totals under the live metrics: time, avg/max power, cadence, kJ, km,
+/// and average heart rate when the trainer relays one.
 class RideSummaryStrip extends StatelessWidget {
   const RideSummaryStrip({
     super.key,
@@ -1510,6 +1525,8 @@ class RideSummaryStrip extends StatelessWidget {
       ('Cad', '${stats.avgCadenceRpm.toStringAsFixed(0)} rpm'),
       ('Work', '${stats.energyKj.toStringAsFixed(0)} kJ'),
       ('Dist', '${stats.distanceKm.toStringAsFixed(2)} km'),
+      if (stats.maxHeartRateBpm > 0)
+        ('HR', '${stats.avgHeartRateBpm.toStringAsFixed(0)} bpm'),
     ];
     return Container(
       height: 48,

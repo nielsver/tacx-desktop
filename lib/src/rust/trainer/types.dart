@@ -326,6 +326,12 @@ class RideStats {
   /// Integrated from trainer speed, km.
   final double distanceKm;
 
+  /// Time-weighted average heart rate over seconds with a reading, bpm (0 = none).
+  final double avgHeartRateBpm;
+
+  /// Highest heart rate seen, bpm (0 = none).
+  final int maxHeartRateBpm;
+
   /// True while samples are being added (trainer connected).
   final bool recording;
 
@@ -337,6 +343,8 @@ class RideStats {
     required this.avgCadenceRpm,
     required this.energyKj,
     required this.distanceKm,
+    required this.avgHeartRateBpm,
+    required this.maxHeartRateBpm,
     required this.recording,
   });
 
@@ -349,6 +357,8 @@ class RideStats {
       avgCadenceRpm.hashCode ^
       energyKj.hashCode ^
       distanceKm.hashCode ^
+      avgHeartRateBpm.hashCode ^
+      maxHeartRateBpm.hashCode ^
       recording.hashCode;
 
   @override
@@ -363,6 +373,8 @@ class RideStats {
           avgCadenceRpm == other.avgCadenceRpm &&
           energyKj == other.energyKj &&
           distanceKm == other.distanceKm &&
+          avgHeartRateBpm == other.avgHeartRateBpm &&
+          maxHeartRateBpm == other.maxHeartRateBpm &&
           recording == other.recording;
 }
 
@@ -373,12 +385,17 @@ class TrainerMetrics {
   final double? targetPowerW;
   final double? resistancePct;
 
+  /// Heart rate relayed by the trainer (FTMS Indoor Bike Data bit 9 or FE-C
+  /// page 16 byte 6), bpm. `None` when the trainer has no HR source.
+  final int? heartRateBpm;
+
   const TrainerMetrics({
     required this.powerW,
     required this.cadenceRpm,
     required this.speedKmh,
     this.targetPowerW,
     this.resistancePct,
+    this.heartRateBpm,
   });
 
   @override
@@ -387,7 +404,8 @@ class TrainerMetrics {
       cadenceRpm.hashCode ^
       speedKmh.hashCode ^
       targetPowerW.hashCode ^
-      resistancePct.hashCode;
+      resistancePct.hashCode ^
+      heartRateBpm.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -398,5 +416,6 @@ class TrainerMetrics {
           cadenceRpm == other.cadenceRpm &&
           speedKmh == other.speedKmh &&
           targetPowerW == other.targetPowerW &&
-          resistancePct == other.resistancePct;
+          resistancePct == other.resistancePct &&
+          heartRateBpm == other.heartRateBpm;
 }

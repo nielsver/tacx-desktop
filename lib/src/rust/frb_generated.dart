@@ -963,6 +963,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int dco_decode_box_autoadd_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
+  }
+
+  @protected
   ConnectionSnapshot dco_decode_connection_snapshot(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -1091,6 +1097,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int? dco_decode_opt_box_autoadd_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_u_32(raw);
+  }
+
+  @protected
   PowerRange dco_decode_power_range(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -1126,8 +1138,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RideStats dco_decode_ride_stats(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return RideStats(
       elapsedS: dco_decode_u_32(arr[0]),
       movingS: dco_decode_u_32(arr[1]),
@@ -1136,7 +1148,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       avgCadenceRpm: dco_decode_f_64(arr[4]),
       energyKj: dco_decode_f_64(arr[5]),
       distanceKm: dco_decode_f_64(arr[6]),
-      recording: dco_decode_bool(arr[7]),
+      avgHeartRateBpm: dco_decode_f_64(arr[7]),
+      maxHeartRateBpm: dco_decode_u_32(arr[8]),
+      recording: dco_decode_bool(arr[9]),
     );
   }
 
@@ -1144,14 +1158,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TrainerMetrics dco_decode_trainer_metrics(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return TrainerMetrics(
       powerW: dco_decode_f_64(arr[0]),
       cadenceRpm: dco_decode_f_64(arr[1]),
       speedKmh: dco_decode_f_64(arr[2]),
       targetPowerW: dco_decode_opt_box_autoadd_f_64(arr[3]),
       resistancePct: dco_decode_opt_box_autoadd_f_64(arr[4]),
+      heartRateBpm: dco_decode_opt_box_autoadd_u_32(arr[5]),
     );
   }
 
@@ -1216,6 +1231,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int sse_decode_box_autoadd_i_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_i_32(deserializer));
+  }
+
+  @protected
+  int sse_decode_box_autoadd_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_u_32(deserializer));
   }
 
   @protected
@@ -1401,6 +1422,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_u_32(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   PowerRange sse_decode_power_range(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_minW = sse_decode_u_32(deserializer);
@@ -1439,6 +1471,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_avgCadenceRpm = sse_decode_f_64(deserializer);
     var var_energyKj = sse_decode_f_64(deserializer);
     var var_distanceKm = sse_decode_f_64(deserializer);
+    var var_avgHeartRateBpm = sse_decode_f_64(deserializer);
+    var var_maxHeartRateBpm = sse_decode_u_32(deserializer);
     var var_recording = sse_decode_bool(deserializer);
     return RideStats(
       elapsedS: var_elapsedS,
@@ -1448,6 +1482,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       avgCadenceRpm: var_avgCadenceRpm,
       energyKj: var_energyKj,
       distanceKm: var_distanceKm,
+      avgHeartRateBpm: var_avgHeartRateBpm,
+      maxHeartRateBpm: var_maxHeartRateBpm,
       recording: var_recording,
     );
   }
@@ -1460,12 +1496,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_speedKmh = sse_decode_f_64(deserializer);
     var var_targetPowerW = sse_decode_opt_box_autoadd_f_64(deserializer);
     var var_resistancePct = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_heartRateBpm = sse_decode_opt_box_autoadd_u_32(deserializer);
     return TrainerMetrics(
       powerW: var_powerW,
       cadenceRpm: var_cadenceRpm,
       speedKmh: var_speedKmh,
       targetPowerW: var_targetPowerW,
       resistancePct: var_resistancePct,
+      heartRateBpm: var_heartRateBpm,
     );
   }
 
@@ -1528,6 +1566,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self, serializer);
   }
 
   @protected
@@ -1682,6 +1726,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_u_32(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_power_range(PowerRange self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.minW, serializer);
@@ -1716,6 +1770,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_f_64(self.avgCadenceRpm, serializer);
     sse_encode_f_64(self.energyKj, serializer);
     sse_encode_f_64(self.distanceKm, serializer);
+    sse_encode_f_64(self.avgHeartRateBpm, serializer);
+    sse_encode_u_32(self.maxHeartRateBpm, serializer);
     sse_encode_bool(self.recording, serializer);
   }
 
@@ -1730,6 +1786,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_f_64(self.speedKmh, serializer);
     sse_encode_opt_box_autoadd_f_64(self.targetPowerW, serializer);
     sse_encode_opt_box_autoadd_f_64(self.resistancePct, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.heartRateBpm, serializer);
   }
 
   @protected

@@ -8,16 +8,19 @@ import 'package:tacx_desktop/src/rust/frb_generated.dart';
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
 import 'package:tacx_desktop/src/ui/ride_dashboard.dart';
 
-RideStats _stats({int elapsed = 0, bool recording = false}) => RideStats(
-  elapsedS: elapsed,
-  movingS: elapsed,
-  avgPowerW: 182.4,
-  maxPowerW: 412,
-  avgCadenceRpm: 88.6,
-  energyKj: 135.2,
-  distanceKm: 8.437,
-  recording: recording,
-);
+RideStats _stats({int elapsed = 0, bool recording = false, int maxHr = 0}) =>
+    RideStats(
+      elapsedS: elapsed,
+      movingS: elapsed,
+      avgPowerW: 182.4,
+      maxPowerW: 412,
+      avgCadenceRpm: 88.6,
+      energyKj: 135.2,
+      distanceKm: 8.437,
+      avgHeartRateBpm: maxHr > 0 ? 142.4 : 0,
+      maxHeartRateBpm: maxHr,
+      recording: recording,
+    );
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -53,6 +56,28 @@ void main() {
     expect(find.byIcon(Icons.fiber_manual_record), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('ride-reset')));
     expect(resets, 1);
+  });
+
+  testWidgets('strip shows average heart rate only when the trainer sent one', (
+    tester,
+  ) async {
+    Widget strip(int maxHr) => MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 1100,
+          child: RideSummaryStrip(
+            stats: _stats(elapsed: 60, maxHr: maxHr),
+            onReset: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(strip(0));
+    expect(find.byKey(const ValueKey('ride-hr')), findsNothing);
+    await tester.pumpWidget(strip(171));
+    expect(find.byKey(const ValueKey('ride-hr')), findsOneWidget);
+    expect(find.text('142 bpm'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Save TCX is disabled until something was recorded', (

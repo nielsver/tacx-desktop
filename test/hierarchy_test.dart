@@ -68,6 +68,27 @@ void main() {
     );
   });
 
+  testWidgets('Heart rate card appears when the trainer relays HR', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _connectDemo(tester);
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 400)),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.takeException(), isNull);
+    final hr = find.byKey(const ValueKey('metric-heart rate'));
+    expect(hr, findsOneWidget);
+    expect(find.descendant(of: hr, matching: find.text('bpm')), findsOneWidget);
+    final power = tester.getRect(find.byKey(const ValueKey('metric-power')));
+    final r = tester.getRect(hr);
+    expect(power.left, lessThan(r.left));
+    expect(power.width, greaterThan(r.width * 1.5));
+    expect(_largestFont(tester, hr), lessThanOrEqualTo(RideType.metric));
+  });
+
   testWidgets('Stack order: metrics, then controls, then simulation', (
     tester,
   ) async {

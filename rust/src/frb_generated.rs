@@ -468,6 +468,15 @@ return crate::trainer::types::IntervalStatus{running: var_running, phase: var_ph
             }}
                 }
                 
+                impl SseDecode for Option<u32> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {if (<bool>::sse_decode(deserializer)) {
+                return Some(<u32>::sse_decode(deserializer));
+            } else {
+                return None;
+            }}
+                }
+                
                 impl SseDecode for crate::trainer::types::PowerRange {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_minW = <u32>::sse_decode(deserializer);
@@ -504,8 +513,10 @@ let mut var_maxPowerW = <f64>::sse_decode(deserializer);
 let mut var_avgCadenceRpm = <f64>::sse_decode(deserializer);
 let mut var_energyKj = <f64>::sse_decode(deserializer);
 let mut var_distanceKm = <f64>::sse_decode(deserializer);
+let mut var_avgHeartRateBpm = <f64>::sse_decode(deserializer);
+let mut var_maxHeartRateBpm = <u32>::sse_decode(deserializer);
 let mut var_recording = <bool>::sse_decode(deserializer);
-return crate::trainer::types::RideStats{elapsed_s: var_elapsedS, moving_s: var_movingS, avg_power_w: var_avgPowerW, max_power_w: var_maxPowerW, avg_cadence_rpm: var_avgCadenceRpm, energy_kj: var_energyKj, distance_km: var_distanceKm, recording: var_recording};}
+return crate::trainer::types::RideStats{elapsed_s: var_elapsedS, moving_s: var_movingS, avg_power_w: var_avgPowerW, max_power_w: var_maxPowerW, avg_cadence_rpm: var_avgCadenceRpm, energy_kj: var_energyKj, distance_km: var_distanceKm, avg_heart_rate_bpm: var_avgHeartRateBpm, max_heart_rate_bpm: var_maxHeartRateBpm, recording: var_recording};}
                 }
                 
                 impl SseDecode for crate::trainer::types::TrainerMetrics {
@@ -515,7 +526,8 @@ let mut var_cadenceRpm = <f64>::sse_decode(deserializer);
 let mut var_speedKmh = <f64>::sse_decode(deserializer);
 let mut var_targetPowerW = <Option<f64>>::sse_decode(deserializer);
 let mut var_resistancePct = <Option<f64>>::sse_decode(deserializer);
-return crate::trainer::types::TrainerMetrics{power_w: var_powerW, cadence_rpm: var_cadenceRpm, speed_kmh: var_speedKmh, target_power_w: var_targetPowerW, resistance_pct: var_resistancePct};}
+let mut var_heartRateBpm = <Option<u32>>::sse_decode(deserializer);
+return crate::trainer::types::TrainerMetrics{power_w: var_powerW, cadence_rpm: var_cadenceRpm, speed_kmh: var_speedKmh, target_power_w: var_targetPowerW, resistance_pct: var_resistancePct, heart_rate_bpm: var_heartRateBpm};}
                 }
                 
                 impl SseDecode for u32 {
@@ -801,6 +813,8 @@ self.max_power_w.into_into_dart().into_dart(),
 self.avg_cadence_rpm.into_into_dart().into_dart(),
 self.energy_kj.into_into_dart().into_dart(),
 self.distance_km.into_into_dart().into_dart(),
+self.avg_heart_rate_bpm.into_into_dart().into_dart(),
+self.max_heart_rate_bpm.into_into_dart().into_dart(),
 self.recording.into_into_dart().into_dart()
                 ].into_dart()
                 }
@@ -819,7 +833,8 @@ impl flutter_rust_bridge::IntoIntoDart<crate::trainer::types::RideStats> for cra
 self.cadence_rpm.into_into_dart().into_dart(),
 self.speed_kmh.into_into_dart().into_dart(),
 self.target_power_w.into_into_dart().into_dart(),
-self.resistance_pct.into_into_dart().into_dart()
+self.resistance_pct.into_into_dart().into_dart(),
+self.heart_rate_bpm.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -973,6 +988,14 @@ crate::trainer::types::ControlMode::Simulation => { 3 }
                 }}
                 }
                 
+                impl SseEncode for Option<u32> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<bool>::sse_encode(self.is_some(), serializer);
+                if let Some(value) = self {
+                    <u32>::sse_encode(value, serializer);
+                }}
+                }
+                
                 impl SseEncode for crate::trainer::types::PowerRange {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<u32>::sse_encode(self.min_w, serializer);
@@ -1004,6 +1027,8 @@ crate::trainer::types::ProtocolKind::TacxFecBle => { 2 }
 <f64>::sse_encode(self.avg_cadence_rpm, serializer);
 <f64>::sse_encode(self.energy_kj, serializer);
 <f64>::sse_encode(self.distance_km, serializer);
+<f64>::sse_encode(self.avg_heart_rate_bpm, serializer);
+<u32>::sse_encode(self.max_heart_rate_bpm, serializer);
 <bool>::sse_encode(self.recording, serializer);}
                 }
                 
@@ -1013,7 +1038,8 @@ crate::trainer::types::ProtocolKind::TacxFecBle => { 2 }
 <f64>::sse_encode(self.cadence_rpm, serializer);
 <f64>::sse_encode(self.speed_kmh, serializer);
 <Option<f64>>::sse_encode(self.target_power_w, serializer);
-<Option<f64>>::sse_encode(self.resistance_pct, serializer);}
+<Option<f64>>::sse_encode(self.resistance_pct, serializer);
+<Option<u32>>::sse_encode(self.heart_rate_bpm, serializer);}
                 }
                 
                 impl SseEncode for u32 {

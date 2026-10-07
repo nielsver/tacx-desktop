@@ -7,6 +7,9 @@ pub struct TrainerMetrics {
     pub speed_kmh: f64,
     pub target_power_w: Option<f64>,
     pub resistance_pct: Option<f64>,
+    /// Heart rate relayed by the trainer (FTMS Indoor Bike Data bit 9 or FE-C
+    /// page 16 byte 6), bpm. `None` when the trainer has no HR source.
+    pub heart_rate_bpm: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -264,6 +267,10 @@ pub struct RideStats {
     pub energy_kj: f64,
     /// Integrated from trainer speed, km.
     pub distance_km: f64,
+    /// Time-weighted average heart rate over seconds with a reading, bpm (0 = none).
+    pub avg_heart_rate_bpm: f64,
+    /// Highest heart rate seen, bpm (0 = none).
+    pub max_heart_rate_bpm: u32,
     /// True while samples are being added (trainer connected).
     pub recording: bool,
 }

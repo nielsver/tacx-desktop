@@ -14,6 +14,8 @@ pub struct TrackPoint {
     pub speed_kmh: f64,
     /// Cumulative distance at this point, metres.
     pub distance_m: f64,
+    /// Heart rate relayed by the trainer, bpm.
+    pub heart_rate_bpm: Option<u32>,
 }
 
 /// Lap totals written into the TCX header.
@@ -26,6 +28,9 @@ pub struct LapSummary {
     pub max_power_w: f64,
     pub avg_cadence_rpm: f64,
     pub energy_kj: f64,
+    /// 0 = no heart-rate readings in this lap.
+    pub avg_heart_rate_bpm: f64,
+    pub max_heart_rate_bpm: u32,
 }
 
 /// Days since 1970-01-01 → (year, month, day). Howard Hinnant's algorithm.
@@ -103,6 +108,17 @@ http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd\">\n",
         "        <Calories>{}</Calories>\n",
         num(lap.energy_kj, 60_000.0).round() as u32
     ));
+    // TCX HeartRateInBeatsPerMinute_t is an unsignedByte >= 1.
+    let avg_hr = num(lap.avg_heart_rate_bpm, 255.0).round() as u32;
+    if avg_hr >= 1 && lap.max_heart_rate_bpm >= 1 {
+        out.push_str(&format!(
+            "        <AverageHeartRateBpm>\n          <Value>{avg_hr}</Value>\n        </AverageHeartRateBpm>\n"
+        ));
+        out.push_str(&format!(
+            "        <MaximumHeartRateBpm>\n          <Value>{}</Value>\n        </MaximumHeartRateBpm>\n",
+            lap.max_heart_rate_bpm.min(255)
+        ));
+    }
     out.push_str("        <Intensity>Active</Intensity>\n");
     let avg_cad = num(lap.avg_cadence_rpm, 254.0).round() as u32;
     if avg_cad > 0 {
@@ -117,6 +133,11 @@ http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd\">\n",
             "            <DistanceMeters>{:.1}</DistanceMeters>\n",
             num(p.distance_m, 1e8)
         ));
+        if let Some(hr) = p.heart_rate_bpm.filter(|h| (1..=255).contains(h)) {
+            out.push_str(&format!(
+                "            <HeartRateBpm>\n              <Value>{hr}</Value>\n            </HeartRateBpm>\n"
+            ));
+        }
         out.push_str(&format!(
             "            <Cadence>{}</Cadence>\n",
             num(p.cadence_rpm, 254.0).round() as u32
@@ -189,6 +210,7 @@ mod tests {
                 cadence_rpm: 90.0,
                 speed_kmh: 36.0,
                 distance_m: 10.0 * i as f64,
+                heart_rate_bpm: None,
             })
             .collect();
         let lap = LapSummary {
@@ -199,6 +221,7 @@ mod tests {
             max_power_w: 202.0,
             avg_cadence_rpm: 90.0,
             energy_kj: 0.6,
+            ..Default::default()
         };
         let x = render(&pts, &lap).unwrap();
         assert!(x.starts_with("<?xml"));
@@ -234,12 +257,47 @@ mod tests {
             cadence_rpm: 9999.0,
             speed_kmh: -3.0,
             distance_m: f64::INFINITY,
+            heart_rate_bpm: Some(0),
         }];
         let x = render(&pts, &LapSummary::default()).unwrap();
         assert!(x.contains("<ns3:Watts>0</ns3:Watts>"));
         assert!(x.contains("<Cadence>254</Cadence>"));
         assert!(x.contains("<ns3:Speed>0.000</ns3:Speed>"));
         assert!(!x.contains("NaN") && !x.contains("inf"));
+        assert!(!x.contains("HeartRateBpm"), "0 bpm is not a valid TCX value");
+    }
+
+    #[test]
+    fn heart_rate_in_trackpoints_and_lap() {
+        let pts: Vec<TrackPoint> = (0..2)
+            .map(|i| TrackPoint {
+                unix_ms: 1_791_385_000_000 + i * 1000,
+                power_w: 200.0,
+                cadence_rpm: 90.0,
+                speed_kmh: 36.0,
+                distance_m: 10.0 * i as f64,
+                heart_rate_bpm: if i == 0 { None } else { Some(141) },
+            })
+            .collect();
+        let lap = LapSummary {
+            total_time_s: 2.0,
+            avg_heart_rate_bpm: 140.6,
+            max_heart_rate_bpm: 141,
+            ..Default::default()
+        };
+        let x = render(&pts, &lap).unwrap();
+        assert_eq!(x.matches("<HeartRateBpm>").count(), 1);
+        assert!(x.contains("<HeartRateBpm>\n              <Value>141</Value>"));
+        assert!(x.contains("<AverageHeartRateBpm>\n          <Value>141</Value>"));
+        assert!(x.contains("<MaximumHeartRateBpm>\n          <Value>141</Value>"));
+        // Schema order: Calories < AverageHR < MaximumHR < Intensity; DistanceMeters < HR < Cadence.
+        let i = |s: &str| x.find(s).unwrap();
+        assert!(i("<Calories>") < i("<AverageHeartRateBpm>"));
+        assert!(i("<AverageHeartRateBpm>") < i("<MaximumHeartRateBpm>"));
+        assert!(i("<MaximumHeartRateBpm>") < i("<Intensity>"));
+        let tp = &x[x.rfind("<Trackpoint>").unwrap()..];
+        assert!(tp.find("<DistanceMeters>").unwrap() < tp.find("<HeartRateBpm>").unwrap());
+        assert!(tp.find("<HeartRateBpm>").unwrap() < tp.find("<Cadence>").unwrap());
     }
 }
 

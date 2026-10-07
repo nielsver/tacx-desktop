@@ -192,7 +192,7 @@ class _RideDashboardState extends State<RideDashboard> {
                   message,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 14,
+                    fontSize: RideType.body,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -523,7 +523,7 @@ class _RideDashboardState extends State<RideDashboard> {
                           'in OS Bluetooth settings.',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: RideColors.textMuted,
-                            fontSize: 11,
+                            fontSize: RideType.footnote,
                           ),
                         ),
                       ],
@@ -593,7 +593,7 @@ class _StatusStrip extends StatelessWidget {
                 message,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 13,
+                  fontSize: RideType.label,
                   height: 1.3,
                   fontWeight: FontWeight.w500,
                 ),
@@ -635,7 +635,7 @@ class _Header extends StatelessWidget {
           const Text(
             'Tacx Desktop',
             style: TextStyle(
-              fontSize: 20,
+              fontSize: RideType.header,
               fontWeight: FontWeight.w700,
               color: Colors.white,
               letterSpacing: -0.2,
@@ -653,7 +653,7 @@ class _Header extends StatelessWidget {
                 'DEMO',
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  fontSize: 12,
+                  fontSize: RideType.caption,
                   letterSpacing: 0.6,
                   color: Colors.white,
                 ),
@@ -667,14 +667,20 @@ class _Header extends StatelessWidget {
               padding: const EdgeInsets.only(right: 12),
               child: Text(
                 '${snap.deviceName} · ${_protocolShort(snap.protocol)}',
-                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: RideType.label,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             )
           else
             Text(
               _protocolShort(snap.protocol),
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: RideType.label,
+              ),
             ),
           const SizedBox(width: 12),
           const Text('Demo', style: TextStyle(color: Colors.white)),
@@ -719,7 +725,7 @@ class _ModeChip extends StatelessWidget {
         label,
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 12,
+          fontSize: RideType.caption,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -796,7 +802,7 @@ class _ConnectionBar extends StatelessWidget {
                           '${_stateLabel(snap.state)}${snap.detail.isEmpty ? '' : ' · ${snap.detail}'}',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            fontSize: 13,
+                            fontSize: RideType.label,
                             color: stateColor,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -919,7 +925,7 @@ class _DeviceRow extends StatelessWidget {
           child: Text(
             protocolLabel(hint),
             style: TextStyle(
-              fontSize: 11,
+              fontSize: RideType.footnote,
               fontWeight: FontWeight.w700,
               color: chipColor,
             ),
@@ -999,7 +1005,7 @@ class _EmptyScanPanel extends StatelessWidget {
                   const Text(
                     'No trainers found',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: RideType.title,
                       fontWeight: FontWeight.w700,
                       color: RideColors.textPrimary,
                     ),
@@ -1010,7 +1016,7 @@ class _EmptyScanPanel extends StatelessWidget {
                     '• Wake the trainer and stand nearby\n'
                     '• Windows: leave the trainer unpaired in Bluetooth settings',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: RideType.label,
                       height: 1.45,
                       color: RideColors.textSecondary,
                     ),
@@ -1080,7 +1086,7 @@ class _PermissionDeniedPanel extends StatelessWidget {
                   const Text(
                     'Bluetooth permission denied',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: RideType.title,
                       fontWeight: FontWeight.w700,
                       color: RideColors.textPrimary,
                     ),
@@ -1089,7 +1095,7 @@ class _PermissionDeniedPanel extends StatelessWidget {
                   Text(
                     steps,
                     style: const TextStyle(
-                      fontSize: 13,
+                      fontSize: RideType.label,
                       height: 1.45,
                       color: RideColors.textSecondary,
                     ),
@@ -1146,7 +1152,7 @@ class _MetricsRow extends StatelessWidget {
               value: metrics.powerW.toStringAsFixed(0),
               unit: 'W',
               accent: RideColors.power,
-              valueSize: 48,
+              valueSize: RideType.hero,
             ),
           ),
           const SizedBox(width: 12),
@@ -1156,7 +1162,7 @@ class _MetricsRow extends StatelessWidget {
               value: metrics.cadenceRpm.toStringAsFixed(0),
               unit: 'rpm',
               accent: RideColors.cadence,
-              valueSize: 18,
+              valueSize: RideType.metric,
             ),
           ),
           const SizedBox(width: 12),
@@ -1166,7 +1172,7 @@ class _MetricsRow extends StatelessWidget {
               value: metrics.speedKmh.toStringAsFixed(1),
               unit: 'km/h',
               accent: RideColors.speed,
-              valueSize: 18,
+              valueSize: RideType.metric,
             ),
           ),
           const SizedBox(width: 12),
@@ -1176,7 +1182,7 @@ class _MetricsRow extends StatelessWidget {
               value: control,
               unit: '',
               accent: RideColors.control,
-              valueSize: 14,
+              valueSize: RideType.body,
             ),
           ),
         ],
@@ -1229,7 +1235,7 @@ class _MetricCard extends StatelessWidget {
             label.toUpperCase(),
             style: TextStyle(
               color: accent.withValues(alpha: 0.95),
-              fontSize: 11,
+              fontSize: RideType.footnote,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
             ),
@@ -1257,7 +1263,7 @@ class _MetricCard extends StatelessWidget {
                   Text(
                     unit,
                     style: const TextStyle(
-                      fontSize: 12,
+                      fontSize: RideType.caption,
                       fontWeight: FontWeight.w600,
                       color: RideColors.textSecondary,
                     ),
@@ -1321,7 +1327,7 @@ class _ErgPanelState extends State<_ErgPanel> {
             Text(
               '${widget.targetWatts}',
               style: const TextStyle(
-                fontSize: 40,
+                fontSize: RideType.target,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -1,
                 height: 1,
@@ -1330,7 +1336,7 @@ class _ErgPanelState extends State<_ErgPanel> {
             const Text(
               'W pending',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: RideType.caption,
                 color: RideColors.textSecondary,
                 fontWeight: FontWeight.w600,
               ),
@@ -1340,7 +1346,7 @@ class _ErgPanelState extends State<_ErgPanel> {
               Text(
                 'Trainer at ${live}W — tap Apply',
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: RideType.caption,
                   color: RideColors.warn,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1350,7 +1356,7 @@ class _ErgPanelState extends State<_ErgPanel> {
               Text(
                 'Trainer at ${live}W',
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: RideType.caption,
                   color: RideColors.ok,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1380,7 +1386,7 @@ class _ErgPanelState extends State<_ErgPanel> {
                     label: Text(
                       '${w}W',
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: RideType.label,
                         fontWeight: FontWeight.w700,
                         color: w == widget.targetWatts
                             ? RideColors.accent
@@ -1414,7 +1420,10 @@ class _ErgPanelState extends State<_ErgPanel> {
                       ),
                     ),
                     onPressed: widget.enabled ? () => widget.onNudge(-1) : null,
-                    child: const Text('−', style: TextStyle(fontSize: 22)),
+                    child: const Text(
+                      '−',
+                      style: TextStyle(fontSize: RideType.glyph),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1429,7 +1438,10 @@ class _ErgPanelState extends State<_ErgPanel> {
                       ),
                     ),
                     onPressed: widget.enabled ? () => widget.onNudge(1) : null,
-                    child: const Text('+', style: TextStyle(fontSize: 22)),
+                    child: const Text(
+                      '+',
+                      style: TextStyle(fontSize: RideType.glyph),
+                    ),
                   ),
                 ),
               ],
@@ -1510,7 +1522,7 @@ class _ResistancePanel extends StatelessWidget {
             Text(
               percent.toStringAsFixed(0),
               style: const TextStyle(
-                fontSize: 40,
+                fontSize: RideType.target,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -1,
                 height: 1,
@@ -1519,7 +1531,7 @@ class _ResistancePanel extends StatelessWidget {
             const Text(
               '%',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: RideType.caption,
                 color: RideColors.textSecondary,
                 fontWeight: FontWeight.w600,
               ),
@@ -1539,7 +1551,7 @@ class _ResistancePanel extends StatelessWidget {
               'Range ${range.minPct.toStringAsFixed(0)}–${range.maxPct.toStringAsFixed(0)}% · step ${range.stepPct.toStringAsFixed(1)}',
               style: const TextStyle(
                 color: RideColors.textSecondary,
-                fontSize: 12,
+                fontSize: RideType.caption,
               ),
             ),
             const SizedBox(height: 4),
@@ -1552,7 +1564,7 @@ class _ResistancePanel extends StatelessWidget {
                       'Apply on release',
                       style: TextStyle(
                         color: RideColors.textSecondary,
-                        fontSize: 12,
+                        fontSize: RideType.caption,
                       ),
                     ),
                   ),
@@ -1605,7 +1617,7 @@ class _IntervalPanel extends StatelessWidget {
             status.statusText,
             style: const TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
+              fontSize: RideType.label,
               color: RideColors.textPrimary,
             ),
           ),
@@ -1627,7 +1639,7 @@ class _IntervalPanel extends StatelessWidget {
                       '${p.workWatts}W / ${p.restWatts}W — ${p.description}',
                       style: const TextStyle(
                         color: RideColors.textSecondary,
-                        fontSize: 12,
+                        fontSize: RideType.caption,
                       ),
                     ),
                   ),
@@ -1718,7 +1730,7 @@ class _SimulationPanel extends StatelessWidget {
                       const Text(
                         'Simulation',
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: RideType.title,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -1732,7 +1744,7 @@ class _SimulationPanel extends StatelessWidget {
                             color: supportsSimulation
                                 ? RideColors.textSecondary
                                 : RideColors.textMuted,
-                            fontSize: 12,
+                            fontSize: RideType.caption,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1751,7 +1763,7 @@ class _SimulationPanel extends StatelessWidget {
                   'Grade ${gradePct.toStringAsFixed(1)} %',
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                    fontSize: RideType.label,
                   ),
                 ),
                 Slider(
@@ -1766,7 +1778,7 @@ class _SimulationPanel extends StatelessWidget {
                   'Wind ${windKmh.toStringAsFixed(0)} km/h',
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                    fontSize: RideType.label,
                   ),
                 ),
                 Slider(
@@ -1794,7 +1806,7 @@ class _SimulationPanel extends StatelessWidget {
                               'Crr ${crr.toStringAsFixed(4)}',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
-                                fontSize: 12,
+                                fontSize: RideType.caption,
                               ),
                             ),
                             Slider(
@@ -1817,7 +1829,7 @@ class _SimulationPanel extends StatelessWidget {
                               'Cw ${cw.toStringAsFixed(2)} kg/m',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
-                                fontSize: 12,
+                                fontSize: RideType.caption,
                               ),
                             ),
                             Slider(
@@ -1841,7 +1853,7 @@ class _SimulationPanel extends StatelessWidget {
                               'Rider ${userWeightKg.toStringAsFixed(0)} kg',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
-                                fontSize: 12,
+                                fontSize: RideType.caption,
                               ),
                             ),
                             Slider(
@@ -1888,7 +1900,7 @@ class _Panel extends StatelessWidget {
             Text(
               title,
               style: const TextStyle(
-                fontSize: 16,
+                fontSize: RideType.title,
                 fontWeight: FontWeight.w700,
                 color: RideColors.textPrimary,
               ),

@@ -39,6 +39,10 @@ A new Flutter FFI plugin project.
     'DEFINES_MODULE' => 'YES',
     # Flutter.framework does not contain a i386 slice.
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
-    'OTHER_LDFLAGS' => '-force_load ${BUILT_PRODUCTS_DIR}/libtacx_desktop_core.a',
+    # btleplug's CoreBluetooth backend needs these system frameworks linked,
+    # otherwise the release link fails with undefined _CBAdvertisementData* /
+    # _CBCentralManager* symbols.
+    'OTHER_LDFLAGS' => '-force_load ${BUILT_PRODUCTS_DIR}/libtacx_desktop_core.a -framework CoreBluetooth -framework Foundation',
   }
+  s.frameworks = 'CoreBluetooth', 'Foundation'
 end

@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tacx_desktop/main.dart';
+import 'package:tacx_desktop/src/rust/api/trainer.dart';
 import 'package:tacx_desktop/src/rust/frb_generated.dart';
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
 import 'package:tacx_desktop/src/ui/ride_dashboard.dart';
@@ -50,6 +53,45 @@ void main() {
     expect(find.byIcon(Icons.fiber_manual_record), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('ride-reset')));
     expect(resets, 1);
+  });
+
+  testWidgets('Save TCX is disabled until something was recorded', (
+    tester,
+  ) async {
+    var exports = 0;
+    Widget strip(int elapsed) => MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 1100,
+          child: RideSummaryStrip(
+            stats: _stats(elapsed: elapsed),
+            onReset: () {},
+            onExport: () => exports++,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(strip(0));
+    final btn = find.byKey(const ValueKey('ride-export'));
+    expect(btn, findsOneWidget);
+    await tester.tap(btn);
+    expect(exports, 0);
+    await tester.pumpWidget(strip(60));
+    await tester.tap(btn);
+    expect(exports, 1);
+    expect(tester.getSize(btn).height, greaterThanOrEqualTo(44));
+  });
+
+  test('default export folder is named Tacx Desktop', () {
+    expect(defaultRideExportDir(), endsWith('Tacx Desktop'));
+  });
+
+  test('export with nothing recorded returns a friendly error', () async {
+    resetRideStats();
+    await expectLater(
+      exportRideTcx(dir: Directory.systemTemp.path),
+      throwsA(contains('Nothing recorded')),
+    );
   });
 
   testWidgets('dashboard places ride summary between metrics and controls', (

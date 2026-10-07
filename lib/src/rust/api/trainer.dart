@@ -110,6 +110,16 @@ RideStats getRideStats() => RustLib.instance.api.crateApiTrainerGetRideStats();
 /// Zero the ride totals (keeps recording if a trainer is connected).
 void resetRideStats() => RustLib.instance.api.crateApiTrainerResetRideStats();
 
+/// Save the current ride as a Garmin TCX file (Garmin Connect / Strava /
+/// intervals.icu upload). `dir = None` writes to `~/Documents/Tacx Desktop`.
+/// Returns the full path of the written file.
+Future<String> exportRideTcx({String? dir}) =>
+    RustLib.instance.api.crateApiTrainerExportRideTcx(dir: dir);
+
+/// Folder [`export_ride_tcx`] uses when no directory is given.
+String defaultRideExportDir() =>
+    RustLib.instance.api.crateApiTrainerDefaultRideExportDir();
+
 /// Headless smoke test used by CI / README.
 Future<String> runHeadlessDemoSmoke() =>
     RustLib.instance.api.crateApiTrainerRunHeadlessDemoSmoke();

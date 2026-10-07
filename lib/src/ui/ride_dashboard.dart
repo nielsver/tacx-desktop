@@ -206,6 +206,16 @@ class _RideDashboardState extends State<RideDashboard> {
     successIcon: Icons.tune,
   );
 
+  /// Writes the ride to `~/Documents/Tacx Desktop/tacx-ride-<UTC>.tcx`.
+  Future<void> _exportRide() async {
+    try {
+      final path = await api.exportRideTcx();
+      if (mounted) _toast('Ride saved: $path', Icons.save_alt);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    }
+  }
+
   void _toast(String message, IconData icon) {
     final messenger = ScaffoldMessenger.maybeOf(context);
     if (messenger == null) return;
@@ -437,6 +447,7 @@ class _RideDashboardState extends State<RideDashboard> {
                             api.resetRideStats();
                             _refresh();
                           },
+                          onExport: _exportRide,
                         ),
                         const SizedBox(height: 12),
                         _FlexOrFixed(
@@ -1472,10 +1483,14 @@ class RideSummaryStrip extends StatelessWidget {
     super.key,
     required this.stats,
     required this.onReset,
+    this.onExport,
   });
 
   final RideStats stats;
   final VoidCallback onReset;
+
+  /// Saves the ride as a TCX file; disabled until something was recorded.
+  final VoidCallback? onExport;
 
   static String clock(int seconds) {
     final h = seconds ~/ 3600;
@@ -1550,6 +1565,17 @@ class RideSummaryStrip extends StatelessWidget {
                   ],
                 ],
               ),
+            ),
+          ),
+          Tooltip(
+            message:
+                'Save this ride as a TCX file for Garmin Connect or Strava',
+            child: TextButton.icon(
+              key: const ValueKey('ride-export'),
+              onPressed: stats.elapsedS > 0 ? onExport : null,
+              style: TextButton.styleFrom(minimumSize: const Size(88, 44)),
+              icon: const Icon(Icons.save_alt, size: 16),
+              label: const Text('Save TCX'),
             ),
           ),
           TextButton.icon(

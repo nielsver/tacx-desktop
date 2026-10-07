@@ -27,6 +27,7 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 | FTMS Indoor Bike Simulation | Demo grade feel | Opcode `0x11` + Crr/Cw sliders when Feature bit 13 set |
 | Fitness Machine Status | — | Subscribe `0x2ADA`; stop/pause banner; control-lost → Error |
 | Ride totals | Yes | 1 Hz sampler while connected: ride time, avg/max power, avg cadence, kJ, distance; reconnect gaps paused; Reset |
+| Ride export (TCX) | Yes | **Save TCX** writes `~/Documents/Tacx Desktop/tacx-ride-<UTC>.tcx` (1 s trackpoints: power, cadence, speed, distance; validated against Garmin's TCX v2 + ActivityExtension v2 XSDs) — upload to Garmin Connect, Strava, intervals.icu |
 | DEMO badge | Always when demo on | — |
 
 ## Platforms

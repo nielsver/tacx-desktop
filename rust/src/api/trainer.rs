@@ -184,6 +184,20 @@ pub fn reset_ride_stats() {
     crate::trainer::ride::reset();
 }
 
+/// Save the current ride as a Garmin TCX file (Garmin Connect / Strava /
+/// intervals.icu upload). `dir = None` writes to `~/Documents/Tacx Desktop`.
+/// Returns the full path of the written file.
+pub fn export_ride_tcx(dir: Option<String>) -> Result<String, String> {
+    let dir = dir.filter(|d| !d.trim().is_empty()).map(std::path::PathBuf::from);
+    crate::trainer::ride::export_tcx(dir.as_deref()).map(|p| p.display().to_string())
+}
+
+/// Folder [`export_ride_tcx`] uses when no directory is given.
+#[flutter_rust_bridge::frb(sync)]
+pub fn default_ride_export_dir() -> String {
+    crate::trainer::ride::default_export_dir().display().to_string()
+}
+
 /// Headless smoke test used by CI / README.
 pub async fn run_headless_demo_smoke() -> Result<String, String> {
     {

@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
                     default_rust_auto_opaque = RustAutoOpaqueMoi,
                 );
                 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 996916450;
+                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1278553517;
             
 
 // Section: executor
@@ -66,6 +66,14 @@ fn wire__crate__api__trainer__bluetooth_status_impl(port_: flutter_rust_bridge::
                          let output_ok = crate::api::trainer::connect_trainer(api_device_id).await?;   std::result::Result::Ok(output_ok)
                     })().await)
                 } })
+            }fn wire__crate__api__trainer__default_ride_export_dir_impl(ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "default_ride_export_dir", port: None, mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+                transform_result_sse::<_, ()>((move || {
+                     let output_ok = Ok::<_, ()>(crate::api::trainer::default_ride_export_dir())?;   std::result::Result::Ok(output_ok)
+                })()) })
             }fn wire__crate__api__trainer__disconnect_trainer_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
                 FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "disconnect_trainer", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
             let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
@@ -74,6 +82,15 @@ fn wire__crate__api__trainer__bluetooth_status_impl(port_: flutter_rust_bridge::
                     transform_result_sse::<_, String>((move || async move {
                          let output_ok = crate::api::trainer::disconnect_trainer().await?;   std::result::Result::Ok(output_ok)
                     })().await)
+                } })
+            }fn wire__crate__api__trainer__export_ride_tcx_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "export_ride_tcx", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_dir = <Option<String>>::sse_decode(&mut deserializer);deserializer.end(); move |context|  {
+                    transform_result_sse::<_, String>((move ||  {
+                         let output_ok = crate::api::trainer::export_ride_tcx(api_dir)?;   std::result::Result::Ok(output_ok)
+                    })())
                 } })
             }fn wire__crate__api__trainer__get_connection_snapshot_impl(ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
                 FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "get_connection_snapshot", port: None, mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync }, move || {
@@ -526,18 +543,19 @@ return crate::trainer::types::TrainerMetrics{power_w: var_powerW, cadence_rpm: v
                     match func_id {
                         1 => wire__crate__api__trainer__bluetooth_status_impl(port, ptr, rust_vec_len, data_len),
 2 => wire__crate__api__trainer__connect_trainer_impl(port, ptr, rust_vec_len, data_len),
-3 => wire__crate__api__trainer__disconnect_trainer_impl(port, ptr, rust_vec_len, data_len),
-11 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-14 => wire__crate__api__trainer__reconnect_trainer_impl(port, ptr, rust_vec_len, data_len),
-16 => wire__crate__api__trainer__run_headless_demo_smoke_impl(port, ptr, rust_vec_len, data_len),
-17 => wire__crate__api__trainer__scan_trainers_impl(port, ptr, rust_vec_len, data_len),
-19 => wire__crate__api__trainer__set_indoor_bike_simulation_impl(port, ptr, rust_vec_len, data_len),
-20 => wire__crate__api__trainer__set_resistance_percent_impl(port, ptr, rust_vec_len, data_len),
-21 => wire__crate__api__trainer__set_target_power_impl(port, ptr, rust_vec_len, data_len),
-22 => wire__crate__api__trainer__set_track_resistance_impl(port, ptr, rust_vec_len, data_len),
-23 => wire__crate__api__trainer__set_user_configuration_impl(port, ptr, rust_vec_len, data_len),
-24 => wire__crate__api__trainer__set_wind_resistance_impl(port, ptr, rust_vec_len, data_len),
-25 => wire__crate__api__trainer__start_interval_impl(port, ptr, rust_vec_len, data_len),
+4 => wire__crate__api__trainer__disconnect_trainer_impl(port, ptr, rust_vec_len, data_len),
+5 => wire__crate__api__trainer__export_ride_tcx_impl(port, ptr, rust_vec_len, data_len),
+13 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+16 => wire__crate__api__trainer__reconnect_trainer_impl(port, ptr, rust_vec_len, data_len),
+18 => wire__crate__api__trainer__run_headless_demo_smoke_impl(port, ptr, rust_vec_len, data_len),
+19 => wire__crate__api__trainer__scan_trainers_impl(port, ptr, rust_vec_len, data_len),
+21 => wire__crate__api__trainer__set_indoor_bike_simulation_impl(port, ptr, rust_vec_len, data_len),
+22 => wire__crate__api__trainer__set_resistance_percent_impl(port, ptr, rust_vec_len, data_len),
+23 => wire__crate__api__trainer__set_target_power_impl(port, ptr, rust_vec_len, data_len),
+24 => wire__crate__api__trainer__set_track_resistance_impl(port, ptr, rust_vec_len, data_len),
+25 => wire__crate__api__trainer__set_user_configuration_impl(port, ptr, rust_vec_len, data_len),
+26 => wire__crate__api__trainer__set_wind_resistance_impl(port, ptr, rust_vec_len, data_len),
+27 => wire__crate__api__trainer__start_interval_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }
@@ -550,18 +568,19 @@ return crate::trainer::types::TrainerMetrics{power_w: var_powerW, cadence_rpm: v
                 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
                     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
                     match func_id {
-                        4 => wire__crate__api__trainer__get_connection_snapshot_impl(ptr, rust_vec_len, data_len),
-5 => wire__crate__api__trainer__get_interval_status_impl(ptr, rust_vec_len, data_len),
-6 => wire__crate__api__trainer__get_metrics_impl(ptr, rust_vec_len, data_len),
-7 => wire__crate__api__trainer__get_power_range_impl(ptr, rust_vec_len, data_len),
-8 => wire__crate__api__trainer__get_resistance_range_impl(ptr, rust_vec_len, data_len),
-9 => wire__crate__api__trainer__get_ride_stats_impl(ptr, rust_vec_len, data_len),
-10 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
-12 => wire__crate__api__trainer__is_demo_mode_impl(ptr, rust_vec_len, data_len),
-13 => wire__crate__api__trainer__list_interval_presets_impl(ptr, rust_vec_len, data_len),
-15 => wire__crate__api__trainer__reset_ride_stats_impl(ptr, rust_vec_len, data_len),
-18 => wire__crate__api__trainer__set_demo_mode_impl(ptr, rust_vec_len, data_len),
-26 => wire__crate__api__trainer__stop_interval_impl(ptr, rust_vec_len, data_len),
+                        3 => wire__crate__api__trainer__default_ride_export_dir_impl(ptr, rust_vec_len, data_len),
+6 => wire__crate__api__trainer__get_connection_snapshot_impl(ptr, rust_vec_len, data_len),
+7 => wire__crate__api__trainer__get_interval_status_impl(ptr, rust_vec_len, data_len),
+8 => wire__crate__api__trainer__get_metrics_impl(ptr, rust_vec_len, data_len),
+9 => wire__crate__api__trainer__get_power_range_impl(ptr, rust_vec_len, data_len),
+10 => wire__crate__api__trainer__get_resistance_range_impl(ptr, rust_vec_len, data_len),
+11 => wire__crate__api__trainer__get_ride_stats_impl(ptr, rust_vec_len, data_len),
+12 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
+14 => wire__crate__api__trainer__is_demo_mode_impl(ptr, rust_vec_len, data_len),
+15 => wire__crate__api__trainer__list_interval_presets_impl(ptr, rust_vec_len, data_len),
+17 => wire__crate__api__trainer__reset_ride_stats_impl(ptr, rust_vec_len, data_len),
+20 => wire__crate__api__trainer__set_demo_mode_impl(ptr, rust_vec_len, data_len),
+28 => wire__crate__api__trainer__stop_interval_impl(ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }

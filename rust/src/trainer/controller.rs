@@ -5,6 +5,7 @@ use crate::trainer::fec;
 use crate::trainer::fec_rate::{FecWriteRateLimiter, RateDecision};
 use crate::trainer::ftms;
 use crate::trainer::gatt;
+use crate::trainer::scan;
 use crate::trainer::intervals::IntervalEngine;
 use crate::trainer::ride;
 use crate::trainer::reconnect::{
@@ -383,7 +384,7 @@ impl TrainerController {
             }
         }
         self.snapshot.state = ConnectionState::Scanning;
-        self.snapshot.detail = "Scanning for FTMS / Tacx FE-C…".into();
+        self.snapshot.detail = "Scanning for FTMS / Kickr / Tacx FE-C…".into();
         self.publish();
         match scan_ble(timeout_ms).await {
             Ok(v) => {
@@ -1080,7 +1081,7 @@ pub async fn scan_trainers_unlocked(timeout_ms: u32) -> Result<Vec<DiscoveredDev
             }
         }
         g.snapshot.state = ConnectionState::Scanning;
-        g.snapshot.detail = "Scanning for FTMS / Tacx FE-C…".into();
+        g.snapshot.detail = "Scanning for FTMS / Kickr / Tacx FE-C…".into();
         publish_snapshot(&g.snapshot);
         false
     };
@@ -1306,7 +1307,6 @@ async fn scan_ble(timeout_ms: u32) -> Result<Vec<DiscoveredDevice>, String> {
         .map_err(|e| format!("List peripherals failed: {e}"))?;
 
     let ftms_uuid = uuid_from_u16(ftms::FTMS_SERVICE);
-    let fec_tx = fec::tacx_uart_tx();
     let mut out = Vec::new();
 
     for p in peripherals {
@@ -1318,21 +1318,12 @@ async fn scan_ble(timeout_ms: u32) -> Result<Vec<DiscoveredDevice>, String> {
             .local_name
             .clone()
             .unwrap_or_else(|| "(unknown)".into());
-        let name_l = name.to_lowercase();
-        let services = &props.services;
-        let has_ftms = services.iter().any(|u| *u == ftms_uuid);
-        let looks_trainer = ["tacx", "neo", "flux", "trainer", "kickr", "smart"]
-            .iter()
-            .any(|k| name_l.contains(k));
-        // FE-C UART may not advertise in service list until connect; name heuristic helps.
-        let hint = if has_ftms {
-            "ftms"
-        } else if looks_trainer {
-            "tacx_fec"
-        } else {
+        let has_ftms = props.services.iter().any(|u| *u == ftms_uuid);
+        let mfg: Vec<u16> = props.manufacturer_data.keys().copied().collect();
+        // Empty ScanFilter + post-filter: Kickr FTMS, Tacx FE-C, generic FTMS.
+        let Some(hint) = scan::advertise_protocol_hint(&name, has_ftms, &mfg) else {
             continue;
         };
-        let _ = fec_tx; // reserved for future service-data matching
         out.push(DiscoveredDevice {
             id: p.id().to_string(),
             name,

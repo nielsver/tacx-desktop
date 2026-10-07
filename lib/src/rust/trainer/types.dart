@@ -147,7 +147,7 @@ class DiscoveredDevice {
   final String name;
   final int? rssi;
 
-  /// Hint from advertisement / name: "ftms", "tacx_fec", or "unknown".
+  /// Hint from advertisement / name: "ftms", "kickr_ftms", "tacx_fec", "demo", …
   final String protocolHint;
 
   const DiscoveredDevice({

@@ -1199,7 +1199,9 @@ class _DeviceRow extends StatelessWidget {
 
   static String protocolLabel(String hint) => switch (hint) {
     'ftms' => 'FTMS',
+    'kickr_ftms' => 'Kickr',
     'tacx_fec' => 'FE-C',
+    'demo' => 'Demo',
     _ => '?',
   };
 
@@ -1217,8 +1219,9 @@ class _DeviceRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final hint = device.protocolHint;
     final chipColor = switch (hint) {
-      'ftms' => RideColors.accent,
+      'ftms' || 'kickr_ftms' => RideColors.accent,
       'tacx_fec' => RideColors.accentAlt,
+      'demo' => RideColors.accent,
       _ => RideColors.textMuted,
     };
     final n = bars(device.rssi);

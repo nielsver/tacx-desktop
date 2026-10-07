@@ -48,13 +48,19 @@ impl DemoTrainer {
     pub async fn scan(&self) -> Vec<DiscoveredDevice> {
         self.set_state(ConnectionState::Scanning, "DEMO scan…");
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        self.set_state(ConnectionState::Disconnected, "Found 2 demo device(s)");
+        self.set_state(ConnectionState::Disconnected, "Found 3 demo device(s)");
         vec![
             DiscoveredDevice {
                 id: "DEMO:00:11:22:33:44:55".into(),
                 name: "DEMO Tacx Neo (stub)".into(),
                 rssi: Some(-42),
                 protocol_hint: "demo".into(),
+            },
+            DiscoveredDevice {
+                id: "DEMO:KICKR:CORE".into(),
+                name: "DEMO KICKR CORE (FTMS)".into(),
+                rssi: Some(-48),
+                protocol_hint: "kickr_ftms".into(),
             },
             DiscoveredDevice {
                 id: "DEMO:AA:BB:CC:DD:EE:FF".into(),

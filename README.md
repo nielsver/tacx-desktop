@@ -13,7 +13,7 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 | Feature | Demo mode | Real trainer |
 | --- | --- | --- |
 | Scan / connect | Stub devices | Live BLE |
-| Auto protocol | Demo | **FTMS first**, then **Tacx FE-C-over-BLE** fallback |
+| Auto protocol | Demo | **FTMS first** (Tacx + **Wahoo Kickr** / Kickr Core / Bike), then **Tacx FE-C-over-BLE** fallback |
 | Live power, cadence, speed | Simulated | FTMS Indoor Bike Data / FE-C pages 16+25 |
 | ERG target watts (± 5 / 10 / 25) | Yes | FTMS Control Point or FE-C target power |
 | Resistance % | Yes | FTMS Supported Resistance Level Range + Set Resistance; FE-C basic resistance 0–200 N mapped from % |
@@ -90,7 +90,7 @@ ldd ./tacx_desktop | grep 'not found' || echo "ldd OK"
 
 The tarball includes `FIRST_RUN.txt`. Full smoke: `./scripts/garuda_first_run_smoke.sh ~/Downloads/tacx-desktop-linux-x64-*.tar.gz`.
 
-**In app:** Demo ON → smoke UI → Demo OFF → quit Zwift/Tacx/MyWhoosh → forget trainer in KDE BT → Scan → Connect → ERG. Manual Connect must **not** freeze the UI (spinner/busy only).
+**In app:** Demo ON → smoke UI (includes DEMO KICKR CORE) → Demo OFF → quit Zwift/Tacx/MyWhoosh/Wahoo → forget trainer in KDE BT → Scan (Tacx **or Kickr**) → Connect → ERG. Manual Connect must **not** freeze the UI (spinner/busy only).
 
 ## Windows quickstart
 
@@ -131,6 +131,10 @@ bluetoothctl power on
 - Keep the scan filter **empty** (this app post-filters by FTMS UUID / Tacx-like names). BlueZ UUID filters are unioned across D-Bus clients and can hide FE-C-only trainers.
 - **Forget OS pairing** in KDE/Plasma Bluetooth — connect **only** in-app.
 - Automated checks: `./scripts/garuda_first_run_smoke.sh [tar.gz]`
+
+### Wahoo Kickr (FTMS)
+
+Same FTMS control path as Tacx (ERG / resistance / simulation when Feature bit 13 is set). Recognized in scan by FTMS UUID, name (`KICKR` / `Wahoo`), or manufacturer company ID `0x0131`. Leave the Kickr **unpaired** in OS Bluetooth; quit the Wahoo app / Zwift before Connect. Demo includes **DEMO KICKR CORE (FTMS)**.
 
 ### macOS (TCC + entitlements)
 
@@ -262,7 +266,7 @@ Rust crate tacx_desktop_core
 
 ### Connect sequence (live)
 
-1. Scan advertisements (FTMS UUID and/or Tacx-like names). Empty `ScanFilter` + post-filter (BlueZ-safe).
+1. Scan advertisements (FTMS UUID, **Kickr/Wahoo** name or company ID `0x0131`, and/or Tacx-like names). Empty `ScanFilter` + post-filter (BlueZ-safe).
 2. Connect + discover GATT → **inventory dump** (UUID / properties / class `ftms` | `fec_only` | `dual_ftms_fec`) to stderr / logs.
 3. If FTMS Indoor Bike (`0x2AD2`) + Control Point (`0x2AD9`) → **FTMS** path:
    - Subscribe Indoor Bike Data **and** Control Point indications.

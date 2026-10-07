@@ -122,7 +122,7 @@ pub struct DiscoveredDevice {
     pub id: String,
     pub name: String,
     pub rssi: Option<i32>,
-    /// Hint from advertisement / name: "ftms", "tacx_fec", or "unknown".
+    /// Hint from advertisement / name: "ftms", "kickr_ftms", "tacx_fec", "demo", …
     pub protocol_hint: String,
 }
 

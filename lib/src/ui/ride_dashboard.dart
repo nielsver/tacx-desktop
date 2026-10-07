@@ -57,6 +57,7 @@ class _RideDashboardState extends State<RideDashboard> {
   final double _bikeWeightKg = 8;
   final double _wheelDiameterM = 0.7;
   bool _busy = false;
+  bool _resAutoApply = true;
   bool _didScan = false;
   String? _error;
   BluetoothStatus? _bt;
@@ -144,6 +145,8 @@ class _RideDashboardState extends State<RideDashboard> {
     String? success,
     IconData successIcon = Icons.check_circle_outline,
   }) async {
+    // P1-X5: block double-submit while a write is already in flight.
+    if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -160,6 +163,14 @@ class _RideDashboardState extends State<RideDashboard> {
       }
     }
   }
+
+  /// Sends the current resistance level. Used by the Apply button and, when
+  /// auto-apply is on, once when the slider is released (never per tick).
+  Future<void> _applyResistance() => _run(
+    () => api.setResistancePercent(percent: _resistancePct),
+    success: 'Resistance ${_resistancePct.toStringAsFixed(0)} % sent',
+    successIcon: Icons.tune,
+  );
 
   void _toast(String message, IconData icon) {
     final messenger = ScaffoldMessenger.maybeOf(context);
@@ -407,14 +418,14 @@ class _RideDashboardState extends State<RideDashboard> {
                                 enabled: connected && !_busy,
                                 onChanged: (v) =>
                                     setState(() => _resistancePct = v),
-                                onApply: () => _run(
-                                  () => api.setResistancePercent(
-                                    percent: _resistancePct,
-                                  ),
-                                  success:
-                                      'Resistance ${_resistancePct.toStringAsFixed(0)} % sent',
-                                  successIcon: Icons.tune,
-                                ),
+                                onApply: _applyResistance,
+                                autoApply: _resAutoApply,
+                                onAutoApplyChanged: (v) =>
+                                    setState(() => _resAutoApply = v),
+                                onChangeEnd: (v) {
+                                  _resistancePct = v;
+                                  if (_resAutoApply) _applyResistance();
+                                },
                               ),
                             ),
                           ),
@@ -1423,6 +1434,9 @@ class _ResistancePanel extends StatelessWidget {
     required this.enabled,
     required this.onChanged,
     required this.onApply,
+    required this.autoApply,
+    required this.onAutoApplyChanged,
+    required this.onChangeEnd,
   });
 
   final double percent;
@@ -1430,6 +1444,9 @@ class _ResistancePanel extends StatelessWidget {
   final bool enabled;
   final ValueChanged<double> onChanged;
   final VoidCallback onApply;
+  final bool autoApply;
+  final ValueChanged<bool> onAutoApplyChanged;
+  final ValueChanged<double> onChangeEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -1462,12 +1479,14 @@ class _ResistancePanel extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Slider(
+              key: const ValueKey('resistance-slider'),
               value: percent.clamp(range.minPct, range.maxPct),
               min: range.minPct,
               max: range.maxPct,
               divisions: steps,
               label: '${percent.toStringAsFixed(0)}%',
               onChanged: enabled ? onChanged : null,
+              onChangeEnd: enabled ? onChangeEnd : null,
             ),
             Text(
               'Range ${range.minPct.toStringAsFixed(0)}–${range.maxPct.toStringAsFixed(0)}% · step ${range.stepPct.toStringAsFixed(1)}',
@@ -1476,7 +1495,29 @@ class _ResistancePanel extends StatelessWidget {
                 fontSize: 12,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
+            SizedBox(
+              height: 40,
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Apply on release',
+                      style: TextStyle(
+                        color: RideColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  Switch(
+                    key: const ValueKey('resistance-auto-apply'),
+                    value: autoApply,
+                    onChanged: onAutoApplyChanged,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: FilledButton(

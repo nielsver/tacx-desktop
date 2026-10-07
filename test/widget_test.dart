@@ -53,4 +53,34 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('ERG target 200 W sent'), findsOneWidget);
   });
+
+  testWidgets('Resistance auto-applies once on slider release', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(const TacxDesktopApp());
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Scan'));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+    });
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Connect'));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+    });
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byKey(const ValueKey('resistance-auto-apply')), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.drag(
+        find.byKey(const ValueKey('resistance-slider')),
+        const Offset(60, 0),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.textContaining('% sent'), findsOneWidget);
+  });
 }

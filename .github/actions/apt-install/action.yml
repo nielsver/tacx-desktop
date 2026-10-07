@@ -1,8 +1,9 @@
 name: apt-install
 description: >
-  Install apt packages on a GitHub-hosted Ubuntu runner, robust against the
-  flaky azure.archive.ubuntu.com mirror. Skips apt entirely when every
-  requested package is already installed.
+  Install apt packages on a GitHub-hosted Ubuntu runner, robust against flaky
+  Ubuntu mirrors (azure.archive / archive.ubuntu.com Ign/hang/refuse). Skips apt
+  entirely when every requested package is already installed, reuses cached
+  .deb files when possible, otherwise uses a multi-mirror list with retries.
 inputs:
   packages:
     description: Space/newline separated list of apt packages
@@ -10,9 +11,9 @@ inputs:
 runs:
   using: composite
   steps:
-    - shell: bash
+    - id: check
+      shell: bash
       env:
-        DEBIAN_FRONTEND: noninteractive
         PKGS: ${{ inputs.packages }}
       run: |
         set -euo pipefail
@@ -25,20 +26,87 @@ runs:
         done
         if [ "${#missing[@]}" -eq 0 ]; then
           echo "All apt packages already installed, skipping apt: ${pkgs[*]}"
-          exit 0
+        else
+          echo "Missing apt packages: ${missing[*]}"
         fi
-        echo "Missing apt packages: ${missing[*]}"
+        echo "missing=${missing[*]}" >> "$GITHUB_OUTPUT"
+        h="$(printf '%s\n' "${pkgs[@]}" | sort -u | sha256sum | cut -c1-16)"
+        # Runner image id/version so cached .debs match the image's installed libs.
+        echo "key=apt-debs-${ImageOS:-ubuntu}-${ImageVersion:-0}-$(uname -m)-$h" >> "$GITHUB_OUTPUT"
 
-        # Runner sources use `mirror+file:/etc/apt/apt-mirrors.txt` (azure mirror,
-        # often Ign/hangs on GHA). Point that list at the main archive, and also
-        # rewrite any plain azure URIs in classic/deb822 source files.
-        if [ -f /etc/apt/apt-mirrors.txt ]; then
-          echo "Old /etc/apt/apt-mirrors.txt:"; cat /etc/apt/apt-mirrors.txt || true
+    - id: cache
+      if: steps.check.outputs.missing != ''
+      uses: actions/cache/restore@v4
+      with:
+        path: ~/.cache/apt-debs
+        key: ${{ steps.check.outputs.key }}
+
+    - id: install
+      if: steps.check.outputs.missing != ''
+      shell: bash
+      env:
+        DEBIAN_FRONTEND: noninteractive
+        MISSING: ${{ steps.check.outputs.missing }}
+      run: |
+        set -uo pipefail
+        read -r -a missing <<< "$MISSING"
+        CACHE="$HOME/.cache/apt-debs"
+        mkdir -p "$CACHE"
+        APT_OPTS=(-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o DPkg::Lock::Timeout=120)
+
+        all_installed() {
+          for p in "${missing[@]}"; do
+            [ "$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)" = "install ok installed" ] || return 1
+          done
+        }
+
+        # 1) Cached .debs from an earlier run: install offline (no index, no network).
+        if compgen -G "$CACHE/*.deb" >/dev/null; then
+          echo "Trying cached .debs:"; ls -1 "$CACHE"
+          if sudo apt-get "${APT_OPTS[@]}" install -y --no-download --no-install-recommends "$CACHE"/*.deb \
+             && all_installed; then
+            echo "Installed from cache."
+            echo "saved=cache" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::warning::cached .debs unusable, falling back to mirrors"
         fi
-        echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+
+        # 2) Network. Runner sources use `mirror+file:/etc/apt/apt-mirrors.txt`;
+        # apt's mirror method falls through this list in order when a mirror
+        # fails, so give it several. Also rewrite any plain azure URIs.
+        echo "Old /etc/apt/apt-mirrors.txt:"; cat /etc/apt/apt-mirrors.txt 2>/dev/null || true
+        printf '%s\n' \
+          'https://mirrors.edge.kernel.org/ubuntu/' \
+          'http://azure.archive.ubuntu.com/ubuntu/' \
+          'http://archive.ubuntu.com/ubuntu/' \
+          'http://mirror.math.princeton.edu/pub/ubuntu/' \
+          | sudo tee /etc/apt/apt-mirrors.txt
         sudo sed -i 's|https\?://azure\.archive\.ubuntu\.com|http://archive.ubuntu.com|g' \
           /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
 
-        APT_OPTS=(-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o DPkg::Lock::Timeout=120)
-        sudo apt-get "${APT_OPTS[@]}" update
-        sudo DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "${missing[@]}"
+        sudo rm -f /var/cache/apt/archives/*.deb
+        for attempt in 1 2 3; do
+          echo "::group::apt attempt $attempt"
+          timeout 240 sudo apt-get "${APT_OPTS[@]}" update || echo "apt-get update had errors (attempt $attempt)"
+          if timeout 240 sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends --fix-missing --download-only "${missing[@]}" \
+             && sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends --no-download "${missing[@]}" \
+             && all_installed; then
+            echo "::endgroup::"
+            cp /var/cache/apt/archives/*.deb "$CACHE"/ 2>/dev/null || true
+            echo "saved=network" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::endgroup::"
+          echo "::warning::apt attempt $attempt failed"
+          sleep $((attempt * 10))
+        done
+        echo "::error::apt install failed after 3 attempts: ${missing[*]}"
+        exit 1
+
+    - if: steps.install.outputs.saved == 'network' && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      continue-on-error: true
+      with:
+        path: ~/.cache/apt-debs
+        key: ${{ steps.check.outputs.key }}

@@ -179,12 +179,14 @@ struct BleSession {
     control_lost: Arc<AtomicBool>,
     /// FTMS Feature bit 13 or FE-C path — simulation grade/wind allowed.
     simulation_supported: bool,
+    /// False when FTMS has no 0x2AD6 / Target Resistance bit (e.g. Kickr Bike).
+    resistance_supported: bool,
     /// Signalled once by the notification pump when the link drops.
     link_lost: Arc<Notify>,
 }
 
 const CONTROL_LOST_AT_DROP: &str =
-    "another app took the trainer. Close Zwift / Tacx Training / MyWhoosh, then tap Reconnect.";
+    "another app took the trainer. Close Zwift / Wahoo app / Tacx Training / MyWhoosh, then tap Reconnect.";
 
 pub struct TrainerController {
     demo_mode: bool,
@@ -261,7 +263,7 @@ impl TrainerController {
             detail: if enabled {
                 "Demo mode on".into()
             } else {
-                "Live BLE — close Zwift / Tacx Training / MyWhoosh first (exclusive control)".into()
+                "Live BLE — close Zwift / Wahoo app / Tacx Training / MyWhoosh first (exclusive control)".into()
             },
             ..Default::default()
         };
@@ -596,7 +598,13 @@ impl TrainerController {
                 }
                 if b.control_lost.load(Ordering::SeqCst) {
                     return Err(
-                        "Control lost (Fitness Machine Status) — close other apps and Reconnect"
+                        "Control lost (Fitness Machine Status) — close other apps (Zwift / Wahoo) and Reconnect"
+                            .into(),
+                    );
+                }
+                if !b.resistance_supported || b.resistance_range.max_pct <= 0.0 {
+                    return Err(
+                        "Resistance % is not supported on this trainer (e.g. Kickr Bike / Bike Shift). Use ERG or Simulation instead."
                             .into(),
                     );
                 }
@@ -1165,7 +1173,7 @@ fn friendly_ble_error(err: &str) -> String {
     let lower = err.to_lowercase();
     if lower.contains("busy") || lower.contains("in use") || lower.contains("already") {
         return format!(
-            "Trainer busy or already connected elsewhere. Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad / Rouvy and retry. ({err})"
+            "Trainer busy or already connected elsewhere. Quit Zwift / Wahoo app / Tacx Training / MyWhoosh / TrainerRoad / Rouvy and retry. ({err})"
         );
     }
     if lower.contains("permission")
@@ -1220,13 +1228,13 @@ fn friendly_ble_error(err: &str) -> String {
         #[cfg(target_os = "linux")]
         {
             return format!(
-                "Could not take exclusive control (NOCTRL). Quit other FTMS apps. In KDE/Plasma Bluetooth settings, remove/forget the trainer — do not OS-pair; connect only from Tacx Desktop. ({err})"
+                "Could not take exclusive control (NOCTRL). Quit Zwift / Wahoo app / other FTMS clients. In KDE/Plasma Bluetooth settings, remove/forget the trainer — do not OS-pair; connect only from Tacx Desktop. ({err})"
             );
         }
         #[cfg(not(target_os = "linux"))]
         {
             return format!(
-                "Could not take exclusive control (NOCTRL). Disconnect other FTMS clients and retry. Do NOT OS-pair the trainer — leave it unpaired and connect only from this app. ({err})"
+                "Could not take exclusive control (NOCTRL). Quit Zwift / Wahoo app / other FTMS clients and retry. Do NOT OS-pair the trainer — leave it unpaired and connect only from this app. ({err})"
             );
         }
     }
@@ -1449,29 +1457,62 @@ async fn open_session(
         let mut resistance_range = ResistanceRange::default();
         let mut power_range = PowerRange::default();
         let mut max_resistance_raw: i16 = 1000;
+        let mut resistance_char_present = false;
+        let mut target_resistance_feature = false;
 
         if let Some(ch) = chars.iter().find(|c| c.uuid == ftms_res) {
+            resistance_char_present = true;
             if let Ok(raw) = peripheral.read(ch).await {
                 let (rr, max_raw) = ftms::parse_resistance_range(&raw);
                 resistance_range = rr;
                 max_resistance_raw = max_raw;
+                log::info!(
+                    "FTMS Supported Resistance Range (0x2AD6): max_raw={max_resistance_raw} → {resistance_range:?}"
+                );
+            } else {
+                log::warn!("FTMS 0x2AD6 present but read failed");
             }
+        } else {
+            log::info!(
+                "FTMS Supported Resistance Range (0x2AD6) absent — Resistance % may be unsupported (common on Kickr Bike)"
+            );
         }
         if let Some(ch) = chars.iter().find(|c| c.uuid == ftms_pwr) {
             if let Ok(raw) = peripheral.read(ch).await {
                 power_range = ftms::parse_power_range(&raw);
+                log::info!("FTMS Supported Power Range (0x2AD8): {power_range:?}");
             }
         }
         let ftms_feature = uuid_from_u16(ftms::FEATURE);
         if let Some(ch) = chars.iter().find(|c| c.uuid == ftms_feature) {
             if let Ok(raw) = peripheral.read(ch).await {
                 simulation_supported = ftms::features_support_simulation(&raw);
+                target_resistance_feature = ftms::features_support_target_resistance(&raw);
                 log::info!(
-                    "FTMS Feature: indoor bike simulation supported={simulation_supported}"
+                    "FTMS Feature (0x2ACC): simulation(bit13)={simulation_supported} target_resistance(bit3)={target_resistance_feature} (public FTMS only — ignoring Wahoo proprietary a026*)"
                 );
             }
         } else {
             log::info!("FTMS Feature (0x2ACC) absent — simulation gated off");
+        }
+
+        // Gate Resistance: need 0x2AD6 and/or Target Resistance feature bit.
+        // Kickr Bike typically has neither — do not pretend default 0–100% works.
+        let name_l = name.to_lowercase();
+        let looks_kickr_bike = name_l.contains("kickr bike");
+        let resistance_supported = if looks_kickr_bike && !resistance_char_present {
+            false
+        } else {
+            resistance_char_present || target_resistance_feature
+        };
+        if !resistance_supported {
+            resistance_range = ftms::unsupported_resistance_range();
+            log::info!("Resistance % disabled for this trainer (no 0x2AD6 / target-resistance feature)");
+        } else if !resistance_char_present {
+            // Feature says resistance OK but range char missing — keep Tacx-tuned default encode.
+            log::warn!(
+                "Target Resistance advertised without 0x2AD6 — using default max_raw={max_resistance_raw}; verify % vs Wahoo app on hardware"
+            );
         }
 
         let bike_ch = chars
@@ -1563,7 +1604,7 @@ async fn open_session(
             .await
             .map_err(|e| {
                 friendly_ble_error(&format!(
-                    "Request Control rejected: {e}. Close other apps; on Windows leave trainer unpaired."
+                    "Request Control rejected: {e}. Quit Zwift / Wahoo app / MyWhoosh; leave trainer unpaired in OS Bluetooth."
                 ))
             })?;
 
@@ -1603,6 +1644,7 @@ async fn open_session(
             status_banner,
             control_lost,
             simulation_supported,
+            resistance_supported,
             link_lost,
         });
     }
@@ -1685,6 +1727,7 @@ async fn open_session(
             status_banner,
             control_lost,
             simulation_supported,
+            resistance_supported: true, // Tacx FE-C basic resistance always available
             link_lost,
         });
     }

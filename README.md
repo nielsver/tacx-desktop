@@ -134,7 +134,18 @@ bluetoothctl power on
 
 ### Wahoo Kickr (FTMS)
 
-Same FTMS control path as Tacx (ERG / resistance / simulation when Feature bit 13 is set). Recognized in scan by FTMS UUID, name (`KICKR` / `Wahoo`), or manufacturer company ID `0x0131`. Leave the Kickr **unpaired** in OS Bluetooth; quit the Wahoo app / Zwift before Connect. Demo includes **DEMO KICKR CORE (FTMS)**.
+Same **public FTMS** control path as Tacx (`0x1826` Indoor Bike Data `0x2AD2` + Control Point `0x2AD9`). Recognized in scan by FTMS UUID, name (`KICKR` / `Wahoo`), or manufacturer company ID `0x0131`. Demo includes **DEMO KICKR CORE (FTMS)**.
+
+| Topic | Behaviour |
+| --- | --- |
+| Proprietary Wahoo GATT (`a026*`, legacy CP) | **Out of scope** — ignored; public FTMS only |
+| ERG | Target Power opcode; **Kickr often needs 3–5 s to settle** (normal — UI toast/caption say so) |
+| Resistance % | Enabled only when `0x2AD6` and/or Feature Target Resistance bit is present. **Kickr Bike** → Resistance panel disabled (use ERG / Simulation) |
+| Simulation `0x11` | When Feature bit 13 set; honest disabled otherwise |
+| Exclusive control | Quit **Wahoo app** / Zwift / MyWhoosh; one controller only. Busy/NOCTRL banners mention Wahoo |
+| OS pairing | Garuda: forget in KDE BT. Windows: Remove device. Connect **only in-app**. Keep empty `ScanFilter` |
+
+Hardware validation still needs Niels’ Kickr model + live GATT dump (Feature `0x2ACC`, Power `0x2AD8`, Resistance `0x2AD6` present/absent).
 
 ### macOS (TCC + entitlements)
 

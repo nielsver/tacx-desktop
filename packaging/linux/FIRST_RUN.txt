@@ -35,4 +35,6 @@ Tacx Desktop — Linux first-run (Garuda / Arch primary)
    Demo OFF → quit Zwift/Tacx/MyWhoosh/Wahoo/Rouvy → forget trainer in KDE Bluetooth
    (do NOT OS-pair) → Scan (Tacx or Kickr FTMS) → Connect → ERG. UI must stay responsive while Connecting.
 
-Pitfalls: Soft-blocked rfkill; OS pairing; another app holding the link (busy/NOCTRL).
+Pitfalls: Soft-blocked rfkill; OS pairing; another app holding the link (busy/NOCTRL — quit Wahoo app too).
+Kickr ERG: allow 3–5 s to settle after Apply. Kickr Bike: Resistance panel stays disabled (ERG/Simulation only).
+Public FTMS only — no Wahoo proprietary a026* path.

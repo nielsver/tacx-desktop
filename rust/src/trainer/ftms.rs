@@ -15,6 +15,9 @@ pub const OP_SET_INDOOR_BIKE_SIMULATION: u8 = 0x11;
 /// Fitness Machine Features bit 13 — Indoor Bike Simulation Parameters Supported (FTMS 1.0.1).
 pub const FEATURE_BIT_INDOOR_BIKE_SIMULATION: u32 = 1 << 13;
 
+/// Target Setting Features bit 3 — Target Resistance Level Supported (FTMS 1.0.1).
+pub const TARGET_FEATURE_BIT_RESISTANCE_LEVEL: u32 = 1 << 3;
+
 /// Fitness Machine Status is optional — connect/control must work when absent.
 pub fn machine_status_is_optional() -> bool {
     true
@@ -373,6 +376,24 @@ pub fn features_support_simulation(data: &[u8]) -> bool {
     features & FEATURE_BIT_INDOOR_BIKE_SIMULATION != 0
 }
 
+/// Target Setting Features (bytes 4–7 of 0x2ACC) — Target Resistance Level.
+pub fn features_support_target_resistance(data: &[u8]) -> bool {
+    if data.len() < 8 {
+        return false;
+    }
+    let target = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+    target & TARGET_FEATURE_BIT_RESISTANCE_LEVEL != 0
+}
+
+/// Unsupported Resistance UI sentinel (`max_pct <= 0`).
+pub fn unsupported_resistance_range() -> ResistanceRange {
+    ResistanceRange {
+        min_pct: 0.0,
+        max_pct: 0.0,
+        step_pct: 0.0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,6 +441,19 @@ mod tests {
         p2.pop();
         p2.push(97);
         assert_eq!(parse_indoor_bike_data(&p2).heart_rate_bpm, Some(97));
+    }
+
+    #[test]
+    fn feature_bits_sim_and_resistance() {
+        let mut raw = vec![0u8; 8];
+        // machine features bit 13
+        let feat = FEATURE_BIT_INDOOR_BIKE_SIMULATION.to_le_bytes();
+        raw[0..4].copy_from_slice(&feat);
+        assert!(features_support_simulation(&raw));
+        assert!(!features_support_target_resistance(&raw));
+        let tgt = TARGET_FEATURE_BIT_RESISTANCE_LEVEL.to_le_bytes();
+        raw[4..8].copy_from_slice(&tgt);
+        assert!(features_support_target_resistance(&raw));
     }
 
     #[test]

@@ -553,7 +553,7 @@ class _RideDashboardState extends State<RideDashboard> {
                                         watts: _targetWatts,
                                       ),
                                       success:
-                                          'ERG target ${_targetWatts.round()} W sent',
+                                          'ERG ${_targetWatts.round()} W sent — allow 3–5 s to settle (Kickr)',
                                       successIcon: Icons.bolt,
                                     ),
                                     onSetExact: (w) {
@@ -561,7 +561,7 @@ class _RideDashboardState extends State<RideDashboard> {
                                       _run(
                                         () => api.setTargetPower(watts: w),
                                         success:
-                                            'ERG target ${w.round()} W sent',
+                                            'ERG ${w.round()} W sent — allow 3–5 s to settle (Kickr)',
                                         successIcon: Icons.bolt,
                                       );
                                     },
@@ -579,7 +579,11 @@ class _RideDashboardState extends State<RideDashboard> {
                                   child: _ResistancePanel(
                                     percent: _resistancePct,
                                     range: _resRange,
-                                    enabled: connected && !_busy,
+                                    // Kickr Bike / missing 0x2AD6 → maxPct <= 0
+                                    supported: _resRange.maxPct > 0,
+                                    enabled: connected &&
+                                        !_busy &&
+                                        _resRange.maxPct > 0,
                                     onChanged: (v) =>
                                         setState(() => _resistancePct = v),
                                     onApply: _applyResistance,
@@ -588,7 +592,9 @@ class _RideDashboardState extends State<RideDashboard> {
                                         setState(() => _resAutoApply = v),
                                     onChangeEnd: (v) {
                                       _resistancePct = v;
-                                      if (_resAutoApply) _applyResistance();
+                                      if (_resAutoApply && _resRange.maxPct > 0) {
+                                        _applyResistance();
+                                      }
                                     },
                                   ),
                                 ),
@@ -1294,15 +1300,15 @@ class _SignalBars extends StatelessWidget {
 String _bleFootnote() {
   switch (defaultTargetPlatform) {
     case TargetPlatform.linux:
-      return 'Only one BLE client can control the trainer. Quit Zwift / Tacx Training / '
+      return 'Only one BLE client can control the trainer. Quit Zwift / Wahoo app / Tacx Training / '
           'MyWhoosh / TrainerRoad / Rouvy. Linux: forget the trainer in KDE/Plasma Bluetooth '
           '(do not OS-pair) — connect only in-app. Never run with sudo.';
     case TargetPlatform.windows:
-      return 'Only one BLE client can control the trainer. Close Zwift / Tacx Training / '
-          'MyWhoosh / TrainerRoad before connecting. Windows: leave the trainer unpaired '
+      return 'Only one BLE client can control the trainer. Quit Zwift / Wahoo app / Tacx Training / '
+          'MyWhoosh / TrainerRoad before connecting. Windows: leave Kickr/Tacx unpaired '
           'in OS Bluetooth settings.';
     case TargetPlatform.macOS:
-      return 'Only one BLE client can control the trainer. Quit other apps first. '
+      return 'Only one BLE client can control the trainer. Quit Zwift / Wahoo app first. '
           'Prefer Connect in-app; Forget This Device in macOS Bluetooth if control fails after OS pairing.';
     default:
       return 'Only one BLE client can control the trainer. Quit Zwift / Tacx Training / '
@@ -1313,14 +1319,14 @@ String _bleFootnote() {
 String _emptyScanBullets() {
   switch (defaultTargetPlatform) {
     case TargetPlatform.linux:
-      return '• Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad / Rouvy\n'
+      return '• Quit Zwift / Wahoo app / Tacx Training / MyWhoosh / TrainerRoad / Rouvy\n'
           '• Wake the trainer and stand nearby\n'
           '• rfkill unblock bluetooth; bluetoothctl power on\n'
-          '• Forget trainer in KDE Bluetooth — connect only in-app (no OS pair)';
+          '• Forget Kickr/Tacx in KDE Bluetooth — connect only in-app (no OS pair)';
     case TargetPlatform.windows:
-      return '• Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad\n'
+      return '• Quit Zwift / Wahoo app / Tacx Training / MyWhoosh / TrainerRoad\n'
           '• Wake the trainer and stand nearby\n'
-          '• Windows: leave the trainer unpaired in Bluetooth settings';
+          '• Windows: leave Kickr/Tacx unpaired in Bluetooth settings';
     case TargetPlatform.macOS:
       return '• Quit Zwift / Tacx Training / MyWhoosh / TrainerRoad\n'
           '• Wake the trainer and stand nearby\n'
@@ -1969,6 +1975,15 @@ class _ErgPanelState extends State<_ErgPanel> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            const Text(
+              'Kickr may take 3–5 s to settle after a target change — that lag is normal, not a failed Apply.',
+              style: TextStyle(
+                color: RideColors.textMuted,
+                fontSize: RideType.footnote,
+                height: 1.35,
+              ),
+            ),
           ],
         ),
       ),
@@ -1980,6 +1995,7 @@ class _ResistancePanel extends StatelessWidget {
   const _ResistancePanel({
     required this.percent,
     required this.range,
+    this.supported = true,
     required this.enabled,
     required this.onChanged,
     required this.onApply,
@@ -1990,6 +2006,8 @@ class _ResistancePanel extends StatelessWidget {
 
   final double percent;
   final ResistanceRange range;
+  /// False when FTMS has no Resistance Range / Kickr Bike — show honest disabled UI.
+  final bool supported;
   final bool enabled;
   final ValueChanged<double> onChanged;
   final VoidCallback onApply;
@@ -1999,6 +2017,26 @@ class _ResistancePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!supported || range.maxPct <= 0) {
+      return Opacity(
+        opacity: 0.55,
+        child: _Panel(
+          title: 'Resistance',
+          child: const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              'Not supported on this trainer (e.g. Kickr Bike). Use ERG or Simulation instead. '
+              'Public FTMS only — no Wahoo proprietary resistance path.',
+              style: TextStyle(
+                color: RideColors.textSecondary,
+                fontSize: RideType.label,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     final steps =
         ((range.maxPct - range.minPct) /
                 (range.stepPct <= 0 ? 1 : range.stepPct))

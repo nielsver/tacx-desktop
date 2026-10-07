@@ -49,12 +49,17 @@ void main() {
     // Seed a slow previous best (10 minutes) so the ghost is behind us —
     // this is written directly so Demo mode never has to.
     expect(
-      store.saveIfBest(key, profile.name, profile.distanceM, (() {
-        final r = AttemptRecorder()
-          ..offer(0, 0)
-          ..finish(600, profile.distanceM);
-        return r.toTrack();
-      })()),
+      store.saveIfBest(
+        key,
+        profile.name,
+        profile.distanceM,
+        (() {
+          final r = AttemptRecorder()
+            ..offer(0, 0)
+            ..finish(600, profile.distanceM);
+          return r.toTrack();
+        })(),
+      ),
       isTrue,
     );
     expect(file.existsSync(), isTrue);
@@ -88,30 +93,25 @@ void main() {
       of: find.byKey(const ValueKey('workout-panel')),
       matching: find.byType(Scrollable),
     );
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('gpx-paste')),
-      120,
-      scrollable: panelScroll.first,
-    );
+    // scrollUntilVisible builds the target; ensureVisible then brings it
+    // fully on screen (a half-visible button at the panel edge passed
+    // scrollUntilVisible but missed the tap with CI fonts).
+    Future<void> reveal(Finder f, {double delta = 120}) async {
+      await tester.scrollUntilVisible(f, delta, scrollable: panelScroll.first);
+      await tester.ensureVisible(f);
+      await tester.pump();
+    }
+
+    await reveal(find.byKey(const ValueKey('gpx-paste')));
     await tester.tap(find.byKey(const ValueKey('gpx-paste')));
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 100)),
     );
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('route-best')),
-      120,
-      scrollable: panelScroll.first,
-    );
+    await reveal(find.byKey(const ValueKey('route-best')));
     expect(find.textContaining('Best 10:00'), findsOneWidget);
 
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('gpx-start')),
-      -120,
-      scrollable: panelScroll.first,
-    );
-    await tester.ensureVisible(find.byKey(const ValueKey('gpx-start')));
-    await tester.pump();
+    await reveal(find.byKey(const ValueKey('gpx-start')), delta: -120);
     await tester.tap(find.byKey(const ValueKey('gpx-start')));
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 1600)),
@@ -136,11 +136,7 @@ void main() {
 
     // Demo must never overwrite the seeded best (G2).
     expect(file.readAsStringSync(), before);
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('ghost-reset-best')),
-      120,
-      scrollable: panelScroll.first,
-    );
+    await reveal(find.byKey(const ValueKey('ghost-reset-best')));
     expect(find.textContaining('Best 10:00'), findsOneWidget);
 
     await tester.runAsync(() async {

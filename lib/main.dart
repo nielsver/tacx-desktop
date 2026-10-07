@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:tacx_desktop/src/rust/frb_generated.dart';
 import 'package:tacx_desktop/src/ui/ride_dashboard.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
+import 'package:tacx_desktop/src/ui/window_chrome.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await WindowChrome.init();
   await RustLib.init();
   runApp(const TacxDesktopApp());
 }

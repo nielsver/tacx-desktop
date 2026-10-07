@@ -63,6 +63,22 @@ Run `flutter doctor -v` after installing the toolchain. You want these green bef
 **Release without a local toolchain:** GitHub Actions → **Release** → *Run workflow* (manual) builds `tacx-desktop-windows-x64` (zip), `tacx-desktop-linux-x64` (tar.gz) and `tacx-desktop-macos` (zipped `.app`, ad-hoc signed, not notarized) artifacts; a `v*` tag also attaches all three to a GitHub Release. Local: `./scripts/build_release.sh linux` (Garuda primary) or `windows` / `macos`.
 
 
+
+## Focus / game mode (immersive ride UI)
+
+Header **Focus** chip or press **G** — hides ConnectionBar, Demo, ride summary, HR strap, Simulation / interval chrome. Keeps a compact status pill, mode chip (ERG|Res|Sim|Idle), **Disconnect**, and a slim ERG dock. Power hero uses `RideType.gameHero` (≥72sp), centered.
+
+| Shortcut | Action |
+| --- | --- |
+| **G** | Toggle Focus |
+| **F11** | Toggle OS fullscreen (`window_manager`) |
+| **Esc** | Exit fullscreen only (stays in Focus if already there) |
+| Immersive button | Focus + fullscreen together |
+
+Visual effects default **Off**; header menu → **Subtle** for a soft zone wash (alpha ≤0.12) + tiny cadence pulse. Respects reduce-motion (`MediaQuery.disableAnimations`) → static tint only.
+
+**Garuda / Plasma:** classic titlebar on KDE (avoids light GtkHeaderBar over dark UI). Prefer Release builds for 60fps. If Wayland janks: `GDK_BACKEND=x11 ./tacx_desktop`. Impeller stays default; Skia only as escape hatch (`--no-enable-impeller`).
+
 ## Garuda / Linux first-run (released binary)
 
 **Primary target.** Download Actions → **Release** → artifact `tacx-desktop-linux-x64` (or a GitHub Release `tacx-desktop-linux-x64-v*.tar.gz`).

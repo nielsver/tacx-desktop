@@ -8,6 +8,7 @@ void main() {
     for (var i = 1; i < RideType.all.length; i++) {
       expect(RideType.all[i], lessThan(RideType.all[i - 1]));
     }
+    expect(RideType.gameHero, greaterThanOrEqualTo(72));
     expect(RideType.hero, greaterThanOrEqualTo(48));
     expect(RideType.target, 40);
     expect(RideType.caption, greaterThanOrEqualTo(12));
@@ -20,7 +21,7 @@ void main() {
 
   test('dashboard has no orphan font sizes outside RideType', () {
     final literal = RegExp(r'fontSize:\s*\d');
-    for (final path in ['lib/main.dart', 'lib/src/ui/ride_dashboard.dart']) {
+    for (final path in ['lib/main.dart', 'lib/src/ui/ride_dashboard.dart', 'lib/src/ui/focus_ride_view.dart']) {
       final lines = File(path).readAsLinesSync();
       final offenders = <String>[];
       for (var i = 0; i < lines.length; i++) {

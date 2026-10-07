@@ -37,6 +37,7 @@ dependencies:
   tacx_desktop_core:
     path: rust_builder
   flutter_rust_bridge: 2.13.0
+  window_manager: ^0.5.2
 
 dev_dependencies:
   flutter_test:

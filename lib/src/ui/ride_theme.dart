@@ -38,8 +38,15 @@ abstract final class RideColors {
 /// hierarchy (watts first, then targets, titles, body, captions) stays
 /// consistent. See UX checklist P0-X1.
 abstract final class RideType {
-  /// Live power hero value.
+  /// Live power hero value (dashboard).
   static const double hero = 48;
+
+  /// Immersive Focus / game-mode power (checklist P0-F4 ≥72sp).
+  static const double gameHero = 80;
+  static const double focusHero = gameHero;
+
+  /// Secondary metrics in Focus mode (≤18sp beside hero).
+  static const double focusMetric = 18;
 
   /// ERG target watts / resistance percent.
   static const double target = 40;
@@ -70,11 +77,12 @@ abstract final class RideType {
 
   /// Every allowed size, largest first.
   static const List<double> all = [
+    gameHero,
     hero,
     target,
     glyph,
     header,
-    metric,
+    metric, // == focusMetric
     title,
     body,
     label,
@@ -239,4 +247,24 @@ double contrastRatio(Color a, Color b) {
   final hi = la > lb ? la : lb;
   final lo = la > lb ? lb : la;
   return (hi + 0.05) / (lo + 0.05);
+}
+
+
+/// Aesthetic power-zone accent for Focus glow (not a coaching prescription).
+/// Absolute watt bands so demo / Kickr / Tacx all look coherent without FTP.
+Color powerZoneAccent(double watts) {
+  if (watts < 1) return RideColors.textMuted;
+  if (watts < 120) return const Color(0xFF5C6BC0); // recovery / Z1
+  if (watts < 180) return RideColors.cadence; // endurance
+  if (watts < 230) return const Color(0xFF9CCC65); // tempo
+  if (watts < 280) return RideColors.warn; // threshold
+  if (watts < 350) return RideColors.power; // VO2
+  return RideColors.danger; // anaerobic
+}
+
+/// Soft radial glow alpha for Focus power (capped — keep Plasma Wayland calm).
+/// Subtle zone wash alpha — checklist P0-V1 caps at 0.08–0.12 (not cartoon).
+double powerGlowOpacity(double watts) {
+  if (watts < 1) return 0.0;
+  return (0.08 + (watts / 450.0) * 0.04).clamp(0.08, 0.12);
 }

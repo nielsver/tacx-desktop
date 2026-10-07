@@ -1,5 +1,7 @@
 #include "my_application.h"
 
+#include <string.h>
+
 #include <flutter_linux/flutter_linux.h>
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
@@ -26,19 +28,28 @@ static void my_application_activate(GApplication* application) {
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
-  // Use a header bar when running in GNOME as this is the common style used
-  // by applications and is the setup most users will be using (e.g. Ubuntu
-  // desktop).
-  // If running on X and not using GNOME then just use a traditional title bar
-  // in case the window manager does more exotic layout, e.g. tiling.
-  // If running on Wayland assume the header bar will work (may need changing
-  // if future cases occur).
-  gboolean use_header_bar = TRUE;
+  // Prefer a classic dark-friendly titlebar on KDE/Plasma (Garuda). Wayland
+  // previously forced GtkHeaderBar which often renders a light Breeze chrome
+  // over our dark ride UI (game-mode checklist P1-FS5). Only use GtkHeaderBar
+  // on GNOME-family desktops.
+  gboolean use_header_bar = FALSE;
+  const gchar* desktop = g_getenv("XDG_CURRENT_DESKTOP");
+  if (desktop != nullptr) {
+    g_autofree gchar* upper = g_ascii_strup(desktop, -1);
+    const gboolean is_gnome = strstr(upper, "GNOME") != nullptr;
+    const gboolean is_kde =
+        strstr(upper, "KDE") != nullptr || strstr(upper, "PLASMA") != nullptr;
+    if (is_gnome && !is_kde) {
+      use_header_bar = TRUE;
+    }
+  }
 #ifdef GDK_WINDOWING_X11
   GdkScreen* screen = gtk_window_get_screen(window);
   if (GDK_IS_X11_SCREEN(screen)) {
     const gchar* wm_name = gdk_x11_screen_get_window_manager_name(screen);
-    if (g_strcmp0(wm_name, "GNOME Shell") != 0) {
+    if (g_strcmp0(wm_name, "GNOME Shell") == 0) {
+      use_header_bar = TRUE;
+    } else if (g_strcmp0(wm_name, "KWin") == 0) {
       use_header_bar = FALSE;
     }
   }

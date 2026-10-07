@@ -38,3 +38,7 @@ Tacx Desktop — Linux first-run (Garuda / Arch primary)
 Pitfalls: Soft-blocked rfkill; OS pairing; another app holding the link (busy/NOCTRL — quit Wahoo app too).
 Kickr ERG: allow 3–5 s to settle after Apply. Kickr Bike: Resistance panel stays disabled (ERG/Simulation only).
 Public FTMS only — no Wahoo proprietary a026* path.
+
+Focus / game mode: press G (or header Focus). F11 fullscreen; Esc leaves fullscreen.
+Effects Off by default; Subtle = soft power wash. KDE uses classic titlebar (dark-friendly).
+Wayland jank fallback: GDK_BACKEND=x11 ./tacx_desktop

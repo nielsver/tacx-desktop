@@ -5,8 +5,11 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
+import 'package:flutter/services.dart';
+import 'package:tacx_desktop/src/ui/focus_ride_view.dart';
 import 'package:tacx_desktop/src/ui/hr_strap_bar.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
+import 'package:tacx_desktop/src/ui/window_chrome.dart';
 
 class RideDashboard extends StatefulWidget {
   const RideDashboard({super.key});
@@ -100,6 +103,10 @@ class _RideDashboardState extends State<RideDashboard> {
   BluetoothStatus? _bt;
   bool _simExpanded = false;
   bool _simAdvanced = false;
+  /// Focus / game-mode ride view (P0-F1). Memory-only for MVP.
+  bool _focusMode = false;
+  /// Zone wash / cadence pulse — off by default (P0-V3).
+  FocusEffects _focusEffects = FocusEffects.off;
 
   @override
   void initState() {
@@ -338,6 +345,29 @@ class _RideDashboardState extends State<RideDashboard> {
     }, label: 'Connecting');
   }
 
+
+  void _toggleFocusMode() {
+    setState(() => _focusMode = !_focusMode);
+  }
+
+  Future<void> _toggleFullScreen() async {
+    await WindowChrome.toggleFullScreen();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _exitFullScreenOnly() async {
+    if (await WindowChrome.isFullScreen()) {
+      await WindowChrome.setFullScreen(false);
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _enterImmersive() async {
+    setState(() => _focusMode = true);
+    await WindowChrome.setFullScreen(true);
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final connected = _snap.state == ConnectionState.connected;
@@ -345,25 +375,47 @@ class _RideDashboardState extends State<RideDashboard> {
     final simSupported = _snap.supportsSimulation || _snap.isDemo;
     final activeMode = _snap.mode;
 
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            _Header(
-              snap: _snap,
-              demo: _snap.isDemo,
-              onDemoChanged: (v) {
-                api.setDemoMode(enabled: v);
-                setState(() {
-                  _devices = [];
-                  _selected = null;
-                  _error = null;
-                  _didScan = false;
-                });
-                _refresh();
-                _checkBluetooth();
-              },
-            ),
+    final intervalRunning = _interval.running;
+
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyG): _toggleFocusMode,
+        const SingleActivator(LogicalKeyboardKey.f11): () {
+          _toggleFullScreen();
+        },
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          _exitFullScreenOnly();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          body: SafeArea(
+            child: Column(
+              children: [
+                if (!_focusMode)
+                  _Header(
+                    snap: _snap,
+                    demo: _snap.isDemo,
+                    focusMode: _focusMode,
+                    focusEffects: _focusEffects,
+                    onFocusToggle: _toggleFocusMode,
+                    onImmersive: _enterImmersive,
+                    onFullScreen: _toggleFullScreen,
+                    onEffectsChanged: (e) =>
+                        setState(() => _focusEffects = e),
+                    onDemoChanged: (v) {
+                      api.setDemoMode(enabled: v);
+                      setState(() {
+                        _devices = [];
+                        _selected = null;
+                        _error = null;
+                        _didScan = false;
+                      });
+                      _refresh();
+                      _checkBluetooth();
+                    },
+                  ),
             if (_btRadioBad)
               _StatusStrip(
                 key: const ValueKey('bt-off-banner'),
@@ -439,7 +491,40 @@ class _RideDashboardState extends State<RideDashboard> {
                 ],
               ),
             Expanded(
-              child: Padding(
+              child: _focusMode
+                  ? FocusRideView(
+                      key: const ValueKey('focus-ride-view'),
+                      metrics: _metrics,
+                      snap: _snap,
+                      ride: _ride,
+                      targetWatts: _targetWatts,
+                      ergStep: _ergStep,
+                      connected: connected,
+                      busy: _busy,
+                      effects: _focusEffects,
+                      intervalRunning: intervalRunning,
+                      onExitFocus: _toggleFocusMode,
+                      onDisconnect: () => _run(
+                        () => api.disconnectTrainer(),
+                        label: 'Disconnecting',
+                      ),
+                      onStopInterval: () {
+                        api.stopInterval();
+                        _refresh();
+                      },
+                      onNudge: (d) => setState(
+                        () => _targetWatts =
+                            (_targetWatts + d * _ergStep).clamp(0, 2000),
+                      ),
+                      onApplyErg: () => _run(
+                        () => api.setTargetPower(watts: _targetWatts),
+                        success:
+                            'ERG $_targetWatts W sent — allow 3–5 s to settle (Kickr)',
+                        successIcon: Icons.bolt,
+                      ),
+                      onStepChanged: (s) => setState(() => _ergStep = s),
+                    )
+                  : Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                 child: LayoutBuilder(
                   builder: (context, box) {
@@ -696,6 +781,8 @@ class _RideDashboardState extends State<RideDashboard> {
           ],
         ),
       ),
+    ),
+  ),
     );
   }
 }
@@ -849,11 +936,23 @@ class _Header extends StatelessWidget {
     required this.snap,
     required this.demo,
     required this.onDemoChanged,
+    required this.focusMode,
+    required this.focusEffects,
+    required this.onFocusToggle,
+    required this.onImmersive,
+    required this.onFullScreen,
+    required this.onEffectsChanged,
   });
 
   final ConnectionSnapshot snap;
   final bool demo;
   final ValueChanged<bool> onDemoChanged;
+  final bool focusMode;
+  final FocusEffects focusEffects;
+  final VoidCallback onFocusToggle;
+  final VoidCallback onImmersive;
+  final VoidCallback onFullScreen;
+  final ValueChanged<FocusEffects> onEffectsChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -926,7 +1025,65 @@ class _Header extends StatelessWidget {
                 fontSize: RideType.label,
               ),
             ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
+          Tooltip(
+            message: 'Focus mode (G) — immersive power view',
+            child: TextButton.icon(
+              key: const ValueKey('header-focus'),
+              onPressed: onFocusToggle,
+              icon: Icon(
+                focusMode ? Icons.fullscreen_exit : Icons.sports_esports,
+                color: Colors.white,
+                size: 20,
+              ),
+              label: Text(
+                focusMode ? 'Exit Focus' : 'Focus',
+                style: const TextStyle(color: Colors.white),
+              ),
+            ),
+          ),
+          Tooltip(
+            message: 'Immersive = Focus + fullscreen (F11)',
+            child: IconButton(
+              key: const ValueKey('header-immersive'),
+              onPressed: onImmersive,
+              icon: const Icon(Icons.open_in_full, color: Colors.white70),
+              tooltip: 'Immersive',
+            ),
+          ),
+          Tooltip(
+            message: 'Fullscreen (F11)',
+            child: IconButton(
+              key: const ValueKey('header-fullscreen'),
+              onPressed: onFullScreen,
+              icon: const Icon(Icons.fullscreen, color: Colors.white70),
+            ),
+          ),
+          PopupMenuButton<FocusEffects>(
+            tooltip: 'Focus visual effects (Subtle / Off)',
+            onSelected: onEffectsChanged,
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: FocusEffects.off,
+                child: Text('Effects: Off'),
+              ),
+              const PopupMenuItem(
+                value: FocusEffects.subtle,
+                child: Text('Effects: Subtle'),
+              ),
+            ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Icon(
+                focusEffects == FocusEffects.subtle
+                    ? Icons.auto_awesome
+                    : Icons.auto_awesome_outlined,
+                color: Colors.white70,
+                size: 20,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           const Text('Demo', style: TextStyle(color: Colors.white)),
           Switch(value: demo, onChanged: onDemoChanged),
         ],

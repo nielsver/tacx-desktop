@@ -194,6 +194,69 @@ pub fn get_ride_summary(ftp_w: u32) -> RideSummary {
     crate::trainer::ride::summary(ftp_w)
 }
 
+// ---- Ride efforts (QA c4 P1-1; ride-boundary checklist option a) ----
+
+/// Open an effort. Same kind → same id; a different kind supersedes the
+/// open one. `demo` is captured here and never changes.
+#[flutter_rust_bridge::frb(sync)]
+pub fn begin_effort(kind: EffortKind, demo: bool) -> u32 {
+    crate::trainer::ride::begin_effort(kind, demo)
+}
+
+/// Close the open effort and emit one `RideEnded`. Idempotent: with none
+/// open, returns the last closed slice and emits nothing.
+#[flutter_rust_bridge::frb(sync)]
+pub fn end_effort(completed: bool) -> Option<RideSlice> {
+    crate::trainer::ride::end_effort(completed)
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn current_effort() -> Option<RideSlice> {
+    crate::trainer::ride::current_effort()
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_effort(id: u32) -> Option<RideSlice> {
+    crate::trainer::ride::effort(id)
+}
+
+/// Efforts of this session, oldest first.
+#[flutter_rust_bridge::frb(sync)]
+pub fn list_efforts() -> Vec<RideSlice> {
+    crate::trainer::ride::list_efforts()
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn effort_summary(id: u32, ftp_w: u32) -> Option<RideSummary> {
+    crate::trainer::ride::effort_summary(id, ftp_w)
+}
+
+/// Lap totals of effort `id` (what its TCX lap reports).
+#[flutter_rust_bridge::frb(sync)]
+pub fn effort_stats(id: u32) -> Option<RideStats> {
+    crate::trainer::ride::effort_stats(id)
+}
+
+/// Save effort `id` as TCX (`tacx-ride-<UTC>[-demo].tcx`).
+pub fn export_effort_tcx(id: u32, dir: Option<String>) -> Result<String, String> {
+    let dir = dir.filter(|d| !d.trim().is_empty()).map(std::path::PathBuf::from);
+    crate::trainer::ride::export_effort_tcx(id, dir.as_deref()).map(|p| p.display().to_string())
+}
+
+/// Step-5 pause: no points, no moving time while paused.
+#[flutter_rust_bridge::frb(sync)]
+pub fn set_ride_paused(paused: bool) {
+    crate::trainer::ride::set_paused(paused);
+}
+
+/// Recorder events (`RideEnded { slice_id }`), the hook step 5's remote
+/// End & Save will reuse.
+pub fn ride_events(sink: crate::frb_generated::StreamSink<RideEvent>) {
+    crate::trainer::ride::on_ride_event(move |e| {
+        let _ = sink.add(e.clone());
+    });
+}
+
 /// Zero the ride totals (keeps recording if a trainer is connected).
 #[flutter_rust_bridge::frb(sync)]
 pub fn reset_ride_stats() {
@@ -270,7 +333,12 @@ pub fn workouts_dir() -> String {
 pub async fn start_workout(id: String) -> Result<(), String> {
     let ctrl = controller();
     let mut g = ctrl.lock().await;
-    g.start_workout(id).await
+    let r = g.start_workout(id.clone()).await;
+    if r.is_ok() {
+        // A new effort: summary / TCX cover only what follows.
+        crate::trainer::ride::begin_effort(EffortKind::workout(id), g.is_demo());
+    }
+    r
 }
 
 #[flutter_rust_bridge::frb(sync)]
@@ -280,6 +348,8 @@ pub fn stop_workout() {
         let mut g = ctrl.lock().await;
         g.stop_workout();
     });
+    // User Stop: close the effort (route completion closes it as Completed).
+    crate::trainer::ride::end_effort(false);
 }
 
 #[flutter_rust_bridge::frb(sync)]
@@ -310,7 +380,13 @@ pub fn import_gpx_file(path: String) -> Result<GpxProfileInfo, String> {
 pub async fn start_gpx_route(profile: GpxProfileInfo) -> Result<(), String> {
     let ctrl = controller();
     let mut g = ctrl.lock().await;
-    g.start_gpx_route(profile).await
+    let route_key = profile.route_key.clone();
+    let r = g.start_gpx_route(profile).await;
+    if r.is_ok() {
+        // A new effort: summary / TCX cover only what follows.
+        crate::trainer::ride::begin_effort(EffortKind::route(route_key), g.is_demo());
+    }
+    r
 }
 
 #[flutter_rust_bridge::frb(sync)]
@@ -320,6 +396,8 @@ pub fn stop_gpx_route() {
         let mut g = ctrl.lock().await;
         g.stop_gpx_route();
     });
+    // User Stop: close the effort (route completion closes it as Completed).
+    crate::trainer::ride::end_effort(false);
 }
 
 #[flutter_rust_bridge::frb(sync)]

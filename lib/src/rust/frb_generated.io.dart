@@ -21,6 +21,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   });
 
   @protected
+  AnyhowException dco_decode_AnyhowException(dynamic raw);
+
+  @protected
+  RustStreamSink<RideEvent> dco_decode_StreamSink_ride_event_Sse(dynamic raw);
+
+  @protected
   String dco_decode_String(dynamic raw);
 
   @protected
@@ -33,6 +39,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  EffortKind dco_decode_box_autoadd_effort_kind(dynamic raw);
+
+  @protected
+  EndReason dco_decode_box_autoadd_end_reason(dynamic raw);
+
+  @protected
   double dco_decode_box_autoadd_f_64(dynamic raw);
 
   @protected
@@ -40,6 +52,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   int dco_decode_box_autoadd_i_32(dynamic raw);
+
+  @protected
+  RideSlice dco_decode_box_autoadd_ride_slice(dynamic raw);
+
+  @protected
+  RideStats dco_decode_box_autoadd_ride_stats(dynamic raw);
+
+  @protected
+  RideSummary dco_decode_box_autoadd_ride_summary(dynamic raw);
 
   @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
@@ -57,7 +78,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DiscoveredDevice dco_decode_discovered_device(dynamic raw);
 
   @protected
+  EffortKind dco_decode_effort_kind(dynamic raw);
+
+  @protected
+  EffortType dco_decode_effort_type(dynamic raw);
+
+  @protected
   ElevSample dco_decode_elev_sample(dynamic raw);
+
+  @protected
+  EndReason dco_decode_end_reason(dynamic raw);
 
   @protected
   double dco_decode_f_64(dynamic raw);
@@ -73,6 +103,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   int dco_decode_i_32(dynamic raw);
+
+  @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
   IntervalPresetInfo dco_decode_interval_preset_info(dynamic raw);
@@ -108,16 +141,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<RideSlice> dco_decode_list_ride_slice(dynamic raw);
+
+  @protected
   List<WorkoutInfo> dco_decode_list_workout_info(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
+  EndReason? dco_decode_opt_box_autoadd_end_reason(dynamic raw);
+
+  @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
 
   @protected
   int? dco_decode_opt_box_autoadd_i_32(dynamic raw);
+
+  @protected
+  RideSlice? dco_decode_opt_box_autoadd_ride_slice(dynamic raw);
+
+  @protected
+  RideStats? dco_decode_opt_box_autoadd_ride_stats(dynamic raw);
+
+  @protected
+  RideSummary? dco_decode_opt_box_autoadd_ride_summary(dynamic raw);
 
   @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
@@ -133,6 +181,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ResistanceRange dco_decode_resistance_range(dynamic raw);
+
+  @protected
+  RideEvent dco_decode_ride_event(dynamic raw);
+
+  @protected
+  RideEventKind dco_decode_ride_event_kind(dynamic raw);
+
+  @protected
+  RideSlice dco_decode_ride_slice(dynamic raw);
 
   @protected
   RideStats dco_decode_ride_stats(dynamic raw);
@@ -162,6 +219,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   WorkoutStatus dco_decode_workout_status(dynamic raw);
 
   @protected
+  AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<RideEvent> sse_decode_StreamSink_ride_event_Sse(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
@@ -174,6 +239,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  EffortKind sse_decode_box_autoadd_effort_kind(SseDeserializer deserializer);
+
+  @protected
+  EndReason sse_decode_box_autoadd_end_reason(SseDeserializer deserializer);
+
+  @protected
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
@@ -183,6 +254,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   int sse_decode_box_autoadd_i_32(SseDeserializer deserializer);
+
+  @protected
+  RideSlice sse_decode_box_autoadd_ride_slice(SseDeserializer deserializer);
+
+  @protected
+  RideStats sse_decode_box_autoadd_ride_stats(SseDeserializer deserializer);
+
+  @protected
+  RideSummary sse_decode_box_autoadd_ride_summary(SseDeserializer deserializer);
 
   @protected
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
@@ -202,7 +282,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DiscoveredDevice sse_decode_discovered_device(SseDeserializer deserializer);
 
   @protected
+  EffortKind sse_decode_effort_kind(SseDeserializer deserializer);
+
+  @protected
+  EffortType sse_decode_effort_type(SseDeserializer deserializer);
+
+  @protected
   ElevSample sse_decode_elev_sample(SseDeserializer deserializer);
+
+  @protected
+  EndReason sse_decode_end_reason(SseDeserializer deserializer);
 
   @protected
   double sse_decode_f_64(SseDeserializer deserializer);
@@ -218,6 +307,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
+
+  @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
   IntervalPresetInfo sse_decode_interval_preset_info(
@@ -259,16 +351,39 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<RideSlice> sse_decode_list_ride_slice(SseDeserializer deserializer);
+
+  @protected
   List<WorkoutInfo> sse_decode_list_workout_info(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
+  EndReason? sse_decode_opt_box_autoadd_end_reason(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
   int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer);
+
+  @protected
+  RideSlice? sse_decode_opt_box_autoadd_ride_slice(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RideStats? sse_decode_opt_box_autoadd_ride_stats(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RideSummary? sse_decode_opt_box_autoadd_ride_summary(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
@@ -284,6 +399,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ResistanceRange sse_decode_resistance_range(SseDeserializer deserializer);
+
+  @protected
+  RideEvent sse_decode_ride_event(SseDeserializer deserializer);
+
+  @protected
+  RideEventKind sse_decode_ride_event_kind(SseDeserializer deserializer);
+
+  @protected
+  RideSlice sse_decode_ride_slice(SseDeserializer deserializer);
 
   @protected
   RideStats sse_decode_ride_stats(SseDeserializer deserializer);
@@ -313,6 +437,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   WorkoutStatus sse_decode_workout_status(SseDeserializer deserializer);
 
   @protected
+  void sse_encode_AnyhowException(
+    AnyhowException self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_StreamSink_ride_event_Sse(
+    RustStreamSink<RideEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
@@ -331,6 +467,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_effort_kind(
+    EffortKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_end_reason(
+    EndReason self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
 
   @protected
@@ -341,6 +489,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_ride_slice(
+    RideSlice self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_ride_stats(
+    RideStats self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_ride_summary(
+    RideSummary self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
@@ -367,7 +533,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_effort_kind(EffortKind self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_effort_type(EffortType self, SseSerializer serializer);
+
+  @protected
   void sse_encode_elev_sample(ElevSample self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_end_reason(EndReason self, SseSerializer serializer);
 
   @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
@@ -386,6 +561,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
   void sse_encode_interval_preset_info(
@@ -448,6 +626,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_ride_slice(
+    List<RideSlice> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_workout_info(
     List<WorkoutInfo> self,
     SseSerializer serializer,
@@ -457,10 +641,34 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_end_reason(
+    EndReason? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_ride_slice(
+    RideSlice? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_ride_stats(
+    RideStats? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_ride_summary(
+    RideSummary? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
@@ -479,6 +687,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ResistanceRange self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_ride_event(RideEvent self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ride_event_kind(RideEventKind self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ride_slice(RideSlice self, SseSerializer serializer);
 
   @protected
   void sse_encode_ride_stats(RideStats self, SseSerializer serializer);

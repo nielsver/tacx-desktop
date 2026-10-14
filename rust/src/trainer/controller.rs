@@ -96,7 +96,7 @@ async fn ride_ticker() {
         let tick = match CONTROLLER.get().map(|c| c.try_lock()) {
             Some(Ok(g)) => {
                 if g.snapshot().state == ConnectionState::Connected {
-                    ride::Tick::Connected(g.metrics())
+                    ride::Tick::Connected(g.metrics(), g.is_demo())
                 } else {
                     ride::Tick::Idle
                 }
@@ -343,6 +343,8 @@ impl TrainerController {
 
     pub async fn set_demo_mode(&mut self, enabled: bool) {
         let _ = self.disconnect().await;
+        // Demo and real data never share an effort.
+        ride::end_effort(false);
         self.demo_mode = enabled;
         self.backend = Backend::Demo(DemoTrainer::new());
         self.snapshot = ConnectionSnapshot {
@@ -1277,7 +1279,10 @@ impl TrainerController {
                 })
                 .await
             {
-                Ok(()) => {}
+                Ok(()) => {
+                    // Ran to the end (Stop aborts this task instead).
+                    ride::end_effort(true);
+                }
                 Err(e) => log::warn!("Workout finished with error: {e}"),
             }
         }));
@@ -1372,6 +1377,7 @@ impl TrainerController {
                     g.route_status.grade_pct = 0.0;
                     g.route_status.progress_m = profile.distance_m;
                     g.route_status.status_text = format!("{} · Route complete", profile.name);
+                    ride::end_effort(true);
                     g.publish_route();
                     if let Err(e) = g
                         .set_indoor_bike_simulation(

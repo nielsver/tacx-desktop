@@ -325,6 +325,8 @@ pub struct RideSummary {
     pub power_series: Vec<f64>,
     /// Heart rate on the same buckets, bpm (0 = no reading in the bucket).
     pub heart_rate_series: Vec<f64>,
+    /// The ride segment came from the Demo trainer (synthetic data).
+    pub is_demo: bool,
 }
 
 /// Upper bound on `RideSummary` chart series length.
@@ -411,4 +413,84 @@ pub struct RouteStatus {
     pub grade_pct: f64,
     pub complete: bool,
     pub status_text: String,
+}
+
+/// Kind of ride effort (QA c4 P1-1, ride-boundary checklist option a).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffortType {
+    /// Auto-begun on the first pedal stroke with nothing started.
+    FreeRide,
+    Route,
+    Workout,
+}
+
+/// What a ride effort is: `key` is the route key (Route), the workout id
+/// (Workout) or empty (FreeRide). A flat struct so the Dart side needs no
+/// code generator for sealed classes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EffortKind {
+    pub kind: EffortType,
+    pub key: String,
+}
+
+impl EffortKind {
+    pub fn free_ride() -> Self {
+        Self { kind: EffortType::FreeRide, key: String::new() }
+    }
+    pub fn route(route_key: impl Into<String>) -> Self {
+        Self { kind: EffortType::Route, key: route_key.into() }
+    }
+    pub fn workout(id: impl Into<String>) -> Self {
+        Self { kind: EffortType::Workout, key: id.into() }
+    }
+}
+
+/// Why an effort closed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EndReason {
+    Stopped,
+    Completed,
+    /// Trainer idle (disconnected) for more than 60 s.
+    DisconnectTimeout,
+    /// Another effort began while this one was open.
+    Superseded,
+}
+
+/// One effort inside the session: `points[first..end]` of the recorder.
+#[derive(Clone, Debug)]
+pub struct RideSlice {
+    pub id: u32,
+    pub kind: EffortKind,
+    /// Captured at begin; never changes.
+    pub demo: bool,
+    pub start_ms: i64,
+    /// Last update (live) or close time, ms since epoch.
+    pub end_ms: i64,
+    pub first: u32,
+    pub end: u32,
+    pub moving_s: u32,
+    pub paused_s: u32,
+    pub completed: bool,
+    /// `None` while the effort is open.
+    pub end_reason: Option<EndReason>,
+}
+
+/// Recorder event kinds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RideEventKind {
+    RideEnded,
+}
+
+/// Recorder events (`ride_events` stream). Step 5's remote End & Save
+/// listens to the same stream.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RideEvent {
+    pub kind: RideEventKind,
+    pub slice_id: u32,
+}
+
+impl RideEvent {
+    pub fn ride_ended(slice_id: u32) -> Self {
+        Self { kind: RideEventKind::RideEnded, slice_id }
+    }
 }

@@ -5,7 +5,9 @@
 //! time or energy.
 
 use crate::trainer::tcx::{self, LapSummary, TrackPoint};
-use crate::trainer::types::{RideStats, TrainerMetrics};
+use crate::trainer::types::{
+    EffortKind, EndReason, RideEvent, RideSlice, RideStats, RideSummary, TrainerMetrics,
+};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
@@ -128,35 +130,80 @@ fn sane(x: f64, max: f64) -> f64 {
 
 /// What one ticker pass saw.
 pub enum Tick {
-    /// Connected: credit time since the previous connected tick.
-    Connected(TrainerMetrics),
+    /// Connected: credit time since the previous connected tick. The flag
+    /// says whether the source is the Demo trainer (synthetic data).
+    Connected(TrainerMetrics, bool),
     /// Not connected (or reconnecting): pause, next sample starts fresh.
     Idle,
     /// Controller busy: skip without breaking the time chain.
     Busy,
 }
 
+/// An Idle streak longer than this ends the open effort.
+pub const EFFORT_IDLE_TIMEOUT_S: f64 = 60.0;
+
+#[derive(Clone, Debug)]
+struct Effort {
+    id: u32,
+    kind: EffortKind,
+    demo: bool,
+    first: usize,
+    end: Option<usize>,
+    start_ms: i64,
+    end_ms: i64,
+    acc: RideAccumulator,
+    paused_s: f64,
+    completed: bool,
+    reason: Option<EndReason>,
+}
+
+/// Session recorder. Points are pushed once; efforts are index ranges into
+/// them (no copying). Points outside efforts only feed the live view and
+/// session totals; they are never summarised or exported.
 #[derive(Default)]
 pub struct RideRecorder {
     acc: RideAccumulator,
     last: Option<Instant>,
     points: Vec<TrackPoint>,
+    efforts: Vec<Effort>,
+    next_id: u32,
+    paused: bool,
+    idle_since: Option<Instant>,
+    /// Events raised under the lock, delivered after it is released.
+    events: Vec<RideEvent>,
 }
 
 impl RideRecorder {
     /// `wall_ms` is the UTC wall clock (ms since epoch) used for export timestamps.
     pub fn tick(&mut self, now: Instant, wall_ms: i64, t: Tick) {
         match t {
-            Tick::Connected(m) => {
+            Tick::Connected(m, demo) => {
+                self.idle_since = None;
                 let dt = self
                     .last
                     .map(|l| now.saturating_duration_since(l).as_secs_f64())
                     .unwrap_or(0.0);
-                self.acc.add_sample(&m, dt);
                 self.last = Some(now);
-                // One point per connected tick (the anchor too), strictly increasing time.
+                if self.paused {
+                    if let Some(e) = self.open_mut() {
+                        e.paused_s += dt.clamp(0.0, MAX_SAMPLE_GAP_S);
+                        e.end_ms = wall_ms;
+                    }
+                    return;
+                }
+                if self.open().is_none() && sane(m.power_w, 3000.0) >= 1.0 {
+                    self.begin_at(EffortKind::free_ride(), demo, wall_ms);
+                }
+                self.acc.add_sample(&m, dt);
                 let newer = self.points.last().is_none_or(|p| wall_ms / 1000 > p.unix_ms / 1000);
-                if newer && self.points.len() < MAX_TRACK_POINTS {
+                let pushed = newer && self.points.len() < MAX_TRACK_POINTS;
+                if let Some(e) = self.open_mut() {
+                    // The effort's first sample is its anchor (no time credited).
+                    let edt = if e.acc.stats().recording { dt } else { 0.0 };
+                    e.acc.add_sample(&m, edt);
+                    e.end_ms = wall_ms;
+                }
+                if pushed {
                     self.points.push(TrackPoint {
                         unix_ms: wall_ms,
                         power_w: m.power_w,
@@ -170,16 +217,157 @@ impl RideRecorder {
             Tick::Idle => {
                 self.last = None;
                 self.acc.set_recording(false);
+                let since = *self.idle_since.get_or_insert(now);
+                if now.saturating_duration_since(since).as_secs_f64() > EFFORT_IDLE_TIMEOUT_S
+                    && self.open().is_some()
+                {
+                    self.close(false, EndReason::DisconnectTimeout, wall_ms);
+                }
             }
             Tick::Busy => {}
         }
     }
 
-    pub fn reset(&mut self) {
+    fn open(&self) -> Option<&Effort> {
+        self.efforts.last().filter(|e| e.end.is_none())
+    }
+
+    fn open_mut(&mut self) -> Option<&mut Effort> {
+        self.efforts.last_mut().filter(|e| e.end.is_none())
+    }
+
+    fn begin_at(&mut self, kind: EffortKind, demo: bool, wall_ms: i64) -> u32 {
+        if let Some(e) = self.open() {
+            if e.kind == kind {
+                return e.id;
+            }
+            self.close(false, EndReason::Superseded, wall_ms);
+        }
+        self.next_id += 1;
+        self.efforts.push(Effort {
+            id: self.next_id,
+            kind,
+            demo,
+            first: self.points.len(),
+            end: None,
+            start_ms: wall_ms,
+            end_ms: wall_ms,
+            acc: RideAccumulator::default(),
+            paused_s: 0.0,
+            completed: false,
+            reason: None,
+        });
+        self.next_id
+    }
+
+    /// Open an effort (idempotent for the same kind; a different kind
+    /// supersedes the open one). `demo` is captured here.
+    pub fn begin_effort(&mut self, kind: EffortKind, demo: bool, wall_ms: i64) -> u32 {
+        self.begin_at(kind, demo, wall_ms)
+    }
+
+    fn close(&mut self, completed: bool, reason: EndReason, wall_ms: i64) -> Option<RideSlice> {
+        let end = self.points.len();
+        let e = self.open_mut()?;
+        e.end = Some(end);
+        e.end_ms = e.end_ms.max(wall_ms);
+        e.completed = completed;
+        e.reason = Some(reason);
+        let id = e.id;
+        self.events.push(RideEvent::ride_ended(id));
+        self.slice(id)
+    }
+
+    /// Close the open effort (`Completed` or `Stopped`) and raise one
+    /// `RideEnded`. With none open, returns the last closed slice, no event.
+    pub fn end_effort(&mut self, completed: bool, wall_ms: i64) -> Option<RideSlice> {
+        if self.open().is_some() {
+            let reason = if completed { EndReason::Completed } else { EndReason::Stopped };
+            return self.close(completed, reason, wall_ms);
+        }
+        self.efforts.last().and_then(|e| self.slice(e.id))
+    }
+
+    pub fn set_paused(&mut self, paused: bool) {
+        self.paused = paused;
+    }
+
+    fn effort(&self, id: u32) -> Option<&Effort> {
+        self.efforts.iter().find(|e| e.id == id)
+    }
+
+    pub fn slice(&self, id: u32) -> Option<RideSlice> {
+        let e = self.effort(id)?;
+        let s = e.acc.stats();
+        Some(RideSlice {
+            id: e.id,
+            kind: e.kind.clone(),
+            demo: e.demo,
+            start_ms: e.start_ms,
+            end_ms: e.end_ms,
+            first: e.first as u32,
+            end: e.end.unwrap_or(self.points.len()) as u32,
+            moving_s: s.moving_s,
+            paused_s: e.paused_s.round() as u32,
+            completed: e.completed,
+            end_reason: e.reason,
+        })
+    }
+
+    pub fn current_effort(&self) -> Option<RideSlice> {
+        self.open().and_then(|e| self.slice(e.id))
+    }
+
+    pub fn list_efforts(&self) -> Vec<RideSlice> {
+        self.efforts.iter().filter_map(|e| self.slice(e.id)).collect()
+    }
+
+    pub fn latest_id(&self) -> Option<u32> {
+        self.efforts.last().map(|e| e.id)
+    }
+
+    fn range(&self, e: &Effort) -> &[TrackPoint] {
+        let end = e.end.unwrap_or(self.points.len()).min(self.points.len());
+        &self.points[e.first.min(end)..end]
+    }
+
+    /// Points of an effort (borrowed, no copy).
+    pub fn effort_points(&self, id: u32) -> Option<&[TrackPoint]> {
+        self.effort(id).map(|e| self.range(e))
+    }
+
+    pub fn effort_stats(&self, id: u32) -> Option<RideStats> {
+        self.effort(id).map(|e| e.acc.stats())
+    }
+
+    pub fn effort_summary(&self, id: u32, ftp_w: u32) -> Option<RideSummary> {
+        let e = self.effort(id)?;
+        let mut s = crate::trainer::summary::summarize(self.range(e), ftp_w);
+        s.is_demo = e.demo;
+        Some(s)
+    }
+
+    /// TCX for one effort: Lap StartTime = effort start, distance from 0,
+    /// `<Notes>DEMO</Notes>` on Demo efforts.
+    pub fn effort_tcx(&self, id: u32) -> Option<String> {
+        let e = self.effort(id)?;
+        let pts = self.range(e);
+        let base = pts.first()?.distance_m;
+        let pts: Vec<TrackPoint> = pts
+            .iter()
+            .map(|p| TrackPoint { distance_m: p.distance_m - base, ..p.clone() })
+            .collect();
+        tcx::render(&pts, &e.acc.lap_summary(), e.start_ms, e.demo)
+    }
+
+    /// Ends the open effort, then clears the session.
+    pub fn reset(&mut self, wall_ms: i64) {
+        self.end_effort(false, wall_ms);
         let recording = self.acc.stats().recording;
         self.acc.reset();
         self.acc.set_recording(recording);
         self.points.clear();
+        self.efforts.clear();
     }
 
     pub fn stats(&self) -> RideStats {
@@ -190,18 +378,45 @@ impl RideRecorder {
         self.points.len()
     }
 
-    /// TCX document for the current ride, or `None` if nothing was recorded.
-    pub fn to_tcx(&self) -> Option<String> {
-        tcx::render(&self.points, &self.acc.lap_summary())
+    /// TCX of the whole session (fallback when no effort exists).
+    pub fn session_tcx(&self) -> Option<String> {
+        let start = self.points.first()?.unix_ms;
+        tcx::render(&self.points, &self.acc.lap_summary(), start, false)
     }
 
-    /// Wall-clock start of the ride (first point), ms since epoch.
-    pub fn start_ms(&self) -> Option<i64> {
-        self.points.first().map(|p| p.unix_ms)
+    fn take_events(&mut self) -> Vec<RideEvent> {
+        std::mem::take(&mut self.events)
     }
 }
 
 static RECORDER: Lazy<Mutex<RideRecorder>> = Lazy::new(|| Mutex::new(RideRecorder::default()));
+
+type RideEventHook = Box<dyn Fn(&RideEvent) + Send + Sync>;
+static RIDE_EVENT_HOOKS: Lazy<Mutex<Vec<RideEventHook>>> = Lazy::new(|| Mutex::new(Vec::new()));
+
+/// Subscribe to recorder events (the FRB `ride_events` stream uses this;
+/// step 5's remote End & Save will too).
+pub fn on_ride_event(f: impl Fn(&RideEvent) + Send + Sync + 'static) {
+    RIDE_EVENT_HOOKS.lock().push(Box::new(f));
+}
+
+/// Run `f` under the recorder lock, then deliver its events outside it.
+fn with_recorder<T>(f: impl FnOnce(&mut RideRecorder) -> T) -> T {
+    let (out, events) = {
+        let mut r = RECORDER.lock();
+        let out = f(&mut r);
+        (out, r.take_events())
+    };
+    if !events.is_empty() {
+        let hooks = RIDE_EVENT_HOOKS.lock();
+        for ev in &events {
+            for h in hooks.iter() {
+                h(ev);
+            }
+        }
+    }
+    out
+}
 
 fn wall_ms() -> i64 {
     SystemTime::now()
@@ -211,7 +426,112 @@ fn wall_ms() -> i64 {
 }
 
 pub fn record(t: Tick) {
-    RECORDER.lock().tick(Instant::now(), wall_ms(), t);
+    with_recorder(|r| r.tick(Instant::now(), wall_ms(), t));
+}
+
+pub fn begin_effort(kind: EffortKind, demo: bool) -> u32 {
+    with_recorder(|r| r.begin_effort(kind, demo, wall_ms()))
+}
+
+pub fn end_effort(completed: bool) -> Option<RideSlice> {
+    with_recorder(|r| r.end_effort(completed, wall_ms()))
+}
+
+pub fn current_effort() -> Option<RideSlice> {
+    RECORDER.lock().current_effort()
+}
+
+pub fn list_efforts() -> Vec<RideSlice> {
+    RECORDER.lock().list_efforts()
+}
+
+pub fn effort(id: u32) -> Option<RideSlice> {
+    RECORDER.lock().slice(id)
+}
+
+pub fn effort_stats(id: u32) -> Option<RideStats> {
+    RECORDER.lock().effort_stats(id)
+}
+
+pub fn set_paused(paused: bool) {
+    RECORDER.lock().set_paused(paused);
+}
+
+/// Summary of effort `id`; points are copied under the lock, analysed outside.
+pub fn effort_summary(id: u32, ftp_w: u32) -> Option<RideSummary> {
+    let (pts, demo) = {
+        let r = RECORDER.lock();
+        let e = r.effort(id)?;
+        (r.range(e).to_vec(), e.demo)
+    };
+    let mut s = crate::trainer::summary::summarize(&pts, ftp_w);
+    s.is_demo = demo;
+    Some(s)
+}
+
+/// Latest effort's summary, or the whole session when there is none.
+pub fn summary(ftp_w: u32) -> RideSummary {
+    let latest = RECORDER.lock().latest_id();
+    match latest.and_then(|id| effort_summary(id, ftp_w)) {
+        Some(s) => s,
+        None => {
+            let pts = RECORDER.lock().points.clone();
+            crate::trainer::summary::summarize(&pts, ftp_w)
+        }
+    }
+}
+
+/// Write `doc` as `tacx-ride-<UTC stamp>[-demo].tcx` into `dir` (never
+/// overwrites: `-2`, `-3`, …).
+pub fn write_tcx_doc(doc: &str, start_ms: i64, demo: bool, dir: &Path) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(dir)
+        .map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
+    let stamp = tcx::file_stamp_utc(start_ms);
+    let tag = if demo { "-demo" } else { "" };
+    let mut path = dir.join(format!("tacx-ride-{stamp}{tag}.tcx"));
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("tacx-ride-{stamp}{tag}-{n}.tcx"));
+        n += 1;
+    }
+    std::fs::write(&path, doc).map_err(|e| format!("Could not write {}: {e}", path.display()))?;
+    Ok(path)
+}
+
+const NOTHING: &str = "Nothing recorded yet — connect a trainer and ride first.";
+
+/// Export effort `id`; render under the lock, write outside it.
+pub fn export_effort_tcx(id: u32, dir: Option<&Path>) -> Result<PathBuf, String> {
+    let (doc, start, demo) = {
+        let r = RECORDER.lock();
+        let e = r.effort(id).ok_or_else(|| format!("No ride #{id} in this session."))?;
+        (r.effort_tcx(id).ok_or_else(|| NOTHING.to_string())?, e.start_ms, e.demo)
+    };
+    let dir = dir.map(Path::to_path_buf).unwrap_or_else(default_export_dir);
+    write_tcx_doc(&doc, start, demo, &dir)
+}
+
+/// Export the latest effort (whole session when there is none).
+pub fn export_tcx(dir: Option<&Path>) -> Result<PathBuf, String> {
+    let latest = RECORDER.lock().latest_id();
+    if let Some(id) = latest {
+        return export_effort_tcx(id, dir);
+    }
+    let (doc, start) = {
+        let r = RECORDER.lock();
+        let doc = r.session_tcx().ok_or_else(|| NOTHING.to_string())?;
+        (doc, r.points[0].unix_ms)
+    };
+    let dir = dir.map(Path::to_path_buf).unwrap_or_else(default_export_dir);
+    write_tcx_doc(&doc, start, false, &dir)
+}
+
+pub fn stats() -> RideStats {
+    RECORDER.lock().stats()
+}
+
+pub fn reset() {
+    with_recorder(|r| r.reset(wall_ms()));
 }
 
 /// `~/Documents/Tacx Desktop` (Windows: `%USERPROFILE%\Documents\Tacx Desktop`),
@@ -232,54 +552,6 @@ pub fn default_export_dir() -> PathBuf {
         }
         None => std::env::temp_dir().join("Tacx Desktop"),
     }
-}
-
-/// Write `recorder`'s ride as `tacx-ride-<UTC stamp>.tcx` into `dir`.
-pub fn write_tcx(recorder: &RideRecorder, dir: &Path) -> Result<PathBuf, String> {
-    let doc = recorder
-        .to_tcx()
-        .ok_or_else(|| "Nothing recorded yet — connect a trainer and ride first.".to_string())?;
-    std::fs::create_dir_all(dir)
-        .map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
-    let stamp = tcx::file_stamp_utc(recorder.start_ms().unwrap_or_else(wall_ms));
-    let mut path = dir.join(format!("tacx-ride-{stamp}.tcx"));
-    let mut n = 2;
-    while path.exists() {
-        path = dir.join(format!("tacx-ride-{stamp}-{n}.tcx"));
-        n += 1;
-    }
-    std::fs::write(&path, doc).map_err(|e| format!("Could not write {}: {e}", path.display()))?;
-    Ok(path)
-}
-
-/// Export the live ride; `dir = None` uses [`default_export_dir`].
-pub fn export_tcx(dir: Option<&Path>) -> Result<PathBuf, String> {
-    // Render under the lock, write outside it so the 1 Hz ticker never waits on disk.
-    let snapshot = {
-        let r = RECORDER.lock();
-        RideRecorder {
-            acc: r.acc.clone(),
-            last: None,
-            points: r.points.clone(),
-        }
-    };
-    let dir = dir.map(Path::to_path_buf).unwrap_or_else(default_export_dir);
-    write_tcx(&snapshot, &dir)
-}
-
-pub fn stats() -> RideStats {
-    RECORDER.lock().stats()
-}
-
-/// Post-ride summary of the live recording (`ftp_w = 0`: unknown FTP).
-/// Points are copied under the lock; the analysis runs outside it.
-pub fn summary(ftp_w: u32) -> crate::trainer::types::RideSummary {
-    let points = RECORDER.lock().points.clone();
-    crate::trainer::summary::summarize(&points, ftp_w)
-}
-
-pub fn reset() {
-    RECORDER.lock().reset();
 }
 
 #[cfg(test)]
@@ -368,63 +640,231 @@ mod tests {
         let mut r = RideRecorder::default();
         let t0 = Instant::now();
         let w0: i64 = 1_791_385_000_000;
-        r.tick(t0, w0, Tick::Connected(m(200.0, 90.0, 30.0))); // anchor, dt 0
-        r.tick(t0 + Duration::from_secs(1), w0 + 1_000, Tick::Connected(m(200.0, 90.0, 30.0)));
+        r.tick(t0, w0, Tick::Connected(m(200.0, 90.0, 30.0), false)); // anchor, dt 0
+        r.tick(t0 + Duration::from_secs(1), w0 + 1_000, Tick::Connected(m(200.0, 90.0, 30.0), false));
         r.tick(t0 + Duration::from_secs(2), w0 + 2_000, Tick::Busy);
-        r.tick(t0 + Duration::from_secs(3), w0 + 3_000, Tick::Connected(m(200.0, 90.0, 30.0))); // 2 s (clamped)
+        r.tick(t0 + Duration::from_secs(3), w0 + 3_000, Tick::Connected(m(200.0, 90.0, 30.0), false)); // 2 s (clamped)
         assert_eq!(r.stats().elapsed_s, 3);
         r.tick(t0 + Duration::from_secs(4), w0 + 4_000, Tick::Idle);
         assert!(!r.stats().recording);
         // 60 s offline (reconnecting) is not credited.
-        r.tick(t0 + Duration::from_secs(64), w0 + 64_000, Tick::Connected(m(200.0, 90.0, 30.0)));
-        r.tick(t0 + Duration::from_secs(65), w0 + 65_000, Tick::Connected(m(200.0, 90.0, 30.0)));
+        r.tick(t0 + Duration::from_secs(64), w0 + 64_000, Tick::Connected(m(200.0, 90.0, 30.0), false));
+        r.tick(t0 + Duration::from_secs(65), w0 + 65_000, Tick::Connected(m(200.0, 90.0, 30.0), false));
         let s = r.stats();
         assert_eq!(s.elapsed_s, 4);
         assert!(s.recording);
         assert!((s.energy_kj - 0.8).abs() < 1e-9);
-        r.reset();
+        r.reset(W0);
         let s = r.stats();
         assert_eq!(s.elapsed_s, 0);
         assert_eq!(s.energy_kj, 0.0);
         assert!(s.recording, "reset keeps recording state");
     }
 
+    const W0: i64 = 1_791_385_000_000;
+
+    /// `secs` connected ticks at `p` W starting at second `from`.
+    fn ride(r: &mut RideRecorder, t0: Instant, from: u64, secs: u64, p: f64, demo: bool) {
+        for i in from..from + secs {
+            r.tick(
+                t0 + Duration::from_secs(i),
+                W0 + i as i64 * 1000,
+                Tick::Connected(m(p, if p > 0.0 { 90.0 } else { 0.0 }, 36.0), demo),
+            );
+        }
+    }
+
+    fn idle(r: &mut RideRecorder, t0: Instant, from: u64, secs: u64) {
+        for i in from..from + secs {
+            r.tick(t0 + Duration::from_secs(i), W0 + i as i64 * 1000, Tick::Idle);
+        }
+    }
+
+    fn at(s: u64) -> i64 {
+        W0 + s as i64 * 1000
+    }
+
+    fn route() -> EffortKind {
+        EffortKind::route("v2-abc")
+    }
+
     #[test]
     fn recorder_keeps_track_points_and_exports_tcx() {
         let mut r = RideRecorder::default();
-        assert!(r.to_tcx().is_none());
+        assert!(r.latest_id().is_none());
         let t0 = Instant::now();
-        let w0: i64 = 1_791_385_000_000;
-        for i in 0..5u64 {
-            r.tick(
-                t0 + Duration::from_secs(i),
-                w0 + i as i64 * 1000,
-                Tick::Connected(m(200.0, 90.0, 36.0)),
-            );
-        }
+        ride(&mut r, t0, 0, 5, 200.0, false); // auto-begins a FreeRide
         // Same wall second twice → no duplicate point.
-        r.tick(t0 + Duration::from_millis(4500), w0 + 4500, Tick::Busy);
+        r.tick(t0 + Duration::from_millis(4500), W0 + 4500, Tick::Busy);
         assert_eq!(r.point_count(), 5);
-        r.tick(t0 + Duration::from_secs(6), w0 + 6000, Tick::Idle);
+        r.tick(t0 + Duration::from_secs(6), W0 + 6000, Tick::Idle);
         assert_eq!(r.point_count(), 5, "idle adds no points");
-        let x = r.to_tcx().unwrap();
+        let id = r.latest_id().unwrap();
+        let x = r.effort_tcx(id).unwrap();
         assert_eq!(x.matches("<Trackpoint>").count(), 5);
         assert!(x.contains("<TotalTimeSeconds>4.0</TotalTimeSeconds>"));
         assert!(x.contains("<DistanceMeters>40.0</DistanceMeters>"));
         assert!(x.contains("<Time>2026-10-07T14:56:44Z</Time>"));
+        assert!(!x.contains("<Notes>"));
 
         let dir = std::env::temp_dir().join(format!("tacx-tcx-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let p1 = write_tcx(&r, &dir).unwrap();
+        let p1 = write_tcx_doc(&x, W0, false, &dir).unwrap();
         assert_eq!(p1.file_name().unwrap(), "tacx-ride-20261007-145640Z.tcx");
-        let p2 = write_tcx(&r, &dir).unwrap();
+        let p2 = write_tcx_doc(&x, W0, false, &dir).unwrap();
         assert_eq!(p2.file_name().unwrap(), "tacx-ride-20261007-145640Z-2.tcx");
+        let p3 = write_tcx_doc(&x, W0, true, &dir).unwrap();
+        assert_eq!(p3.file_name().unwrap(), "tacx-ride-20261007-145640Z-demo.tcx");
         assert_eq!(std::fs::read_to_string(&p1).unwrap(), x);
         let _ = std::fs::remove_dir_all(&dir);
 
-        r.reset();
+        r.reset(at(7));
         assert_eq!(r.point_count(), 0);
-        assert!(write_tcx(&r, &std::env::temp_dir()).is_err());
+        assert!(r.latest_id().is_none());
+    }
+
+    #[test]
+    fn idle_before_start_is_excluded_and_lap_starts_at_begin() {
+        let mut r = RideRecorder::default();
+        let t0 = Instant::now();
+        ride(&mut r, t0, 0, 300, 0.0, false); // connected, not pedalling
+        assert!(r.latest_id().is_none(), "0 W never auto-begins");
+        let id = r.begin_effort(route(), false, at(300));
+        ride(&mut r, t0, 300, 600, 200.0, false);
+        let s = r.effort_summary(id, 200).unwrap();
+        assert!((s.np_w.unwrap() - 200.0).abs() < 1e-6);
+        assert_eq!(r.effort_points(id).unwrap().len(), 600);
+        let x = r.effort_tcx(id).unwrap();
+        assert_eq!(x.matches("<Trackpoint>").count(), 600);
+        // Lap StartTime and first Trackpoint = begin (14:56:40 + 300 s).
+        assert!(x.contains("<Lap StartTime=\"2026-10-07T15:01:40Z\">"));
+        let first_time = x.split("<Time>").nth(1).unwrap();
+        assert!(first_time.starts_with("2026-10-07T15:01:40Z"));
+    }
+
+    #[test]
+    fn two_efforts_are_disjoint_and_default_is_latest() {
+        let mut r = RideRecorder::default();
+        let t0 = Instant::now();
+        let a = r.begin_effort(route(), false, at(0));
+        ride(&mut r, t0, 0, 30, 150.0, false);
+        r.end_effort(true, at(30));
+        let b = r.begin_effort(EffortKind::workout("sweet"), false, at(30));
+        ride(&mut r, t0, 30, 20, 250.0, false);
+        assert_eq!((a, b), (1, 2));
+        let l = r.list_efforts();
+        assert_eq!(l.len(), 2);
+        assert!(l[0].end <= l[1].first, "disjoint ranges");
+        assert_eq!(r.latest_id(), Some(2));
+        assert_eq!(r.effort_summary(2, 0).unwrap().recorded_s, 20);
+        assert_eq!(r.effort_summary(1, 0).unwrap().recorded_s, 30);
+    }
+
+    #[test]
+    fn demo_effort_is_marked_and_flag_is_fixed_at_begin() {
+        let mut r = RideRecorder::default();
+        let t0 = Instant::now();
+        let id = r.begin_effort(route(), true, at(0));
+        ride(&mut r, t0, 0, 5, 200.0, true);
+        ride(&mut r, t0, 5, 5, 200.0, false); // source flips mid-effort
+        let sl = r.slice(id).unwrap();
+        assert!(sl.demo);
+        let x = r.effort_tcx(id).unwrap();
+        let i = |k: &str| x.find(k).unwrap();
+        assert!(i("</Track>") < i("<Notes>DEMO</Notes>"));
+        assert!(i("<Notes>DEMO</Notes>") < i("</Lap>"));
+        assert!(r.effort_summary(id, 0).unwrap().is_demo);
+    }
+
+    #[test]
+    fn stop_before_a_minute_has_no_np() {
+        let mut r = RideRecorder::default();
+        let t0 = Instant::now();
+        let id = r.begin_effort(EffortKind::free_ride(), false, at(0));
+        ride(&mut r, t0, 0, 45, 180.0, false);
+        r.end_effort(false, at(45));
+        let s = r.effort_summary(id, 200).unwrap();
+        assert!(s.np_w.is_none() && s.tss.is_none() && s.intensity_factor.is_none());
+        assert!((s.avg_power_w - 180.0).abs() < 1e-9);
+        assert_eq!(s.recorded_s, 45);
+    }
+
+    #[test]
+    fn disconnect_keeps_effort_under_60s_and_ends_it_after() {
+        let mut r = RideRecorder::default();
+        let t0 = Instant::now();
+        let id = r.begin_effort(route(), false, at(0));
+        ride(&mut r, t0, 0, 30, 200.0, false);
+        idle(&mut r, t0, 30, 20);
+        ride(&mut r, t0, 50, 30, 200.0, false);
+        let sl = r.current_effort().expect("still open");
+        assert_eq!(sl.id, id);
+        assert_eq!(sl.moving_s, 58, "the 20 s gap is not credited");
+        assert!(r.take_events().is_empty());
+        idle(&mut r, t0, 80, 62);
+        assert!(r.current_effort().is_none());
+        let sl = r.slice(id).unwrap();
+        assert_eq!(sl.end_reason, Some(EndReason::DisconnectTimeout));
+        assert!(!sl.completed);
+        assert_eq!(r.take_events(), vec![RideEvent::ride_ended(id)]);
+    }
+
+    #[test]
+    fn begin_and_end_are_idempotent_with_one_event() {
+        let mut r = RideRecorder::default();
+        let t0 = Instant::now();
+        let a = r.begin_effort(route(), false, at(0));
+        assert_eq!(r.begin_effort(route(), false, at(1)), a);
+        ride(&mut r, t0, 0, 10, 200.0, false);
+        let s1 = r.end_effort(true, at(10)).unwrap();
+        let s2 = r.end_effort(true, at(11)).unwrap();
+        assert_eq!(s1.id, s2.id);
+        assert_eq!(s1.end_reason, Some(EndReason::Completed));
+        assert_eq!(r.take_events(), vec![RideEvent::ride_ended(a)]);
+    }
+
+    #[test]
+    fn pause_is_excluded_from_moving_time_and_np() {
+        let mut r = RideRecorder::default();
+        let t0 = Instant::now();
+        let id = r.begin_effort(EffortKind::free_ride(), false, at(0));
+        ride(&mut r, t0, 0, 301, 200.0, false);
+        r.set_paused(true);
+        ride(&mut r, t0, 301, 120, 0.0, false);
+        r.set_paused(false);
+        ride(&mut r, t0, 421, 300, 200.0, false);
+        let sl = r.slice(id).unwrap();
+        assert_eq!(sl.moving_s, 600);
+        assert_eq!(sl.paused_s, 120);
+        let s = r.effort_summary(id, 200).unwrap();
+        assert!((s.np_w.unwrap() - 200.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn auto_free_ride_then_superseded_by_route() {
+        let mut r = RideRecorder::default();
+        let t0 = Instant::now();
+        ride(&mut r, t0, 0, 10, 150.0, false);
+        let free = r.current_effort().unwrap();
+        assert_eq!(free.kind, EffortKind::free_ride());
+        let rt = r.begin_effort(route(), false, at(10));
+        assert_ne!(rt, free.id);
+        assert_eq!(r.slice(free.id).unwrap().end_reason, Some(EndReason::Superseded));
+        assert_eq!(r.current_effort().unwrap().kind, route());
+        assert_eq!(r.take_events(), vec![RideEvent::ride_ended(free.id)]);
+    }
+
+    #[test]
+    fn global_hook_receives_ride_ended() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static SEEN: AtomicU32 = AtomicU32::new(0);
+        on_ride_event(|e| {
+            SEEN.store(e.slice_id, Ordering::SeqCst);
+        });
+        let id = begin_effort(EffortKind::workout("hook"), false);
+        let sl = end_effort(false).unwrap();
+        assert_eq!(sl.id, id);
+        assert_eq!(SEEN.load(Ordering::SeqCst), id);
     }
 
     #[test]

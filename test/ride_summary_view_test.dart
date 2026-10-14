@@ -32,6 +32,7 @@ RideSummary _fixture({int ftp = 200}) => RideSummary(
   best20MinW: 200,
   powerSeries: Float64List.fromList(List.filled(600, 200)),
   heartRateSeries: Float64List.fromList(List.filled(600, 140)),
+  isDemo: false,
 );
 
 const _stats = RideStats(

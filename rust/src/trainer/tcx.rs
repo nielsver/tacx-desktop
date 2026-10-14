@@ -76,9 +76,12 @@ fn num(x: f64, max: f64) -> f64 {
 }
 
 /// Render a complete TCX document. Returns `None` when there are no points.
-pub fn render(points: &[TrackPoint], lap: &LapSummary) -> Option<String> {
+/// `start_ms` is the Lap StartTime (the effort start, not the session's
+/// first point). `demo` adds `<Notes>DEMO</Notes>` so synthetic rides are
+/// never mistaken for real ones.
+pub fn render(points: &[TrackPoint], lap: &LapSummary, start_ms: i64, demo: bool) -> Option<String> {
     let first = points.first()?;
-    let start = iso8601_utc(first.unix_ms);
+    let start = iso8601_utc(start_ms.min(first.unix_ms));
     let mut out = String::with_capacity(512 + points.len() * 260);
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     out.push_str(
@@ -155,6 +158,10 @@ http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd\">\n",
         out.push_str("          </Trackpoint>\n");
     }
     out.push_str("        </Track>\n");
+    // XSD: ActivityLap_t has Notes right after Track.
+    if demo {
+        out.push_str("        <Notes>DEMO</Notes>\n");
+    }
     out.push_str("        <Extensions>\n          <ns3:LX>\n");
     let avg_speed = if lap.total_time_s > 0.0 {
         num(lap.distance_m, 1e8) / lap.total_time_s
@@ -181,6 +188,7 @@ http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd\">\n",
     Some(out)
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,7 +206,7 @@ mod tests {
 
     #[test]
     fn empty_ride_renders_nothing() {
-        assert!(render(&[], &LapSummary::default()).is_none());
+        assert!(render(&[], &LapSummary::default(), 0, false).is_none());
     }
 
     #[test]
@@ -223,7 +231,7 @@ mod tests {
             energy_kj: 0.6,
             ..Default::default()
         };
-        let x = render(&pts, &lap).unwrap();
+        let x = render(&pts, &lap, pts[0].unix_ms, false).unwrap();
         assert!(x.starts_with("<?xml"));
         assert!(x.contains("<Activity Sport=\"Biking\">"));
         assert!(x.contains("<Id>2026-10-07T14:56:40Z</Id>"));
@@ -259,7 +267,7 @@ mod tests {
             distance_m: f64::INFINITY,
             heart_rate_bpm: Some(0),
         }];
-        let x = render(&pts, &LapSummary::default()).unwrap();
+        let x = render(&pts, &LapSummary::default(), pts[0].unix_ms, false).unwrap();
         assert!(x.contains("<ns3:Watts>0</ns3:Watts>"));
         assert!(x.contains("<Cadence>254</Cadence>"));
         assert!(x.contains("<ns3:Speed>0.000</ns3:Speed>"));
@@ -285,7 +293,7 @@ mod tests {
             max_heart_rate_bpm: 141,
             ..Default::default()
         };
-        let x = render(&pts, &lap).unwrap();
+        let x = render(&pts, &lap, pts[0].unix_ms, false).unwrap();
         assert_eq!(x.matches("<HeartRateBpm>").count(), 1);
         assert!(x.contains("<HeartRateBpm>\n              <Value>141</Value>"));
         assert!(x.contains("<AverageHeartRateBpm>\n          <Value>141</Value>"));

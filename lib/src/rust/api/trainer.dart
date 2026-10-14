@@ -118,6 +118,46 @@ RideStats getRideStats() => RustLib.instance.api.crateApiTrainerGetRideStats();
 RideSummary getRideSummary({required int ftpW}) =>
     RustLib.instance.api.crateApiTrainerGetRideSummary(ftpW: ftpW);
 
+/// Open an effort. Same kind → same id; a different kind supersedes the
+/// open one. `demo` is captured here and never changes.
+int beginEffort({required EffortKind kind, required bool demo}) =>
+    RustLib.instance.api.crateApiTrainerBeginEffort(kind: kind, demo: demo);
+
+/// Close the open effort and emit one `RideEnded`. Idempotent: with none
+/// open, returns the last closed slice and emits nothing.
+RideSlice? endEffort({required bool completed}) =>
+    RustLib.instance.api.crateApiTrainerEndEffort(completed: completed);
+
+RideSlice? currentEffort() =>
+    RustLib.instance.api.crateApiTrainerCurrentEffort();
+
+RideSlice? getEffort({required int id}) =>
+    RustLib.instance.api.crateApiTrainerGetEffort(id: id);
+
+/// Efforts of this session, oldest first.
+List<RideSlice> listEfforts() =>
+    RustLib.instance.api.crateApiTrainerListEfforts();
+
+RideSummary? effortSummary({required int id, required int ftpW}) =>
+    RustLib.instance.api.crateApiTrainerEffortSummary(id: id, ftpW: ftpW);
+
+/// Lap totals of effort `id` (what its TCX lap reports).
+RideStats? effortStats({required int id}) =>
+    RustLib.instance.api.crateApiTrainerEffortStats(id: id);
+
+/// Save effort `id` as TCX (`tacx-ride-<UTC>[-demo].tcx`).
+Future<String> exportEffortTcx({required int id, String? dir}) =>
+    RustLib.instance.api.crateApiTrainerExportEffortTcx(id: id, dir: dir);
+
+/// Step-5 pause: no points, no moving time while paused.
+void setRidePaused({required bool paused}) =>
+    RustLib.instance.api.crateApiTrainerSetRidePaused(paused: paused);
+
+/// Recorder events (`RideEnded { slice_id }`), the hook step 5's remote
+/// End & Save will reuse.
+Stream<RideEvent> rideEvents() =>
+    RustLib.instance.api.crateApiTrainerRideEvents();
+
 /// Zero the ride totals (keeps recording if a trainer is connected).
 void resetRideStats() => RustLib.instance.api.crateApiTrainerResetRideStats();
 

@@ -172,6 +172,35 @@ class DiscoveredDevice {
           protocolHint == other.protocolHint;
 }
 
+/// What a ride effort is: `key` is the route key (Route), the workout id
+/// (Workout) or empty (FreeRide). A flat struct so the Dart side needs no
+/// code generator for sealed classes.
+class EffortKind {
+  final EffortType kind;
+  final String key;
+
+  const EffortKind({required this.kind, required this.key});
+
+  @override
+  int get hashCode => kind.hashCode ^ key.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EffortKind &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          key == other.key;
+}
+
+/// Kind of ride effort (QA c4 P1-1, ride-boundary checklist option a).
+enum EffortType {
+  /// Auto-begun on the first pedal stroke with nothing started.
+  freeRide,
+  route,
+  workout,
+}
+
 class ElevSample {
   final double distanceM;
   final double elevM;
@@ -207,6 +236,18 @@ class ElevSample {
           gradePct == other.gradePct &&
           lat == other.lat &&
           lon == other.lon;
+}
+
+/// Why an effort closed.
+enum EndReason {
+  stopped,
+  completed,
+
+  /// Trainer idle (disconnected) for more than 60 s.
+  disconnectTimeout,
+
+  /// Another effort began while this one was open.
+  superseded,
 }
 
 class GpxProfileInfo {
@@ -482,6 +523,95 @@ class ResistanceRange {
           stepPct == other.stepPct;
 }
 
+/// Recorder events (`ride_events` stream). Step 5's remote End & Save
+/// listens to the same stream.
+class RideEvent {
+  final RideEventKind kind;
+  final int sliceId;
+
+  const RideEvent({required this.kind, required this.sliceId});
+
+  @override
+  int get hashCode => kind.hashCode ^ sliceId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RideEvent &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          sliceId == other.sliceId;
+}
+
+/// Recorder event kinds.
+enum RideEventKind { rideEnded }
+
+/// One effort inside the session: `points[first..end]` of the recorder.
+class RideSlice {
+  final int id;
+  final EffortKind kind;
+
+  /// Captured at begin; never changes.
+  final bool demo;
+  final PlatformInt64 startMs;
+
+  /// Last update (live) or close time, ms since epoch.
+  final PlatformInt64 endMs;
+  final int first;
+  final int end;
+  final int movingS;
+  final int pausedS;
+  final bool completed;
+
+  /// `None` while the effort is open.
+  final EndReason? endReason;
+
+  const RideSlice({
+    required this.id,
+    required this.kind,
+    required this.demo,
+    required this.startMs,
+    required this.endMs,
+    required this.first,
+    required this.end,
+    required this.movingS,
+    required this.pausedS,
+    required this.completed,
+    this.endReason,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      kind.hashCode ^
+      demo.hashCode ^
+      startMs.hashCode ^
+      endMs.hashCode ^
+      first.hashCode ^
+      end.hashCode ^
+      movingS.hashCode ^
+      pausedS.hashCode ^
+      completed.hashCode ^
+      endReason.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RideSlice &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          kind == other.kind &&
+          demo == other.demo &&
+          startMs == other.startMs &&
+          endMs == other.endMs &&
+          first == other.first &&
+          end == other.end &&
+          movingS == other.movingS &&
+          pausedS == other.pausedS &&
+          completed == other.completed &&
+          endReason == other.endReason;
+}
+
 /// Running totals for the current ride (since connect or the last Reset).
 /// Time only accumulates while a trainer is connected; reconnect gaps pause it.
 class RideStats {
@@ -595,6 +725,9 @@ class RideSummary {
   /// Heart rate on the same buckets, bpm (0 = no reading in the bucket).
   final Float64List heartRateSeries;
 
+  /// The ride segment came from the Demo trainer (synthetic data).
+  final bool isDemo;
+
   const RideSummary({
     required this.recordedS,
     required this.ftpW,
@@ -612,6 +745,7 @@ class RideSummary {
     this.best20MinW,
     required this.powerSeries,
     required this.heartRateSeries,
+    required this.isDemo,
   });
 
   @override
@@ -631,7 +765,8 @@ class RideSummary {
       bestPower.hashCode ^
       best20MinW.hashCode ^
       powerSeries.hashCode ^
-      heartRateSeries.hashCode;
+      heartRateSeries.hashCode ^
+      isDemo.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -653,7 +788,8 @@ class RideSummary {
           bestPower == other.bestPower &&
           best20MinW == other.best20MinW &&
           powerSeries == other.powerSeries &&
-          heartRateSeries == other.heartRateSeries;
+          heartRateSeries == other.heartRateSeries &&
+          isDemo == other.isDemo;
 }
 
 class RouteStatus {

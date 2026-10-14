@@ -190,6 +190,9 @@ fn downsample_hr(hr: &[Option<u32>], max: usize) -> Vec<f64> {
         .collect()
 }
 
+/// Shortest effort that gets NP / IF / TSS, seconds.
+pub const MIN_NP_S: usize = 60;
+
 /// Summarise a ride. `ftp_w = 0` means unknown FTP (no IF / TSS / zones).
 pub fn summarize(points: &[TrackPoint], ftp_w: u32) -> RideSummary {
     let segs = segments(points);
@@ -231,7 +234,8 @@ pub fn summarize(points: &[TrackPoint], ftp_w: u32) -> RideSummary {
     };
     let max_heart_rate_bpm = hrs.iter().copied().max().unwrap_or(0);
 
-    let np_w = normalized_power(&power);
+    // NP / IF / TSS need at least a minute of riding (ride-boundary checklist).
+    let np_w = if n >= MIN_NP_S { normalized_power(&power) } else { None };
     let (intensity_factor, tss) = match (np_w, ftp_w) {
         (Some(np), f) if f > 0 => {
             let i = np / f64::from(f);
@@ -279,6 +283,7 @@ pub fn summarize(points: &[TrackPoint], ftp_w: u32) -> RideSummary {
         } else {
             downsample_hr(&flat_hr, SUMMARY_SERIES_MAX)
         },
+        is_demo: false,
     }
 }
 

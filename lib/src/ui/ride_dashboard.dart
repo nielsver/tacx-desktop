@@ -26,6 +26,21 @@ import 'package:tacx_desktop/src/ui/route_map.dart';
 import 'package:tacx_desktop/src/ui/status_bar.dart';
 import 'package:tacx_desktop/src/ui/window_chrome.dart';
 
+/// Ghost gate (ride-boundary checklist): only a completed, non-Demo Route
+/// effort may become the route best. Read from the slice, not the live
+/// Demo switch.
+bool shouldSaveGhost(RideSlice? s) =>
+    s != null &&
+    s.kind.kind == EffortType.route &&
+    s.completed &&
+    !s.demo;
+
+/// The effort that just closed (or the open one) for the summary dialog.
+RideSlice? latestEffort() {
+  final all = api.listEfforts();
+  return all.isEmpty ? null : all.last;
+}
+
 
 class RideDashboard extends StatefulWidget {
   const RideDashboard({super.key});
@@ -216,10 +231,19 @@ class _RideDashboardState extends State<RideDashboard> {
   /// Non-null once the rider (or a test) toggles Demo before prefs finish
   /// loading — keeps async prefs from stomping the explicit choice.
   bool? _demoUserChoice;
+  StreamSubscription<RideEvent>? _rideEvents;
 
   @override
   void initState() {
     super.initState();
+    // RideEnded for efforts no button closed (link lost > 60 s): still show
+    // the summary. Stop / complete open it from their own call sites.
+    _rideEvents = api.rideEvents().listen((e) {
+      final s = api.getEffort(id: e.sliceId);
+      if (s?.endReason == EndReason.disconnectTimeout) {
+        _scheduleSummary(title: 'Ride ended — link lost');
+      }
+    });
     // Demo defaults OFF (Rust + prefs). Prefs may re-enable after load.
     api.setDemoMode(enabled: false);
     WidgetsBinding.instance.addPostFrameCallback((_) => _reloadWorkouts());
@@ -234,6 +258,7 @@ class _RideDashboardState extends State<RideDashboard> {
 
   @override
   void dispose() {
+    _rideEvents?.cancel();
     _poll?.cancel();
     if (_prefsSave?.isActive ?? false) {
       _prefsSave!.cancel();
@@ -439,14 +464,17 @@ class _RideDashboardState extends State<RideDashboard> {
         final riding = _ridingGpx;
         if (key != null && store != null && riding != null) {
           final prev = _best;
-          final saved = store.saveIfBest(
-            key,
-            riding.name,
-            riding.distanceM,
-            _attempt.toTrack(),
-            legacyKey: _legacyKey,
-            isDemo: _snap.isDemo, // Demo speed is synthetic (G2)
-          );
+          final slice = latestEffort();
+          final saved =
+              shouldSaveGhost(slice) &&
+              store.saveIfBest(
+                key,
+                riding.name,
+                riding.distanceM,
+                _attempt.toTrack(),
+                legacyKey: _legacyKey,
+                isDemo: slice!.demo, // Demo speed is synthetic (G2)
+              );
           _scheduleSummary(
             title: riding.name,
             route: _routeResult(
@@ -464,7 +492,7 @@ class _RideDashboardState extends State<RideDashboard> {
               'New best on ${riding.name}: ${fmtClock(t)}$gain',
               Icons.emoji_events_outlined,
             );
-          } else if (_snap.isDemo) {
+          } else if (slice?.demo ?? _snap.isDemo) {
             _toast('Demo ride — not saved as your best', Icons.info_outline);
           }
         }
@@ -513,8 +541,11 @@ class _RideDashboardState extends State<RideDashboard> {
     if (_summaryOpen) return;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || _summaryOpen) return;
-      final summary = api.getRideSummary(ftpW: _ftp);
-      if (summary.recordedS < kSummaryMinS) return;
+      // The effort that just ended (QA c4 P1-1): never the whole session.
+      final slice = latestEffort();
+      if (slice == null) return;
+      final summary = api.effortSummary(id: slice.id, ftpW: _ftp);
+      if (summary == null || summary.recordedS < kSummaryMinS) return;
       _summaryOpen = true;
       try {
         await showRideSummary(
@@ -522,11 +553,11 @@ class _RideDashboardState extends State<RideDashboard> {
           data: RideSummaryData(
             title: (title == null || title.trim().isEmpty) ? 'Ride summary' : title,
             summary: summary,
-            stats: api.getRideStats(),
-            isDemo: _snap.isDemo,
+            stats: api.effortStats(id: slice.id) ?? api.getRideStats(),
+            isDemo: slice.demo, // captured at effort begin
             route: route,
           ),
-          onSaveTcx: _exportRide,
+          onSaveTcx: () => _exportRide(effortId: slice.id),
         );
       } finally {
         _summaryOpen = false;
@@ -769,9 +800,11 @@ class _RideDashboardState extends State<RideDashboard> {
   );
 
   /// Writes the ride to `~/Documents/Tacx Desktop/tacx-ride-<UTC>.tcx`.
-  Future<void> _exportRide() async {
+  Future<void> _exportRide({int? effortId}) async {
     try {
-      final path = await api.exportRideTcx();
+      final path = effortId == null
+          ? await api.exportRideTcx()
+          : await api.exportEffortTcx(id: effortId);
       if (mounted) _toast('Ride saved: $path', Icons.save_alt);
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());

@@ -17,6 +17,9 @@ import 'package:tacx_desktop/src/ui/workout_panel.dart';
 import 'package:tacx_desktop/src/ui/workout_ride_view.dart';
 import 'package:tacx_desktop/src/workout/route_ghost.dart';
 import 'package:tacx_desktop/src/workout/route_prs.dart';
+import 'package:tacx_desktop/src/progress/progress_dates.dart';
+import 'package:tacx_desktop/src/progress/progress_ui.dart';
+import 'package:tacx_desktop/src/rust/trainer/progress.dart';
 import 'package:tacx_desktop/src/workout/workout_plan.dart';
 import 'package:tacx_desktop/src/ui/elev_profile_chart.dart'
     show ElevProfileChart, GhostDeltaChip;
@@ -214,6 +217,10 @@ class _RideDashboardState extends State<RideDashboard> {
   /// Rides shorter than this (recorded seconds) get no summary dialog.
   /// Effort id of the route / workout the rider started (QA c6 P1-A).
   int? _startedEffortId;
+
+  /// Local streaks / XP / badges (step 4, S1–S3); opt-out in settings.
+  bool _progressEnabled = true;
+  int _weeklyTarget = 2;
 
   /// Chart / map hover preview (metres along the route); null = none.
   final ValueNotifier<double?> _hoverM = ValueNotifier(null);
@@ -503,17 +510,6 @@ class _RideDashboardState extends State<RideDashboard> {
                 legacyKey: _legacyKey,
                 isDemo: slice!.demo, // Demo speed is synthetic (G2)
               );
-          _scheduleSummary(
-            title: riding.name,
-            route: _routeResult(
-              riding,
-              route.progressM,
-              complete: true,
-              finishS: t,
-              bestS: prev?.totalS,
-              newBest: saved,
-            ),
-          );
           // Climb / route PRs (step 4, P2): completed, non-Demo efforts only.
           final prs = (slice != null && !slice.demo && slice.completed)
               ? RoutePrStore.of(store).recordRide(
@@ -524,6 +520,19 @@ class _RideDashboardState extends State<RideDashboard> {
                   finishS: t,
                 )
               : const <PrImprovement>[];
+          _scheduleSummary(
+            title: riding.name,
+            route: _routeResult(
+              riding,
+              route.progressM,
+              complete: true,
+              finishS: t,
+              bestS: prev?.totalS,
+              newBest: saved,
+            ),
+            ghostBeat: saved && prev != null,
+            prs: prs,
+          );
           final climbPrs = prs.where((p) => p.label != 'Route').toList();
           if (climbPrs.isNotEmpty) {
             _toast(
@@ -585,7 +594,12 @@ class _RideDashboardState extends State<RideDashboard> {
 
   /// Opens the post-ride summary after the current frame (never from inside
   /// a refresh / setState). Skipped for very short rides and while one is open.
-  void _scheduleSummary({String? title, RouteResult? route}) {
+  void _scheduleSummary({
+    String? title,
+    RouteResult? route,
+    bool ghostBeat = false,
+    List<PrImprovement> prs = const [],
+  }) {
     if (_summaryOpen) return;
     // Bind now: the next start must not retarget this summary.
     final startedId = _startedEffortId;
@@ -601,14 +615,24 @@ class _RideDashboardState extends State<RideDashboard> {
       }
       _summaryOpen = true;
       try {
+        final stats = api.effortStats(id: slice.id) ?? api.getRideStats();
+        final earned = _applyProgress(
+          slice,
+          summary,
+          stats,
+          ghostBeat: ghostBeat,
+          prs: prs,
+        );
         await showRideSummary(
           context,
           data: RideSummaryData(
             title: (title == null || title.trim().isEmpty) ? 'Ride summary' : title,
             summary: summary,
-            stats: api.effortStats(id: slice.id) ?? api.getRideStats(),
+            stats: stats,
             isDemo: slice.demo, // captured at effort begin
             route: route,
+            earned: earned,
+            onProgressSettings: _openProgressSettings,
           ),
           saveTcx: () => _saveEffortTcx(slice.id),
         );
@@ -617,6 +641,158 @@ class _RideDashboardState extends State<RideDashboard> {
         _summaryOpen = false;
       }
     });
+  }
+
+  /// "{startMs}-{kind}-{key}": stable across restarts, so applying twice
+  /// (or a rebuild) never double-counts.
+  static String _effortUid(RideSlice s) =>
+      '${s.startMs}-${s.kind.kind.name}-${s.kind.key}';
+
+  static String _kindName(EffortType t) => switch (t) {
+    EffortType.freeRide => 'free',
+    EffortType.route => 'route',
+    EffortType.workout => 'workout',
+  };
+
+  static bool _isFtpTest(RideSlice s) =>
+      s.kind.kind == EffortType.workout &&
+      (s.kind.key == 'ftp_ramp' || s.kind.key == 'ftp_20min');
+
+  /// Apply [slice] to progress and publish the "what you earned" payload
+  /// (Earned ride event, for step 5). Null: Demo or progress off.
+  EarnedPayload? _applyProgress(
+    RideSlice slice,
+    RideSummary summary,
+    RideStats stats, {
+    bool ghostBeat = false,
+    List<PrImprovement> prs = const [],
+  }) {
+    if (!_progressEnabled || slice.demo) return null;
+    try {
+      final start = slice.startMs;
+      final day = localDayIndex(start);
+      final climbPrs = prs.where((p) => p.label != 'Route').toList();
+      final v = api.progressApplyEffort(
+        input: EffortInput(
+          uid: _effortUid(slice),
+          demo: slice.demo,
+          kind: _kindName(slice.kind.kind),
+          completed: slice.completed,
+          ftpTest: _isFtpTest(slice),
+          movingS: stats.movingS,
+          energyKj: stats.energyKj,
+          distanceKm: stats.distanceKm,
+          tss: summary.tss,
+          localDate: localDateOf(start),
+          day: day,
+          week: isoWeekIndexOfDay(day),
+          ghostBeat: ghostBeat,
+          climbPr: climbPrs.isNotEmpty,
+          ftpAccepted: false,
+          ftpUp: false,
+        ),
+        weeklyTarget: _weeklyTarget,
+      );
+      final earned = EarnedPayload(
+        xpGained: v.xpGained,
+        xpTotal: v.xp,
+        level: v.level,
+        streakWeeks: v.streakWeeks,
+        weekDays: v.weekDays,
+        weeklyTarget: v.weeklyTarget,
+        newBadges: v.newBadges,
+        prLines: [
+          for (final p in prs)
+            p.prevS == null
+                ? '${p.label} ${fmtClock(p.timeS)}'
+                : '${p.label} ${fmtDelta(p.timeS - p.prevS!)}',
+        ],
+        ctl: v.ctl,
+        atl: v.atl,
+        form: v.form,
+      );
+      api.publishEarned(sliceId: slice.id, payload: earned);
+      return earned;
+    } catch (e) {
+      _toast('Progress not updated: $e', Icons.info_outline);
+      return null;
+    }
+  }
+
+  /// FTP accepted from a test: first_ftp_test / ftp_up badges.
+  void _awardFtpBadges(int effortId, {required bool up}) {
+    if (!_progressEnabled) return;
+    final s = api.getEffort(id: effortId);
+    if (s == null || s.demo) return;
+    final uid = _effortUid(s), date = localDateOf(s.startMs);
+    try {
+      final got = [
+        if (api.progressAwardBadge(badgeId: 'first_ftp_test', localDate: date, uid: uid))
+          'first_ftp_test',
+        if (up && api.progressAwardBadge(badgeId: 'ftp_up', localDate: date, uid: uid))
+          'ftp_up',
+      ];
+      if (got.isNotEmpty) {
+        _toast('Badge: ${got.map(badgeLabel).join(', ')}', Icons.military_tech);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _openProgressSettings() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final today = localDayIndex(now);
+    List<String> badges = const [];
+    try {
+      badges = api
+          .progressView(week: isoWeekIndexOfDay(today), today: today, weeklyTarget: _weeklyTarget)
+          .badges
+          .map((b) => b.id)
+          .toList();
+    } catch (_) {}
+    if (!mounted) return;
+    await showProgressSettings(
+      context,
+      enabled: _progressEnabled,
+      weeklyTarget: _weeklyTarget,
+      badges: badges,
+      onEnabled: (v) => _setPref(() => _progressEnabled = v),
+      onTarget: (v) => _setPref(() => _weeklyTarget = v),
+      onRebuild: _rebuildProgress,
+    );
+  }
+
+  /// Rebuild from saved TCX files (Demo exports are skipped in Rust).
+  Future<String> _rebuildProgress() async {
+    try {
+      final rides = api.scanSavedRides();
+      api.progressRebuild(
+        inputs: [
+          for (final r in rides)
+            EffortInput(
+              uid: '${r.startMs}-tcx-${r.fileName}',
+              demo: false,
+              kind: 'free',
+              completed: false,
+              ftpTest: false,
+              movingS: r.movingS,
+              energyKj: r.energyKj,
+              distanceKm: r.distanceKm,
+              tss: null,
+              localDate: localDateOf(r.startMs),
+              day: localDayIndex(r.startMs),
+              week: isoWeekIndexOfDay(localDayIndex(r.startMs)),
+              ghostBeat: false,
+              climbPr: false,
+              ftpAccepted: false,
+              ftpUp: false,
+            ),
+        ],
+        weeklyTarget: _weeklyTarget,
+      );
+      return 'Rebuilt from ${rides.length} saved rides';
+    } catch (e) {
+      return 'Rebuild failed: $e';
+    }
   }
 
   /// After an FTP test effort: propose, never auto-apply (step 4, F3).
@@ -640,7 +816,9 @@ class _RideDashboardState extends State<RideDashboard> {
       incomplete: est.incomplete,
     );
     if (!ok || !mounted) return;
+    final up = est.watts > _ftp;
     _setPref(() => _ftp = est!.watts.clamp(50, 600));
+    _awardFtpBadges(effortId, up: up);
     try {
       api.recordAcceptedFtp(
         watts: est.watts,
@@ -1060,6 +1238,8 @@ class _RideDashboardState extends State<RideDashboard> {
       _userWeightKg = p.userWeightKg;
       _resAutoApply = p.resAutoApply;
       _ftp = p.ftpWatts;
+      _progressEnabled = p.progressEnabled;
+      _weeklyTarget = p.weeklyTarget;
       if (!demo) {
         _devices = [];
         _selected = null;
@@ -1080,6 +1260,8 @@ class _RideDashboardState extends State<RideDashboard> {
     demoMode: _snap.isDemo,
     welcomeSeen: true,
     ftpWatts: _ftp,
+    progressEnabled: _progressEnabled,
+    weeklyTarget: _weeklyTarget,
   );
 
   /// Debounced so slider drags / rapid −/+ taps write once.

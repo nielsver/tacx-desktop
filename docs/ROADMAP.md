@@ -10,16 +10,14 @@ Rules for every step: widget/unit tests, `flutter analyze` clean, CI green on
 **Demo OFF by default** and the existing charts working. Tick the box and record
 the SHA here when a step lands.
 
-**Current step:** 4 — Fun extras (not started).
-Step 3 done: tokens `3ac394f`, map `06561a9`, ride_summary `641e816`, status
-bar `284902b`, link health `f29d0cf`, OM1–OM4 `fffb919`, post-ride summary
-`663e269`, rebuild budget `cb1dbd0`, QA fixes `09f3f4b` `2e1553e` `0fa6faf`
-`054ebd0`, motion `c4ebdd7`, ride efforts (QA c4 P1-1/P1-2) `f8832c6`
-`ab3d11d`, P2 batch `409747c`.
-**Next:** step 4 below — Garmin handoff with show-in-folder, FTP ramp /
-20-min test, route/climb PRs, then streaks/XP/badges. Never from Demo rides
-(efforts carry their own `demo` flag; the Garmin handoff refuses them).
-**Last SHA:** `409747c`
+**Current step:** 5 — Mobile remote (not started).
+Step 4 done: show in folder + Garmin `dd85ecf`, FTP tests `5698848`, climb
+detection `6de99b0`, climb bands / PRs `01564bc`, QA c6 P1-A + P2s
+`911cbd2`, progress + earned row + fitness `ef43f3a`, rebuild budget 0
+`969cb2e`.
+**Next:** step 5 slice R1 — axum 0.8 LAN server inside the app, QR pairing,
+protocol v1; **off by default**. Spec: [`mobile-remote.md`](mobile-remote.md).
+**Last SHA:** `969cb2e`
 
 ## Steps
 
@@ -34,7 +32,7 @@ bar `284902b`, link health `f29d0cf`, OM1–OM4 `fffb919`, post-ride summary
       digits), always-visible status bar with link health, calm Focus layout,
       post-ride summary per ride effort (NP, time in zone, best efforts),
       offline route map (lat/lon in FRB), reduced-motion aware AppMotion.
-- [ ] **4. Fun extras** — one-click “Show TCX in folder” + Garmin Connect
+- [x] **4. Fun extras** (`969cb2e`) — one-click “Show TCX in folder” + Garmin Connect
       import handoff (manual TCX → connect.garmin.com/modern/import-data;
       refuses Demo efforts). Local FTP ramp (+20 W/min, FTP=0.75×best 60 s) and
       optional 20-min test (FTP=0.95×best_20min_w); user must accept. GPX

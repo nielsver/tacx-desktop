@@ -16,6 +16,7 @@ import 'package:tacx_desktop/src/ui/live_trend_chart.dart';
 import 'package:tacx_desktop/src/ui/workout_panel.dart';
 import 'package:tacx_desktop/src/ui/workout_ride_view.dart';
 import 'package:tacx_desktop/src/workout/route_ghost.dart';
+import 'package:tacx_desktop/src/workout/route_prs.dart';
 import 'package:tacx_desktop/src/workout/workout_plan.dart';
 import 'package:tacx_desktop/src/ui/elev_profile_chart.dart'
     show ElevProfileChart, GhostDeltaChip;
@@ -488,6 +489,26 @@ class _RideDashboardState extends State<RideDashboard> {
               newBest: saved,
             ),
           );
+          // Climb / route PRs (step 4, P2): completed, non-Demo efforts only.
+          final prs = (slice != null && !slice.demo && slice.completed)
+              ? RoutePrStore.of(store).recordRide(
+                  routeKey: key,
+                  climbs: riding.climbs,
+                  track: _attempt.toTrack().points,
+                  isDemo: slice.demo,
+                  finishS: t,
+                )
+              : const <PrImprovement>[];
+          final climbPrs = prs.where((p) => p.label != 'Route').toList();
+          if (climbPrs.isNotEmpty) {
+            _toast(
+              climbPrs.length == 1
+                  ? 'Climb PR: ${climbPrs.first.label} in '
+                        '${fmtClock(climbPrs.first.timeS)}'
+                  : '${climbPrs.length} climb PRs on ${riding.name}',
+              Icons.landscape_outlined,
+            );
+          }
           if (saved) {
             final gain = prev == null ? '' : ' (${fmtDelta(t - prev.totalS)})';
             _toast(

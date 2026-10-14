@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
 import 'package:tacx_desktop/src/ui/app_tokens.dart';
+import 'package:tacx_desktop/src/ui/climbs_ui.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 import 'package:tacx_desktop/src/ui/route_map.dart';
 import 'package:tacx_desktop/src/workout/route_ghost.dart';
@@ -104,6 +105,16 @@ class ElevProfileChart extends StatelessWidget {
                         fit: StackFit.expand,
                         alignment: Alignment.topLeft,
                         children: [
+                          if (profile.climbs.isNotEmpty)
+                            RepaintBoundary(
+                              child: CustomPaint(
+                                key: const ValueKey('elev-climbs'),
+                                painter: ClimbBandsPainter(
+                                  profile.climbs,
+                                  g.distanceM,
+                                ),
+                              ),
+                            ),
                           RepaintBoundary(
                             child: CustomPaint(
                               key: const ValueKey('elev-static'),
@@ -115,6 +126,7 @@ class ElevProfileChart extends StatelessWidget {
                               key: const ValueKey('elev-cursor'),
                               painter: ElevCursorPainter(
                                 g,
+                                climbs: profile.climbs,
                                 rider: riderM,
                                 ghost: ghostM,
                                 hover: hoverM,
@@ -258,17 +270,25 @@ class ElevPainter extends CustomPainter {
 }
 
 /// "12.4 km · 87 m · 6.2 %" for the hover cursor.
-String elevCursorLabel(RouteGeo geo, double m) {
+String elevCursorLabel(RouteGeo geo, double m, [List<Climb> climbs = const []]) {
   final p = geo.distanceToPoint(m);
+  final c = climbAt(climbs, m);
   return '${(m / 1000).toStringAsFixed(1)} km · '
       '${p.elev.toStringAsFixed(0)} m · '
-      '${p.grade.toStringAsFixed(1)} %';
+      '${p.grade.toStringAsFixed(1)} %'
+      '${c == null ? '' : '\n${climbSummary(c)}'}';
 }
 
 /// Rider line, ghost marker and hover cursor over the static profile.
 /// Repaints alone whenever one of its listenables changes.
 class ElevCursorPainter extends CustomPainter {
-  ElevCursorPainter(this.geo, {this.rider, this.ghost, this.hover})
+  ElevCursorPainter(
+    this.geo, {
+    this.rider,
+    this.ghost,
+    this.hover,
+    this.climbs = const [],
+  })
     : super(
         repaint: Listenable.merge([
           if (rider != null) rider,
@@ -281,6 +301,7 @@ class ElevCursorPainter extends CustomPainter {
   final ValueListenable<double?>? rider;
   final ValueListenable<double?>? ghost;
   final ValueListenable<double?>? hover;
+  final List<Climb> climbs;
 
   @visibleForTesting
   static int debugPaints = 0;
@@ -355,7 +376,7 @@ class ElevCursorPainter extends CustomPainter {
       );
       final tp = TextPainter(
         text: TextSpan(
-          text: elevCursorLabel(geo, h),
+          text: elevCursorLabel(geo, h, climbs),
           style: const TextStyle(
             color: RideColors.textPrimary,
             fontSize: 11,

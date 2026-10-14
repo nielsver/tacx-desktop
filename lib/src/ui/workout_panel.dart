@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
+import 'package:tacx_desktop/src/ui/app_tokens.dart' show kTabularFeatures;
+import 'package:tacx_desktop/src/ui/climbs_ui.dart';
 import 'package:tacx_desktop/src/ui/elev_profile_chart.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 import 'package:tacx_desktop/src/workout/workout_plan.dart' show fmtClock;
@@ -132,6 +134,31 @@ class WorkoutPanel extends StatelessWidget {
                           child: GhostDeltaChip(deltaS: d),
                         ),
                       ),
+              ),
+            if (routeLive != null &&
+                (gpxProfile?.climbs.isNotEmpty ?? false))
+              ValueListenableBuilder<RouteStatus>(
+                valueListenable: routeLive!,
+                builder: (context, r, _) {
+                  final text = r.running
+                      ? climbLiveText(gpxProfile!.climbs, r.progressM)
+                      : null;
+                  return text == null
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            text,
+                            key: const ValueKey('climb-live-chip'),
+                            style: const TextStyle(
+                              color: RideColors.warn,
+                              fontWeight: FontWeight.w700,
+                              fontSize: RideType.caption,
+                              fontFeatures: kTabularFeatures,
+                            ),
+                          ),
+                        );
+                },
               ),
             if (routeStatus.complete)
               const Padding(

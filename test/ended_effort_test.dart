@@ -111,4 +111,16 @@ void main() {
     expect(freeRideAfterAbandonToast(pending: true), isFalse);
     expect(kFreeAfterAbandonToast, 'Trainer back — recording a free ride');
   });
+
+  test('QA c11: a route / workout start clears the pending toast', () {
+    final route = _s(3, EffortType.route, 'r');
+    final free = _s(2, EffortType.freeRide, 'free');
+    expect(freeAfterAbandonPending(pending: true), isTrue, reason: 'waiting');
+    expect(freeAfterAbandonPending(pending: true, current: route), isFalse);
+    expect(freeAfterAbandonPending(pending: true, current: free), isFalse);
+    expect(freeAfterAbandonPending(pending: false), isFalse);
+    // Route started first, then a later free ride: no out-of-context toast.
+    var p = freeAfterAbandonPending(pending: true, current: route);
+    expect(freeRideAfterAbandonToast(pending: p, current: free), isFalse);
+  });
 }

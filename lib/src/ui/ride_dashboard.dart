@@ -91,6 +91,11 @@ const kFreeAfterAbandonToast = 'Trainer back — recording a free ride';
 bool freeRideAfterAbandonToast({required bool pending, RideSlice? current}) =>
     pending && current?.kind.kind == EffortType.freeRide;
 
+/// Pending flag after one poll: cleared by the toast, or when the rider
+/// starts a route / workout instead (QA c11 P3), so it can't fire later.
+bool freeAfterAbandonPending({required bool pending, RideSlice? current}) =>
+    pending && current == null;
+
 /// Shortest effort that gets a summary: started routes / workouts always
 /// do (NP/IF/TSS read '—' under 60 s); free rides need a minute (P2-2).
 int summaryMinS(EffortType kind) =>
@@ -442,9 +447,12 @@ class _RideDashboardState extends State<RideDashboard> {
     final cur = api.currentEffort();
     final freeOpen = cur?.kind.kind == EffortType.freeRide;
     if (freeRideAfterAbandonToast(pending: _freeAfterAbandon, current: cur)) {
-      _freeAfterAbandon = false;
       _toast(kFreeAfterAbandonToast, Icons.fiber_manual_record);
     }
+    _freeAfterAbandon = freeAfterAbandonPending(
+      pending: _freeAfterAbandon,
+      current: cur,
+    );
     _freeRideOpenN.value = freeOpen;
     _linkN.value = api.getLinkHealth();
     _workoutN.value = workout;

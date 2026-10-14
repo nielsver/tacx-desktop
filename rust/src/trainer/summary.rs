@@ -34,19 +34,62 @@ fn sane(x: f64, max: f64) -> f64 {
     }
 }
 
-/// Split points into 1 Hz segments (see module docs).
+/// Collapse points to one sample per wall-clock second: the **mean** of
+/// every point in that second (QA C3.3: a 4 Hz input kept only the first
+/// sample, so NP and the 5 s best drifted from the per-second mean).
+/// Finite spikes are clamped to 3000 W first, NaN / inf count as 0.
+fn per_second(points: &[TrackPoint]) -> Vec<(i64, Sample)> {
+    let mut out: Vec<(i64, Sample)> = Vec::new();
+    // (second, power sum, cadence sum, n, hr sum, hr n)
+    let mut acc: Option<(i64, f64, f64, u32, u64, u32)> = None;
+    let flush = |a: (i64, f64, f64, u32, u64, u32), out: &mut Vec<(i64, Sample)>| {
+        let (sec, p, c, n, hs, hn) = a;
+        let n = f64::from(n.max(1));
+        out.push((
+            sec,
+            Sample {
+                power_w: p / n,
+                cadence_rpm: c / n,
+                hr_bpm: (hn > 0).then(|| ((hs as f64) / f64::from(hn)).round() as u32),
+            },
+        ));
+    };
+    for p in points {
+        let sec = p.unix_ms.div_euclid(1000);
+        let pw = sane(p.power_w, MAX_POWER_W);
+        let cd = sane(p.cadence_rpm, MAX_CADENCE_RPM);
+        let hr = p.heart_rate_bpm.filter(|h| (25..=250).contains(h));
+        match acc.as_mut() {
+            Some(a) if a.0 == sec => {
+                a.1 += pw;
+                a.2 += cd;
+                a.3 += 1;
+                if let Some(h) = hr {
+                    a.4 += u64::from(h);
+                    a.5 += 1;
+                }
+            }
+            Some(a) if sec < a.0 => {} // clock stepped back: ignore
+            _ => {
+                if let Some(a) = acc.take() {
+                    flush(a, &mut out);
+                }
+                acc = Some((sec, pw, cd, 1, hr.map_or(0, u64::from), u32::from(hr.is_some())));
+            }
+        }
+    }
+    if let Some(a) = acc {
+        flush(a, &mut out);
+    }
+    out
+}
+
+/// Split per-second samples into 1 Hz segments (see module docs).
 fn segments(points: &[TrackPoint]) -> Vec<Vec<Sample>> {
     let mut out: Vec<Vec<Sample>> = Vec::new();
     let mut prev_s: Option<i64> = None;
-    for p in points {
-        let sec = p.unix_ms.div_euclid(1000);
-        let s = Sample {
-            power_w: sane(p.power_w, MAX_POWER_W),
-            cadence_rpm: sane(p.cadence_rpm, MAX_CADENCE_RPM),
-            hr_bpm: p.heart_rate_bpm.filter(|h| (25..=250).contains(h)),
-        };
+    for (sec, s) in per_second(points) {
         match prev_s {
-            Some(ps) if sec <= ps => continue, // not newer: ignore
             Some(ps) if (sec - ps) as f64 <= MAX_SAMPLE_GAP_S => {
                 let seg = out.last_mut().expect("segment exists");
                 let fill = *seg.last().expect("non-empty");
@@ -422,5 +465,46 @@ mod tests {
         for (w, z) in cases {
             assert_eq!(power_zone(w, ftp), z, "{w} W");
         }
+    }
+
+    #[test]
+    fn four_hz_input_uses_the_per_second_mean() {
+        // 4 samples per second alternating 100/300 W: per-second mean 200 W.
+        let pts: Vec<TrackPoint> = (0..3600 * 4)
+            .map(|i| TrackPoint {
+                unix_ms: T0 + i * 250,
+                power_w: if i % 2 == 0 { 100.0 } else { 300.0 },
+                cadence_rpm: 90.0,
+                speed_kmh: 30.0,
+                distance_m: 0.0,
+                heart_rate_bpm: Some(if i % 2 == 0 { 140 } else { 142 }),
+            })
+            .collect();
+        let s = summarize(&pts, 200);
+        assert_eq!(s.recorded_s, 3600);
+        assert!((s.np_w.unwrap() - 200.0).abs() < 1e-9, "{:?}", s.np_w);
+        assert!((s.tss.unwrap() - 100.0).abs() < 1e-6);
+        assert_eq!(best(&s, 5), Some(200.0));
+        assert_eq!(s.avg_heart_rate_bpm, 141.0);
+    }
+
+    #[test]
+    fn one_4hz_spike_is_clamped_and_averaged_not_dropped() {
+        // 3 × 200 W + one 9000 W glitch in one second: clamped to 3000 W,
+        // then that second's mean is (600 + 3000) / 4 = 900 W.
+        let mut pts: Vec<TrackPoint> = (0..120 * 4)
+            .map(|i| TrackPoint {
+                unix_ms: T0 + i * 250,
+                power_w: 200.0,
+                cadence_rpm: 90.0,
+                speed_kmh: 30.0,
+                distance_m: 0.0,
+                heart_rate_bpm: None,
+            })
+            .collect();
+        pts[200].power_w = 9000.0;
+        let s = summarize(&pts, 200);
+        assert_eq!(s.max_power_w, 900.0);
+        assert_eq!(s.recorded_s, 120);
     }
 }

@@ -135,8 +135,8 @@ void main() {
     final dash = RideDashboard.debugBuilds - dash0;
     expect(
       dash,
-      lessThanOrEqualTo(1),
-      reason: 'dashboard rebuilt $dash× in $ticks route ticks (budget ≤ 1)',
+      0,
+      reason: 'dashboard rebuilt $dash× in $ticks route ticks (budget 0)',
     );
     expect(
       RideDashboard.debugMetricsBuilds - metrics0,

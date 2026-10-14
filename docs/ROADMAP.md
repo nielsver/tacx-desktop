@@ -10,14 +10,16 @@ Rules for every step: widget/unit tests, `flutter analyze` clean, CI green on
 **Demo OFF by default** and the existing charts working. Tick the box and record
 the SHA here when a step lands.
 
-**Current step:** 3 — Pro polish. Done: design tokens (`3ac394f`), offline
-route map with dot-only repaint (`06561a9`), Rust `ride_summary`
-(NP / IF / TSS, mean-max 5 s–20 min, zones; `641e816`), status bar (`284902b`).
-**Next:** link-health status bar → map/chart cursor split (OM1–OM3,
-[`offline-map.md`](offline-map.md)) → post-ride summary screen (Save TCX /
-Done, DEMO tag) → subtle motion (reduced-motion aware). Step 3 is ticked
-only when all of that is on `main` with green CI.
-**Last SHA:** `284902b`
+**Current step:** 4 — Fun extras (not started).
+Step 3 done: tokens `3ac394f`, map `06561a9`, ride_summary `641e816`, status
+bar `284902b`, link health `f29d0cf`, OM1–OM4 `fffb919`, post-ride summary
+`663e269`, rebuild budget `cb1dbd0`, QA fixes `09f3f4b` `2e1553e` `0fa6faf`
+`054ebd0`, motion `c4ebdd7`, ride efforts (QA c4 P1-1/P1-2) `f8832c6`
+`ab3d11d`, P2 batch `409747c`.
+**Next:** step 4 below — Garmin handoff with show-in-folder, FTP ramp /
+20-min test, route/climb PRs, then streaks/XP/badges. Never from Demo rides
+(efforts carry their own `demo` flag; the Garmin handoff refuses them).
+**Last SHA:** `409747c`
 
 ## Steps
 
@@ -28,12 +30,17 @@ only when all of that is on `main` with green CI.
 - [x] **2. Ghost race** (`155eeba`) — best attempt per GPX route (time vs distance) saved
       locally next to the workouts; live "+/- vs best" chip and a ghost marker
       on the elevation profile.
-- [ ] **3. Pro polish** — design tokens (spacing, radii, zones, tabular
-      digits), always-visible status bar, calm Focus layout, post-ride summary
-      (NP, time in zone, best efforts), offline route map (lat/lon in FRB).
-- [ ] **4. Fun extras** — Strava / intervals.icu upload (OAuth design first, no
-      secrets in the repo), FTP test + auto FTP (from `best_20min_w`), GPX
-      segment PRs ("KOMs"), streaks / badges (tasteful, local).
+- [x] **3. Pro polish** (`409747c`) — design tokens (spacing, radii, zones, tabular
+      digits), always-visible status bar with link health, calm Focus layout,
+      post-ride summary per ride effort (NP, time in zone, best efforts),
+      offline route map (lat/lon in FRB), reduced-motion aware AppMotion.
+- [ ] **4. Fun extras** — one-click “Show TCX in folder” + Garmin Connect
+      import handoff (manual TCX → connect.garmin.com/modern/import-data;
+      refuses Demo efforts). Local FTP ramp (+20 W/min, FTP=0.75×best 60 s) and
+      optional 20-min test (FTP=0.95×best_20min_w); user must accept. GPX
+      climb/route PRs in a sidecar next to ghosts (route key v2). Streaks /
+      XP / badges fully local, opt-out, never from Demo rides.
+      **No Strava or intervals.icu.**
 - [ ] **5. Mobile remote** — LAN web remote served by the desktop app, paired
       with a QR code; no accounts, no cloud. Spec:
       [`mobile-remote.md`](mobile-remote.md).
@@ -60,4 +67,4 @@ the post-ride summary and step 5. One axum/WS envelope covers remote and race.
 | 1. Pro workout view | done | `d40f621` | CI 37692811589 (success) |
 | 2. Ghost race | done | `155eeba` | CI 37693301137 (success) |
 | 2b. Ghost QA + route key v2 + .tdshare | done | `0ced1b4` `9e0c93f` `ccb2b7c` `2655760` `acdddb8` `4de468e` `e5787c4` `561fbaf` | CI 37694601586, 37695497136 (success) |
-| 3. Pro polish | in progress | tokens `3ac394f`, map `06561a9`, ride_summary `641e816`, status bar `284902b` | CI 37695662694, 37695966929, 37696239863, 37696261690 (success) |
+| 3. Pro polish | done | tokens `3ac394f`, map `06561a9`, ride_summary `641e816`, status bar `284902b`, summary `663e269`, perf/QA `cb1dbd0`…`054ebd0`, motion `c4ebdd7`, efforts `f8832c6` `ab3d11d`, P2 `409747c` | CI 38594274482, 38596411768, 38596712184 (success) |

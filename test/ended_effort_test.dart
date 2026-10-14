@@ -92,4 +92,23 @@ void main() {
       expect(linkLostSummary(_s(1, k, 'k', end: EndReason.stopped)), isFalse);
     }
   });
+
+  test('QA c10: after Abandoned, a fresh free ride records (toast once)', () {
+    final abandoned = _s(1, EffortType.route, 'r', end: EndReason.abandoned);
+    final free = _s(2, EffortType.freeRide, 'free');
+    // The abandoned route keeps its summary; the free ride is a new effort.
+    expect(resolveEndedEffort([abandoned, free], startedId: 1)!.id, 1);
+    expect(shouldSaveGhost(abandoned), isFalse);
+    expect(freeRideAfterAbandonToast(pending: true, current: free), isTrue);
+    expect(freeRideAfterAbandonToast(pending: false, current: free), isFalse);
+    expect(
+      freeRideAfterAbandonToast(
+        pending: true,
+        current: _s(3, EffortType.route, 'r'),
+      ),
+      isFalse,
+    );
+    expect(freeRideAfterAbandonToast(pending: true), isFalse);
+    expect(kFreeAfterAbandonToast, 'Trainer back — recording a free ride');
+  });
 }

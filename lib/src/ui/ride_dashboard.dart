@@ -84,6 +84,13 @@ const kAbandonedTitle = 'Ride ended — trainer lost for 30 min';
 const kAbandonedNote =
     "Saved what was recorded. Records and ghosts aren't updated for this ride.";
 
+const kFreeAfterAbandonToast = 'Trainer back — recording a free ride';
+
+/// After an Abandoned ride, toast once when recording resumes — only as a
+/// free ride (Rust never re-begins the route / workout, QA c10).
+bool freeRideAfterAbandonToast({required bool pending, RideSlice? current}) =>
+    pending && current?.kind.kind == EffortType.freeRide;
+
 /// Shortest effort that gets a summary: started routes / workouts always
 /// do (NP/IF/TSS read '—' under 60 s); free rides need a minute (P2-2).
 int summaryMinS(EffortType kind) =>
@@ -325,6 +332,7 @@ class _RideDashboardState extends State<RideDashboard> {
       } else if (s.endReason == EndReason.abandoned) {
         // Rust stopped the route / workout; no ghost, PR or bonus.
         if (_attemptLive) _endAttempt();
+        _freeAfterAbandon = true;
         _scheduleSummary(
           title: kAbandonedTitle,
           effortId: s.id,
@@ -431,8 +439,13 @@ class _RideDashboardState extends State<RideDashboard> {
         metrics.targetPowerW != _metrics.targetPowerW;
     _metricsN.value = metrics;
     _rideN.value = ride;
-    _freeRideOpenN.value =
-        api.currentEffort()?.kind.kind == EffortType.freeRide;
+    final cur = api.currentEffort();
+    final freeOpen = cur?.kind.kind == EffortType.freeRide;
+    if (freeRideAfterAbandonToast(pending: _freeAfterAbandon, current: cur)) {
+      _freeAfterAbandon = false;
+      _toast(kFreeAfterAbandonToast, Icons.fiber_manual_record);
+    }
+    _freeRideOpenN.value = freeOpen;
     _linkN.value = api.getLinkHealth();
     _workoutN.value = workout;
     _route = route; // live fields; structural changes still go via setState
@@ -738,6 +751,9 @@ class _RideDashboardState extends State<RideDashboard> {
   }
 
   AppLifecycleListener? _exitListener;
+
+  /// Set on Abandoned: the next auto free ride gets a toast (QA c10).
+  bool _freeAfterAbandon = false;
 
   /// App exit: end an open free ride and apply progress for every ended,
   /// non-demo effort not applied yet (a completed route whose summary was

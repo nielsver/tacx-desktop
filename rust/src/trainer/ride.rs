@@ -183,8 +183,8 @@ pub struct RideRecorder {
     active: Option<EffortKind>,
     /// `LinkLost` raised for the open route / workout (once per dropout).
     link_lost: bool,
-    /// After `Abandoned` nothing auto-begins (no fragment route, no free
-    /// ride) until the rider starts something (QA c9 P2-a).
+    /// After `Abandoned` no route / workout fragment auto-begins until the
+    /// rider starts something (QA c9 P2-a); a free ride still may (c10).
     auto_begin_disarmed: bool,
     /// The controller must stop its route / workout (ticker takes it).
     stop_controller: bool,
@@ -224,7 +224,9 @@ impl RideRecorder {
                     return;
                 }
                 let pedalling = sane(m.power_w, 3000.0) >= 1.0;
-                if self.open().is_none() && !self.auto_begin_disarmed {
+                // After Abandoned `active` reads None (set_active), so only a fresh
+                // free ride can auto-begin, with the usual cooldown (QA c10).
+                if self.open().is_none() {
                     if let Some(kind) = self.active.clone() {
                         // A running route / workout without an open effort (e.g.
                         // after Abandoned): begin it again, never a FreeRide.
@@ -1087,7 +1089,7 @@ mod tests {
     }
 
     #[test]
-    fn qa_c9_no_fragment_after_abandoned_until_start() {
+    fn qa_c9_c10_after_abandoned_free_ride_only_until_start() {
         let mut r = RideRecorder::default();
         let t0 = Instant::now();
         r.set_active(Some(route()));
@@ -1101,12 +1103,19 @@ mod tests {
         // Controller still reports the route for a tick; reconnect + pedal.
         r.set_active(Some(route()));
         ride(&mut r, t0, 2500, 120, 200.0, false);
-        assert!(r.current_effort().is_none(), "no fragment route, no free ride");
-        assert_eq!(r.list_efforts().len(), 1);
-        assert!(r.take_events().is_empty());
+        // QA c10: a fresh FreeRide records; never a Route fragment.
+        let cur = r.current_effort().expect("free ride recording");
+        assert_eq!(cur.kind, EffortKind::free_ride());
+        let efforts = r.list_efforts();
+        assert_eq!(efforts.len(), 2);
+        assert_eq!(efforts.iter().filter(|e| e.kind == route()).count(), 1, "no route fragment");
+        assert!(cur.moving_s >= 110, "recording since reconnect: {}", cur.moving_s);
+        r.end_effort(false, at(2620));
+        r.take_events();
         // The rider presses Start: normal again.
         let b = r.begin_effort(route(), false, at(2700));
         assert_ne!(a, b);
+        assert_eq!(r.current_effort().unwrap().kind, route());
         ride(&mut r, t0, 2700, 10, 200.0, false);
         assert_eq!(r.current_effort().unwrap().id, b);
     }

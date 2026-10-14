@@ -2818,14 +2818,17 @@ class _ErgPanelState extends State<_ErgPanel> {
       child: SingleChildScrollView(
         child: Column(
           children: [
-            Text(
-              '${widget.targetWatts}',
-              style: const TextStyle(
-                fontSize: RideType.target,
-                fontFeatures: kTabularFeatures,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -1,
-                height: 1,
+            AnimatedNumber(
+              value: widget.targetWatts.toDouble(),
+              builder: (context, v) => Text(
+                '${v.round()}',
+                style: const TextStyle(
+                  fontSize: RideType.target,
+                  fontFeatures: kTabularFeatures,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1,
+                  height: 1,
+                ),
               ),
             ),
             const Text(

@@ -658,12 +658,15 @@ class _ErgDock extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                Text(
-                  '$targetWatts W',
-                  style: const TextStyle(
-                    fontSize: RideType.title,
-                    fontWeight: FontWeight.w800,
-                    color: RideColors.textPrimary,
+                AnimatedNumber(
+                  value: targetWatts.toDouble(),
+                  builder: (context, v) => Text(
+                    '${v.round()} W',
+                    style: const TextStyle(
+                      fontSize: RideType.title,
+                      fontWeight: FontWeight.w800,
+                      color: RideColors.textPrimary,
+                    ),
                   ),
                 ),
                 if (pending) ...[

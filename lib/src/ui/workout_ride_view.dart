@@ -5,7 +5,6 @@ import 'package:tacx_desktop/src/workout/workout_plan.dart';
 import 'package:tacx_desktop/src/ui/app_tokens.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 
-
 /// Live position in a running (or just finished) workout, derived from the
 /// engine's `WorkoutStatus` (step index + time left in the step).
 @immutable
@@ -167,17 +166,35 @@ class IntervalTimeline extends StatelessWidget {
               decoration: BoxDecoration(color: color, shape: BoxShape.circle),
             ),
             const SizedBox(width: 8),
-            Text(
-              progress.done ? plan.name : _targetText(step, target),
-              key: const ValueKey('workout-current-target'),
-              style: TextStyle(
-                color: RideColors.textPrimary,
-                fontSize: bigSize,
-                fontWeight: FontWeight.w800,
-                fontFeatures: kTabularFeatures,
-                height: 1.1,
+            if (progress.done || target == null)
+              Text(
+                progress.done ? plan.name : _targetText(step, target),
+                key: const ValueKey('workout-current-target'),
+                style: TextStyle(
+                  color: RideColors.textPrimary,
+                  fontSize: bigSize,
+                  fontWeight: FontWeight.w800,
+                  fontFeatures: kTabularFeatures,
+                  height: 1.1,
+                ),
+              )
+            else
+              // Target watts ease to the next step (AppMotion.medium);
+              // snaps under reduced motion.
+              AnimatedNumber(
+                value: target,
+                builder: (context, v) => Text(
+                  _targetText(step, v),
+                  key: const ValueKey('workout-current-target'),
+                  style: TextStyle(
+                    color: RideColors.textPrimary,
+                    fontSize: bigSize,
+                    fontWeight: FontWeight.w800,
+                    fontFeatures: kTabularFeatures,
+                    height: 1.1,
+                  ),
+                ),
               ),
-            ),
             if (!progress.done && target != null) ...[
               const SizedBox(width: 8),
               Text(
@@ -353,7 +370,14 @@ class IntervalTimeline extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Expanded(flex: 4, child: _fitStart(current)),
+        Expanded(
+          flex: 4,
+          child: IntervalPulse(
+            trigger: i,
+            color: color,
+            child: _fitStart(current),
+          ),
+        ),
         const SizedBox(width: 12),
         _fitStart(timeLeft),
         const SizedBox(width: 12),

@@ -22,8 +22,10 @@ class AppTokens extends ThemeExtension<AppTokens> {
     this.rMd = 12,
     this.rLg = 16,
     this.zones = kZoneColors,
-    this.fast = const Duration(milliseconds: 150),
-    this.medium = const Duration(milliseconds: 250),
+    this.fast = const Duration(milliseconds: 150), // = AppMotion.normal.fast
+    this.medium = const Duration(
+      milliseconds: 250,
+    ), // = AppMotion.normal.medium
   });
 
   /// xs, s, m, l, xl.
@@ -33,7 +35,8 @@ class AppTokens extends ThemeExtension<AppTokens> {
   /// Z1..Z7.
   final List<Color> zones;
 
-  /// Motion durations (subtle; zeroed when the OS asks for reduced motion).
+  /// Motion durations; prefer [AppMotion.of], which zeroes them when the OS
+  /// asks for reduced motion.
   final Duration fast, medium;
 
   double get xs => space[0];
@@ -91,5 +94,151 @@ class AppTokens extends ThemeExtension<AppTokens> {
 
 extension AppTokensX on BuildContext {
   /// Design tokens of the current theme (defaults if none registered).
-  AppTokens get tk => Theme.of(this).extension<AppTokens>() ?? const AppTokens();
+  AppTokens get tk =>
+      Theme.of(this).extension<AppTokens>() ?? const AppTokens();
+}
+
+/// Motion tokens (step 3, subtle motion): one set of durations + curves.
+///
+/// [AppMotion.of] returns [AppMotion.reduced] (all zero, linear) when the
+/// OS / Flutter asks to reduce motion (`MediaQuery.disableAnimations`), so
+/// every animation that uses these tokens snaps instead of moving.
+@immutable
+class AppMotion {
+  const AppMotion({
+    required this.fast,
+    required this.medium,
+    required this.pulse,
+    required this.standard,
+    required this.emphasized,
+  });
+
+  /// Small state changes (hover, chips).
+  final Duration fast;
+
+  /// Value transitions (target watts).
+  final Duration medium;
+
+  /// One-shot attention cue (interval change).
+  final Duration pulse;
+
+  /// Ease-out for values settling.
+  final Curve standard;
+
+  /// Fade of the interval pulse.
+  final Curve emphasized;
+
+  static const AppMotion normal = AppMotion(
+    fast: Duration(milliseconds: 150),
+    medium: Duration(milliseconds: 250),
+    pulse: Duration(milliseconds: 700),
+    standard: Curves.easeOutCubic,
+    emphasized: Curves.easeOutQuart,
+  );
+
+  static const AppMotion reduced = AppMotion(
+    fast: Duration.zero,
+    medium: Duration.zero,
+    pulse: Duration.zero,
+    standard: Curves.linear,
+    emphasized: Curves.linear,
+  );
+
+  bool get enabled => pulse > Duration.zero;
+
+  static AppMotion of(BuildContext context) =>
+      (MediaQuery.maybeDisableAnimationsOf(context) ?? false)
+      ? reduced
+      : normal;
+}
+
+extension AppMotionX on BuildContext {
+  AppMotion get motion => AppMotion.of(this);
+}
+
+/// Plays a brief accent wash behind [child] whenever [trigger] changes
+/// (e.g. the workout step index). Static under reduced motion.
+class IntervalPulse extends StatefulWidget {
+  const IntervalPulse({
+    super.key,
+    required this.trigger,
+    required this.color,
+    required this.child,
+  });
+
+  final Object trigger;
+  final Color color;
+  final Widget child;
+
+  @override
+  State<IntervalPulse> createState() => _IntervalPulseState();
+}
+
+class _IntervalPulseState extends State<IntervalPulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    value: 0,
+  );
+
+  @override
+  void didUpdateWidget(IntervalPulse old) {
+    super.didUpdateWidget(old);
+    if (old.trigger != widget.trigger) {
+      final m = AppMotion.of(context);
+      if (!m.enabled) return; // reduced motion: no pulse at all
+      _c.duration = m.pulse;
+      _c.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  /// Current wash opacity (for tests).
+  @visibleForTesting
+  double get debugValue => _c.isAnimating ? 1 - _c.value : 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = AppMotion.of(context);
+    return AnimatedBuilder(
+      animation: _c,
+      child: widget.child,
+      builder: (context, child) {
+        final t = _c.isAnimating ? 1 - m.emphasized.transform(_c.value) : 0.0;
+        return DecoratedBox(
+          key: const ValueKey('interval-pulse'),
+          decoration: BoxDecoration(
+            color: widget.color.withValues(alpha: 0.18 * t),
+            borderRadius: context.tk.radiusSm,
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+}
+
+/// Number that eases to its new value (target watts). Snaps when motion is
+/// reduced or on the first build.
+class AnimatedNumber extends StatelessWidget {
+  const AnimatedNumber({super.key, required this.value, required this.builder});
+
+  final double value;
+  final Widget Function(BuildContext context, double value) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = AppMotion.of(context);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: value),
+      duration: m.medium,
+      curve: m.standard,
+      builder: (context, v, _) => builder(context, v),
+    );
+  }
 }

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
 
@@ -34,6 +35,10 @@ class GhostTrack {
     : points = List.unmodifiable(points);
 
   final List<({double d, double t})> points;
+
+  /// Longest ghost accepted from disk / a .tdshare: 12 h at 1 Hz (the
+  /// recorder's own limit) plus slack.
+  static const int maxPoints = 50000;
 
   bool get isEmpty => points.length < 2;
   double get totalS => points.isEmpty ? 0 : points.last.t;
@@ -80,6 +85,7 @@ class GhostTrack {
     if (d is! List || t is! List || d.length != t.length || d.length < 2) {
       return null;
     }
+    if (d.length > maxPoints) return null;
     final pts = <({double d, double t})>[];
     for (var i = 0; i < d.length; i++) {
       final di = d[i], ti = t[i];
@@ -481,6 +487,23 @@ class GhostStore {
   /// Max `.tdshare` size (multiplayer.md: strict, ≤ 1 MB).
   static const int maxShareBytes = 1 << 20;
 
+  /// Cap on the *decompressed* .tdshare JSON. A 50k-point ghost is ~1 MB;
+  /// a gzip bomb stops here instead of expanding to hundreds of MB.
+  static const int maxShareDecodedBytes = 4 << 20;
+
+  /// Gunzips [bytes], failing as soon as the output passes [cap]. Input is
+  /// fed in 1 KB slices so one slice can overshoot by at most ~1 MB.
+  static List<int> gunzipCapped(List<int> bytes, int cap) {
+    final sink = _CappedSink(cap);
+    final input = gzip.decoder.startChunkedConversion(sink);
+    const slice = 1024;
+    for (var i = 0; i < bytes.length; i += slice) {
+      input.add(bytes.sublist(i, math.min(i + slice, bytes.length)));
+    }
+    input.close();
+    return sink.bytes.takeBytes();
+  }
+
   /// Reads a `.tdshare` bundle for the route [key] / [routeDistanceM] and
   /// stores it as a friend ghost (`<key>.friend-<slug>.json`). Throws
   /// [FormatException] on version / route mismatch, demo or invalid data.
@@ -491,7 +514,11 @@ class GhostStore {
     }
     final Object? json;
     try {
-      json = jsonDecode(utf8.decode(gzip.decode(bytes)));
+      json = jsonDecode(
+        utf8.decode(gunzipCapped(bytes, maxShareDecodedBytes)),
+      );
+    } on _TooLarge {
+      throw const FormatException('ghost file expands too large');
     } catch (_) {
       throw const FormatException('not a .tdshare file');
     }
@@ -506,7 +533,29 @@ class GhostStore {
       '${dir.path}${Platform.pathSeparator}$key.friend-${name.isEmpty ? 'anon' : name}.json',
     );
     dir.createSync(recursive: true);
-    file.writeAsStringSync(jsonEncode(g.toJson()), flush: true);
+    // Atomic like the best file: a crash never leaves half a friend ghost.
+    final tmp = File('${file.path}.tmp');
+    tmp.writeAsStringSync(jsonEncode(g.toJson()), flush: true);
+    tmp.renameSync(file.path);
     return g;
   }
+}
+
+class _TooLarge implements Exception {
+  const _TooLarge();
+}
+
+class _CappedSink implements Sink<List<int>> {
+  _CappedSink(this.cap);
+  final int cap;
+  final BytesBuilder bytes = BytesBuilder(copy: false);
+
+  @override
+  void add(List<int> chunk) {
+    if (bytes.length + chunk.length > cap) throw const _TooLarge();
+    bytes.add(chunk);
+  }
+
+  @override
+  void close() {}
 }

@@ -320,6 +320,53 @@ void main() {
       expect(() => store.importShare(junk, key: 'k', routeDistanceM: 1000), throwsFormatException);
     });
 
+    test('gzip bomb is stopped at the decoded cap (QA C3.2)', () {
+      // 150 MB of spaces gzips to ~150 KB: under the 1 MB file limit.
+      final bomb = File('${tmp.path}/bomb.tdshare');
+      final sink = gzip.encoder.startChunkedConversion(
+        _BytesSink((b) => bomb.writeAsBytesSync(b, mode: FileMode.append)),
+      );
+      final chunk = List<int>.filled(1 << 20, 0x20);
+      for (var i = 0; i < 150; i++) {
+        sink.add(chunk);
+      }
+      sink.close();
+      expect(bomb.lengthSync(), lessThan(GhostStore.maxShareBytes));
+      final sw = Stopwatch()..start();
+      expect(
+        () => store.importShare(bomb, key: 'k', routeDistanceM: 1000),
+        throwsA(isA<FormatException>().having((e) => e.message, 'msg', contains('too large'))),
+      );
+      // Rejected early: nowhere near decoding all 150 MB.
+      expect(sw.elapsedMilliseconds, lessThan(2000));
+      expect(
+        () => GhostStore.gunzipCapped(bomb.readAsBytesSync(), 8 << 20),
+        throwsA(anything),
+      );
+      expect(
+        GhostStore.gunzipCapped(gzip.encode(utf8.encode('ok')), 16),
+        utf8.encode('ok'),
+      );
+    });
+
+    test('too many ghost points are rejected; friend write is atomic', () {
+      final n = GhostTrack.maxPoints + 1;
+      expect(
+        GhostTrack.fromJson({
+          'd': [for (var i = 0; i < n; i++) i * 0.02],
+          't': [for (var i = 0; i < n; i++) i * 1.0],
+        }),
+        isNull,
+      );
+      expect(store.saveIfBest('k', 'Climb', 1000, _steady(4)), isTrue);
+      final share = File('${tmp.path}/c.tdshare');
+      store.exportShare('k', share, riderName: 'Ann');
+      final friend = GhostStore(Directory('${tmp.path}/f/ghosts'));
+      friend.importShare(share, key: 'k', routeDistanceM: 1000);
+      final names = friend.dir.listSync().map((e) => e.uri.pathSegments.last).toList();
+      expect(names, ['k.friend-ann.json'], reason: 'no .tmp left behind');
+    });
+
     test('demo ghosts are never exported or imported (G2)', () {
       store.dir.createSync(recursive: true);
       final demo = GhostFile(
@@ -399,4 +446,13 @@ void main() {
       expect(t.style!.color, RideColors.ok);
     });
   });
+}
+
+class _BytesSink implements Sink<List<int>> {
+  _BytesSink(this.onData);
+  final void Function(List<int>) onData;
+  @override
+  void add(List<int> data) => onData(data);
+  @override
+  void close() {}
 }

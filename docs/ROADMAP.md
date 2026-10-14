@@ -14,10 +14,10 @@ the SHA here when a step lands.
 Step 4 done: show in folder + Garmin `dd85ecf`, FTP tests `5698848`, climb
 detection `6de99b0`, climb bands / PRs `01564bc`, QA c6 P1-A + P2s
 `911cbd2`, progress + earned row + fitness `ef43f3a`, rebuild budget 0
-`969cb2e`.
-**Next:** step 5 slice R1 — axum 0.8 LAN server inside the app, QR pairing,
+`969cb2e`, QA c7 P1-B + P2s `be9064e`.
+**Next:** step 5 slice R1 (on hold until Niels approves it and its crates) — axum 0.8 LAN server inside the app, QR pairing,
 protocol v1; **off by default**. Spec: [`mobile-remote.md`](mobile-remote.md).
-**Last SHA:** `969cb2e`
+**Last SHA:** `be9064e`
 
 ## Steps
 

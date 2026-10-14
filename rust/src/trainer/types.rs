@@ -503,6 +503,9 @@ pub struct RideSlice {
     pub moving_s: u32,
     pub paused_s: u32,
     pub completed: bool,
+    /// May set ghosts / PRs / FTP (QA c9): false for Demo, Abandoned, or
+    /// any LinkLost (> 60 s) gap — computed in Rust.
+    pub eligible_for_records: bool,
     /// `None` while the effort is open.
     pub end_reason: Option<EndReason>,
 }

@@ -155,6 +155,8 @@ struct Effort {
     paused_s: f64,
     completed: bool,
     reason: Option<EndReason>,
+    /// A LinkLost (> 60 s) gap happened inside this effort.
+    had_link_lost: bool,
 }
 
 /// Session recorder. Points are pushed once; efforts are index ranges into
@@ -181,6 +183,11 @@ pub struct RideRecorder {
     active: Option<EffortKind>,
     /// `LinkLost` raised for the open route / workout (once per dropout).
     link_lost: bool,
+    /// After `Abandoned` nothing auto-begins (no fragment route, no free
+    /// ride) until the rider starts something (QA c9 P2-a).
+    auto_begin_disarmed: bool,
+    /// The controller must stop its route / workout (ticker takes it).
+    stop_controller: bool,
 }
 
 /// A route / workout with no trainer this long is closed as `Abandoned`.
@@ -217,7 +224,7 @@ impl RideRecorder {
                     return;
                 }
                 let pedalling = sane(m.power_w, 3000.0) >= 1.0;
-                if self.open().is_none() {
+                if self.open().is_none() && !self.auto_begin_disarmed {
                     if let Some(kind) = self.active.clone() {
                         // A running route / workout without an open effort (e.g.
                         // after Abandoned): begin it again, never a FreeRide.
@@ -268,12 +275,12 @@ impl RideRecorder {
                         self.close(false, EndReason::DisconnectTimeout, wall_ms);
                     }
                     // Route / workout: a dropout is never an end (QA c8 P1-C).
-                    Some(_) if idle_s > LINK_ABANDON_S => {
-                        self.link_lost = false;
-                        self.close(false, EndReason::Abandoned, wall_ms);
-                    }
+                    Some(_) if idle_s > LINK_ABANDON_S => self.abandon(wall_ms),
                     Some(_) if idle_s > EFFORT_IDLE_TIMEOUT_S && !self.link_lost => {
                         self.link_lost = true;
+                        if let Some(e) = self.open_mut() {
+                            e.had_link_lost = true;
+                        }
                         if let Some(sl) = self.current_effort() {
                             self.events.push(RideEvent::link(RideEventKind::LinkLost, &sl));
                         }
@@ -313,13 +320,16 @@ impl RideRecorder {
             paused_s: 0.0,
             completed: false,
             reason: None,
+            had_link_lost: false,
         });
         self.next_id
     }
 
     /// Open an effort (idempotent for the same kind; a different kind
-    /// supersedes the open one). `demo` is captured here.
+    /// supersedes the open one). `demo` is captured here. An explicit
+    /// begin (the rider pressed Start) re-arms auto begin.
     pub fn begin_effort(&mut self, kind: EffortKind, demo: bool, wall_ms: i64) -> u32 {
+        self.auto_begin_disarmed = false;
         self.begin_at(kind, demo, wall_ms)
     }
 
@@ -348,9 +358,26 @@ impl RideRecorder {
         self.efforts.last().and_then(|e| self.slice(e.id))
     }
 
+    /// 30 min without a trainer on a route / workout: end it for good
+    /// (QA c9 P2-a). Clears `active`, asks the controller to stop, disarms
+    /// auto begin, then one `RideEnded(Abandoned)`; never completed.
+    fn abandon(&mut self, wall_ms: i64) {
+        self.link_lost = false;
+        self.active = None;
+        self.auto_begin_disarmed = true;
+        self.stop_controller = true;
+        self.close(false, EndReason::Abandoned, wall_ms);
+    }
+
+    /// Ticker: should the controller stop its route / workout now?
+    pub fn take_stop_controller(&mut self) -> bool {
+        std::mem::take(&mut self.stop_controller)
+    }
+
     /// What the controller is running right now (None: nothing).
     pub fn set_active(&mut self, kind: Option<EffortKind>) {
-        self.active = kind;
+        // Until the controller has stopped after Abandoned, ignore it.
+        self.active = if self.auto_begin_disarmed { None } else { kind };
     }
 
     pub fn set_paused(&mut self, paused: bool) {
@@ -375,6 +402,9 @@ impl RideRecorder {
             moving_s: s.moving_s,
             paused_s: e.paused_s.round() as u32,
             completed: e.completed,
+            eligible_for_records: !e.demo
+                && !e.had_link_lost
+                && e.reason != Some(EndReason::Abandoned),
             end_reason: e.reason,
         })
     }
@@ -422,7 +452,13 @@ impl RideRecorder {
             .iter()
             .map(|p| TrackPoint { distance_m: p.distance_m - base, ..p.clone() })
             .collect();
-        tcx::render(&pts, &e.acc.lap_summary(), e.start_ms, e.demo)
+        let doc = tcx::render(&pts, &e.acc.lap_summary(), e.start_ms, e.demo)?;
+        // Abandoned: say so (Demo keeps its DEMO note; one Notes per lap).
+        Some(if e.reason == Some(EndReason::Abandoned) && !e.demo {
+            doc.replacen("        </Track>\n", "        </Track>\n        <Notes>ABANDONED</Notes>\n", 1)
+        } else {
+            doc
+        })
     }
 
     /// Ends the open effort, then clears the session.
@@ -502,11 +538,14 @@ pub fn record(t: Tick) {
 }
 
 /// Ticker entry: `active` = the route / workout the controller is running.
-pub fn record_with(t: Tick, active: Option<EffortKind>) {
+/// Returns true when the controller must stop its route / workout
+/// (the effort was Abandoned).
+pub fn record_with(t: Tick, active: Option<EffortKind>) -> bool {
     with_recorder(|r| {
         r.set_active(active);
-        r.tick(Instant::now(), wall_ms(), t)
-    });
+        r.tick(Instant::now(), wall_ms(), t);
+        r.take_stop_controller()
+    })
 }
 
 pub fn begin_effort(kind: EffortKind, demo: bool) -> u32 {
@@ -1036,10 +1075,57 @@ mod tests {
             r.tick(t0 + Duration::from_secs(30 + i * 30), at(30 + i * 30), Tick::Idle);
         }
         assert!(r.current_effort().is_none());
-        assert_eq!(r.slice(a).unwrap().end_reason, Some(EndReason::Abandoned));
+        let sl = r.slice(a).unwrap();
+        assert_eq!(sl.end_reason, Some(EndReason::Abandoned));
+        assert!(!sl.completed && !sl.eligible_for_records);
+        assert!(r.take_stop_controller() && !r.take_stop_controller());
+        assert!(r.effort_tcx(a).unwrap().contains("<Notes>ABANDONED</Notes>"));
         assert_eq!(
             kinds(&mut r),
             vec![(RideEventKind::LinkLost, None), (RideEventKind::RideEnded, Some(EndReason::Abandoned))]
         );
+    }
+
+    #[test]
+    fn qa_c9_no_fragment_after_abandoned_until_start() {
+        let mut r = RideRecorder::default();
+        let t0 = Instant::now();
+        r.set_active(Some(route()));
+        let a = r.begin_effort(route(), false, at(0));
+        ride(&mut r, t0, 0, 600, 200.0, false);
+        for i in 0..=62u64 {
+            r.tick(t0 + Duration::from_secs(600 + i * 30), at(600 + i * 30), Tick::Idle);
+        }
+        assert_eq!(r.slice(a).unwrap().end_reason, Some(EndReason::Abandoned));
+        r.take_events();
+        // Controller still reports the route for a tick; reconnect + pedal.
+        r.set_active(Some(route()));
+        ride(&mut r, t0, 2500, 120, 200.0, false);
+        assert!(r.current_effort().is_none(), "no fragment route, no free ride");
+        assert_eq!(r.list_efforts().len(), 1);
+        assert!(r.take_events().is_empty());
+        // The rider presses Start: normal again.
+        let b = r.begin_effort(route(), false, at(2700));
+        assert_ne!(a, b);
+        ride(&mut r, t0, 2700, 10, 200.0, false);
+        assert_eq!(r.current_effort().unwrap().id, b);
+    }
+
+    #[test]
+    fn qa_c9_link_lost_gap_makes_effort_ineligible_for_records() {
+        let mut r = RideRecorder::default();
+        let t0 = Instant::now();
+        r.set_active(Some(route()));
+        r.begin_effort(route(), false, at(0));
+        ride(&mut r, t0, 0, 30, 200.0, false);
+        idle(&mut r, t0, 30, 59); // short gap: still eligible
+        ride(&mut r, t0, 89, 10, 200.0, false);
+        assert!(r.current_effort().unwrap().eligible_for_records);
+        idle(&mut r, t0, 99, 70); // LinkLost
+        ride(&mut r, t0, 169, 10, 200.0, false);
+        let s = r.end_effort(true, at(179)).unwrap();
+        assert!(s.completed && !s.eligible_for_records);
+        let d = r.begin_effort(EffortKind::free_ride(), true, at(200));
+        assert!(!r.slice(d).unwrap().eligible_for_records, "demo");
     }
 }

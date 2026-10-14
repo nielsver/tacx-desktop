@@ -8,6 +8,7 @@ void main() {
     EffortType kind = EffortType.route,
     bool demo = false,
     bool completed = true,
+    bool? eligible,
   }) => RideSlice(
     id: 1,
     kind: EffortKind(kind: kind, key: 'v2-abc'),
@@ -19,11 +20,15 @@ void main() {
     movingS: 10,
     pausedS: 0,
     completed: completed,
+    eligibleForRecords: eligible ?? !demo,
     endReason: completed ? EndReason.completed : EndReason.stopped,
   );
 
   test('completed real Route saves', () {
     expect(shouldSaveGhost(slice()), isTrue);
+  });
+  test('QA c9: Abandoned / LinkLost-gap rides never save', () {
+    expect(shouldSaveGhost(slice(eligible: false)), isFalse);
   });
   test('Demo route never saves', () {
     expect(shouldSaveGhost(slice(demo: true)), isFalse);

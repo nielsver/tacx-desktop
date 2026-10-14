@@ -21,6 +21,7 @@ RideSlice _s(
   movingS: 0,
   pausedS: 0,
   completed: done,
+  eligibleForRecords: !demo && end != EndReason.abandoned,
   endReason: end,
 );
 

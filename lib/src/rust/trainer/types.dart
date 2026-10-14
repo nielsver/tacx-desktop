@@ -748,6 +748,10 @@ class RideSlice {
   final int pausedS;
   final bool completed;
 
+  /// May set ghosts / PRs / FTP (QA c9): false for Demo, Abandoned, or
+  /// any LinkLost (> 60 s) gap — computed in Rust.
+  final bool eligibleForRecords;
+
   /// `None` while the effort is open.
   final EndReason? endReason;
 
@@ -762,6 +766,7 @@ class RideSlice {
     required this.movingS,
     required this.pausedS,
     required this.completed,
+    required this.eligibleForRecords,
     this.endReason,
   });
 
@@ -777,6 +782,7 @@ class RideSlice {
       movingS.hashCode ^
       pausedS.hashCode ^
       completed.hashCode ^
+      eligibleForRecords.hashCode ^
       endReason.hashCode;
 
   @override
@@ -794,6 +800,7 @@ class RideSlice {
           movingS == other.movingS &&
           pausedS == other.pausedS &&
           completed == other.completed &&
+          eligibleForRecords == other.eligibleForRecords &&
           endReason == other.endReason;
 }
 

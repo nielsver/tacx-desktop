@@ -106,7 +106,15 @@ async fn ride_ticker() {
             Some(Err(_)) => ride::Tick::Busy,
             None => ride::Tick::Idle,
         };
-        ride::record_with(tick, active);
+        if ride::record_with(tick, active) {
+            // Abandoned (30 min without a trainer): stop the route /
+            // workout so a reconnect can't resume a fragment (QA c9 P2-a).
+            if let Some(c) = CONTROLLER.get() {
+                let mut g = c.lock().await;
+                g.stop_gpx_route();
+                g.stop_workout();
+            }
+        }
     }
 }
 

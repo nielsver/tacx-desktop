@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
+import 'package:tacx_desktop/src/ui/ride_dashboard.dart'
+    show kAbandonedNote, kAbandonedTitle;
 import 'package:tacx_desktop/src/ui/ride_summary_view.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 import 'package:tacx_desktop/src/ui/route_map.dart';
@@ -212,6 +214,23 @@ void main() {
     await tester.ensureVisible(find.byKey(const ValueKey('summary-done')));
     await tester.tap(find.byKey(const ValueKey('summary-done')));
     expect((saved, done), (1, 1));
+  });
+
+  testWidgets('QA c9: Abandoned summary says records were not updated', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      RideSummaryData(
+        title: kAbandonedTitle,
+        summary: _fixture(),
+        stats: _stats,
+        isDemo: false,
+        note: kAbandonedNote,
+      ),
+    );
+    expect(find.text('Ride ended — trainer lost for 30 min'), findsOneWidget);
+    expect(_text(tester, 'summary-note'), contains("aren't updated"));
   });
 
   testWidgets('no FTP: IF/TSS blank, no zone bars, hint shown', (tester) async {

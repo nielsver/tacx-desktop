@@ -1277,8 +1277,9 @@ let mut var_end = <u32>::sse_decode(deserializer);
 let mut var_movingS = <u32>::sse_decode(deserializer);
 let mut var_pausedS = <u32>::sse_decode(deserializer);
 let mut var_completed = <bool>::sse_decode(deserializer);
+let mut var_eligibleForRecords = <bool>::sse_decode(deserializer);
 let mut var_endReason = <Option<crate::trainer::types::EndReason>>::sse_decode(deserializer);
-return crate::trainer::types::RideSlice{id: var_id, kind: var_kind, demo: var_demo, start_ms: var_startMs, end_ms: var_endMs, first: var_first, end: var_end, moving_s: var_movingS, paused_s: var_pausedS, completed: var_completed, end_reason: var_endReason};}
+return crate::trainer::types::RideSlice{id: var_id, kind: var_kind, demo: var_demo, start_ms: var_startMs, end_ms: var_endMs, first: var_first, end: var_end, moving_s: var_movingS, paused_s: var_pausedS, completed: var_completed, eligible_for_records: var_eligibleForRecords, end_reason: var_endReason};}
                 }
                 
                 impl SseDecode for crate::trainer::types::RideStats {
@@ -2109,6 +2110,7 @@ self.end.into_into_dart().into_dart(),
 self.moving_s.into_into_dart().into_dart(),
 self.paused_s.into_into_dart().into_dart(),
 self.completed.into_into_dart().into_dart(),
+self.eligible_for_records.into_into_dart().into_dart(),
 self.end_reason.into_into_dart().into_dart()
                 ].into_dart()
                 }
@@ -2812,6 +2814,7 @@ crate::trainer::types::RideEventKind::LinkRestored => { 3 }
 <u32>::sse_encode(self.moving_s, serializer);
 <u32>::sse_encode(self.paused_s, serializer);
 <bool>::sse_encode(self.completed, serializer);
+<bool>::sse_encode(self.eligible_for_records, serializer);
 <Option<crate::trainer::types::EndReason>>::sse_encode(self.end_reason, serializer);}
                 }
                 

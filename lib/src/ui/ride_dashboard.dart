@@ -38,6 +38,7 @@ import 'package:tacx_desktop/src/ui/window_chrome.dart';
 /// Demo switch.
 bool shouldSaveGhost(RideSlice? s) =>
     s != null &&
+    s.eligibleForRecords && // no Abandoned / LinkLost gap / Demo (QA c9)
     s.kind.kind == EffortType.route &&
     s.completed &&
     !s.demo;
@@ -77,6 +78,11 @@ bool progressOnEnd(RideSlice s) => !s.demo && s.endReason != null;
 bool linkLostSummary(RideSlice s) =>
     s.kind.kind == EffortType.freeRide &&
     s.endReason == EndReason.disconnectTimeout;
+
+/// Summary copy for an Abandoned ride (QA c9 P2-a).
+const kAbandonedTitle = 'Ride ended — trainer lost for 30 min';
+const kAbandonedNote =
+    "Saved what was recorded. Records and ghosts aren't updated for this ride.";
 
 /// Shortest effort that gets a summary: started routes / workouts always
 /// do (NP/IF/TSS read '—' under 60 s); free rides need a minute (P2-2).
@@ -290,6 +296,9 @@ class _RideDashboardState extends State<RideDashboard> {
     _rideEvents = api.rideEvents().listen((e) {
       switch (e.kind) {
         case RideEventKind.linkLost:
+          // The route clock keeps running: a dropout is not a free rest.
+          // Any LinkLost gap makes the effort ineligible for ghost / PRs
+          // (Rust eligible_for_records, QA c9 P2-b).
           _toast('Trainer link lost — ride paused, reconnecting…', Icons.link_off);
           return;
         case RideEventKind.linkRestored:
@@ -313,6 +322,14 @@ class _RideDashboardState extends State<RideDashboard> {
       }
       if (linkLostSummary(s)) {
         _scheduleSummary(title: 'Ride ended — link lost', effortId: s.id);
+      } else if (s.endReason == EndReason.abandoned) {
+        // Rust stopped the route / workout; no ghost, PR or bonus.
+        if (_attemptLive) _endAttempt();
+        _scheduleSummary(
+          title: kAbandonedTitle,
+          effortId: s.id,
+          note: kAbandonedNote,
+        );
       }
     });
     // Window close / app exit: count what is open or pending (QA c8 P2-c);
@@ -561,7 +578,7 @@ class _RideDashboardState extends State<RideDashboard> {
                 isDemo: slice!.demo, // Demo speed is synthetic (G2)
               );
           // Climb / route PRs (step 4, P2): completed, non-Demo efforts only.
-          final prs = (slice != null && !slice.demo && slice.completed)
+          final prs = (slice != null && slice.eligibleForRecords && slice.completed)
               ? RoutePrStore.of(store).recordRide(
                   routeKey: key,
                   climbs: riding.climbs,
@@ -665,6 +682,7 @@ class _RideDashboardState extends State<RideDashboard> {
     bool ghostBeat = false,
     List<PrImprovement> prs = const [],
     int? effortId,
+    String? note,
   }) {
     // Bind now (QA c6 P1-A / c7 P1-B): the next start, or a summary that
     // waits in the queue, must not retarget this one.
@@ -698,6 +716,7 @@ class _RideDashboardState extends State<RideDashboard> {
           route: route,
           earned: earned,
           onProgressSettings: _openProgressSettings,
+          note: note,
         ),
         saveTcx: () => _saveEffortTcx(slice.id),
       );
@@ -719,14 +738,13 @@ class _RideDashboardState extends State<RideDashboard> {
   }
 
   AppLifecycleListener? _exitListener;
-  bool _exitCounted = false;
 
   /// App exit: end an open free ride and apply progress for every ended,
   /// non-demo effort not applied yet (a completed route whose summary was
-  /// still queued). Idempotent by uid in Rust and in [_earnedByUid].
+  /// still queued). Safe to run on every exit request (a cancelled exit
+  /// can't block a later one): idempotent by uid in Rust and in
+  /// [_earnedByUid], and ending an already-closed effort is a no-op.
   void _countOnExit() {
-    if (_exitCounted) return;
-    _exitCounted = true;
     try {
       if (api.currentEffort()?.kind.kind == EffortType.freeRide) {
         api.endEffort(completed: false);
@@ -936,6 +954,8 @@ class _RideDashboardState extends State<RideDashboard> {
 
   /// After an FTP test effort: propose, never auto-apply (step 4, F3).
   Future<void> _offerFtp(int effortId) async {
+    // Abandoned / LinkLost gap / Demo: never propose an FTP (QA c9).
+    if (api.getEffort(id: effortId)?.eligibleForRecords != true) return;
     final FtpEstimate? est;
     try {
       est = api.ftpTestForEffort(id: effortId);

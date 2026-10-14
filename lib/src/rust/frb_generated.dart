@@ -2745,8 +2745,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RideSlice dco_decode_ride_slice(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
     return RideSlice(
       id: dco_decode_u_32(arr[0]),
       kind: dco_decode_effort_kind(arr[1]),
@@ -2758,7 +2758,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       movingS: dco_decode_u_32(arr[7]),
       pausedS: dco_decode_u_32(arr[8]),
       completed: dco_decode_bool(arr[9]),
-      endReason: dco_decode_opt_box_autoadd_end_reason(arr[10]),
+      eligibleForRecords: dco_decode_bool(arr[10]),
+      endReason: dco_decode_opt_box_autoadd_end_reason(arr[11]),
     );
   }
 
@@ -3835,6 +3836,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_movingS = sse_decode_u_32(deserializer);
     var var_pausedS = sse_decode_u_32(deserializer);
     var var_completed = sse_decode_bool(deserializer);
+    var var_eligibleForRecords = sse_decode_bool(deserializer);
     var var_endReason = sse_decode_opt_box_autoadd_end_reason(deserializer);
     return RideSlice(
       id: var_id,
@@ -3847,6 +3849,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       movingS: var_movingS,
       pausedS: var_pausedS,
       completed: var_completed,
+      eligibleForRecords: var_eligibleForRecords,
       endReason: var_endReason,
     );
   }
@@ -4843,6 +4846,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.movingS, serializer);
     sse_encode_u_32(self.pausedS, serializer);
     sse_encode_bool(self.completed, serializer);
+    sse_encode_bool(self.eligibleForRecords, serializer);
     sse_encode_opt_box_autoadd_end_reason(self.endReason, serializer);
   }
 

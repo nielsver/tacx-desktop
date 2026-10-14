@@ -53,6 +53,7 @@ class RideSummaryData {
     this.route,
     this.earned,
     this.onProgressSettings,
+    this.note,
   });
 
   final String title;
@@ -64,6 +65,9 @@ class RideSummaryData {
   /// "What you earned" (null: Demo, or progress turned off).
   final EarnedPayload? earned;
   final VoidCallback? onProgressSettings;
+
+  /// One muted line under the title (e.g. why records weren't updated).
+  final String? note;
 }
 
 /// Post-ride summary (step 3, PS2): totals, NP / IF / TSS, best efforts,
@@ -168,6 +172,18 @@ class RideSummaryView extends StatelessWidget {
                   ),
               ],
             ),
+            if (data.note != null)
+              Padding(
+                padding: EdgeInsets.only(top: tk.xs),
+                child: Text(
+                  data.note!,
+                  key: const ValueKey('summary-note'),
+                  style: const TextStyle(
+                    color: RideColors.textMuted,
+                    fontSize: RideType.caption,
+                  ),
+                ),
+              ),
             if (data.isDemo)
               Padding(
                 padding: EdgeInsets.only(top: tk.xs),

@@ -225,6 +225,71 @@ class DiscoveredDevice {
           protocolHint == other.protocolHint;
 }
 
+/// "What you earned" for one effort (post-ride summary row; also carried
+/// on the `Earned` ride event for step 5's remote).
+class EarnedPayload {
+  final int xpGained;
+  final BigInt xpTotal;
+  final int level;
+  final int streakWeeks;
+  final int weekDays;
+  final int weeklyTarget;
+  final List<String> newBadges;
+
+  /// e.g. "Climb 1.0–3.0 km (+100 m) 6:41 (−0:12)".
+  final List<String> prLines;
+  final double ctl;
+  final double atl;
+
+  /// CTL − ATL.
+  final double form;
+
+  const EarnedPayload({
+    required this.xpGained,
+    required this.xpTotal,
+    required this.level,
+    required this.streakWeeks,
+    required this.weekDays,
+    required this.weeklyTarget,
+    required this.newBadges,
+    required this.prLines,
+    required this.ctl,
+    required this.atl,
+    required this.form,
+  });
+
+  @override
+  int get hashCode =>
+      xpGained.hashCode ^
+      xpTotal.hashCode ^
+      level.hashCode ^
+      streakWeeks.hashCode ^
+      weekDays.hashCode ^
+      weeklyTarget.hashCode ^
+      newBadges.hashCode ^
+      prLines.hashCode ^
+      ctl.hashCode ^
+      atl.hashCode ^
+      form.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EarnedPayload &&
+          runtimeType == other.runtimeType &&
+          xpGained == other.xpGained &&
+          xpTotal == other.xpTotal &&
+          level == other.level &&
+          streakWeeks == other.streakWeeks &&
+          weekDays == other.weekDays &&
+          weeklyTarget == other.weeklyTarget &&
+          newBadges == other.newBadges &&
+          prLines == other.prLines &&
+          ctl == other.ctl &&
+          atl == other.atl &&
+          form == other.form;
+}
+
 /// What a ride effort is: `key` is the route key (Route), the workout id
 /// (Workout) or empty (FreeRide). A flat struct so the Dart side needs no
 /// code generator for sealed classes.
@@ -587,11 +652,12 @@ class ResistanceRange {
 class RideEvent {
   final RideEventKind kind;
   final int sliceId;
+  final EarnedPayload? earned;
 
-  const RideEvent({required this.kind, required this.sliceId});
+  const RideEvent({required this.kind, required this.sliceId, this.earned});
 
   @override
-  int get hashCode => kind.hashCode ^ sliceId.hashCode;
+  int get hashCode => kind.hashCode ^ sliceId.hashCode ^ earned.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -599,11 +665,17 @@ class RideEvent {
       other is RideEvent &&
           runtimeType == other.runtimeType &&
           kind == other.kind &&
-          sliceId == other.sliceId;
+          sliceId == other.sliceId &&
+          earned == other.earned;
 }
 
 /// Recorder event kinds.
-enum RideEventKind { rideEnded }
+enum RideEventKind {
+  rideEnded,
+
+  /// Progress applied for a closed effort: `earned` is set.
+  earned,
+}
 
 /// One effort inside the session: `points[first..end]` of the recorder.
 class RideSlice {

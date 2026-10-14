@@ -18,6 +18,8 @@ class RidePrefs {
     this.demoMode = false,
     this.welcomeSeen = false,
     this.ftpWatts = 200,
+    this.progressEnabled = true,
+    this.weeklyTarget = 2,
   });
 
   final bool focusMode;
@@ -33,6 +35,11 @@ class RidePrefs {
   final bool welcomeSeen;
   /// Functional threshold power: colours the workout graph's power zones.
   final int ftpWatts;
+  /// Show XP / streaks / badges (step 4). Off still records, so turning it
+  /// back on never bursts badges.
+  final bool progressEnabled;
+  /// Ride days per ISO week for the streak (1–7).
+  final int weeklyTarget;
 
   static const _kFocus = 'ride.focusMode';
   static const _kEffects = 'ride.focusEffectsSubtle';
@@ -43,6 +50,8 @@ class RidePrefs {
   static const _kDemo = 'ride.demoMode';
   static const _kWelcome = 'ride.welcomeSeen';
   static const _kFtp = 'ride.ftpW';
+  static const _kProgress = 'progress.enabled';
+  static const _kWeekly = 'progress.weeklyTarget';
 
   static const allowedSteps = [5, 10, 25];
 
@@ -60,6 +69,8 @@ class RidePrefs {
     demoMode: demoMode,
     welcomeSeen: welcomeSeen,
     ftpWatts: ftpWatts.clamp(50, 600),
+    progressEnabled: progressEnabled,
+    weeklyTarget: weeklyTarget.clamp(1, 7),
   );
 
   static Future<RidePrefs?> load() async {
@@ -76,6 +87,8 @@ class RidePrefs {
         demoMode: p.getBool(_kDemo) ?? d.demoMode,
         welcomeSeen: p.getBool(_kWelcome) ?? d.welcomeSeen,
         ftpWatts: p.getInt(_kFtp) ?? d.ftpWatts,
+        progressEnabled: p.getBool(_kProgress) ?? d.progressEnabled,
+        weeklyTarget: p.getInt(_kWeekly) ?? d.weeklyTarget,
       ).sanitized();
     } catch (_) {
       return null;
@@ -95,6 +108,8 @@ class RidePrefs {
       await p.setBool(_kDemo, s.demoMode);
       await p.setBool(_kWelcome, s.welcomeSeen);
       await p.setInt(_kFtp, s.ftpWatts);
+      await p.setBool(_kProgress, s.progressEnabled);
+      await p.setInt(_kWeekly, s.weeklyTarget);
       return true;
     } catch (_) {
       return false;

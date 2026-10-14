@@ -93,8 +93,10 @@ async fn ride_ticker() {
     iv.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         iv.tick().await;
+        let mut active = None;
         let tick = match CONTROLLER.get().map(|c| c.try_lock()) {
             Some(Ok(g)) => {
+                active = g.active_effort_kind();
                 if g.snapshot().state == ConnectionState::Connected {
                     ride::Tick::Connected(g.metrics(), g.is_demo())
                 } else {
@@ -104,7 +106,7 @@ async fn ride_ticker() {
             Some(Err(_)) => ride::Tick::Busy,
             None => ride::Tick::Idle,
         };
-        ride::record(tick);
+        ride::record_with(tick, active);
     }
 }
 
@@ -1287,6 +1289,20 @@ impl TrainerController {
             }
         }));
         Ok(())
+    }
+
+    /// The route / workout running now, as an effort kind (QA c6 P2-1).
+    pub fn active_effort_kind(&self) -> Option<crate::trainer::types::EffortKind> {
+        let w = self.workout_engine.status();
+        if w.running {
+            return Some(crate::trainer::types::EffortKind::workout(w.workout_id));
+        }
+        match &self.route_profile {
+            Some(p) if self.route_status.running => {
+                Some(crate::trainer::types::EffortKind::route(p.route_key.clone()))
+            }
+            _ => None,
+        }
     }
 
     pub fn route_status(&self) -> RouteStatus {

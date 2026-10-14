@@ -14,14 +14,19 @@ class FtpEstimate {
   /// Best 60 s (ramp) or best 20 min (20-min test), W.
   final double basisW;
 
+  /// The test ended on a dropout, not on the rider's Stop (QA c6 P2-4).
+  final bool incomplete;
+
   const FtpEstimate({
     required this.watts,
     required this.method,
     required this.basisW,
+    required this.incomplete,
   });
 
   @override
-  int get hashCode => watts.hashCode ^ method.hashCode ^ basisW.hashCode;
+  int get hashCode =>
+      watts.hashCode ^ method.hashCode ^ basisW.hashCode ^ incomplete.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -30,7 +35,8 @@ class FtpEstimate {
           runtimeType == other.runtimeType &&
           watts == other.watts &&
           method == other.method &&
-          basisW == other.basisW;
+          basisW == other.basisW &&
+          incomplete == other.incomplete;
 }
 
 /// One accepted FTP.

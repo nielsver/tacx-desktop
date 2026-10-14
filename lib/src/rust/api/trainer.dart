@@ -5,6 +5,8 @@
 
 import '../frb_generated.dart';
 import '../trainer/ftp.dart';
+import '../trainer/progress.dart';
+import '../trainer/tcx_read.dart';
 import '../trainer/types.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
@@ -257,3 +259,56 @@ void recordAcceptedFtp({
 
 List<FtpHistoryEntry> ftpHistory() =>
     RustLib.instance.api.crateApiTrainerFtpHistory();
+
+/// Apply one finished effort (idempotent by `input.uid`) and save.
+ProgressView progressApplyEffort({
+  required EffortInput input,
+  required int weeklyTarget,
+}) => RustLib.instance.api.crateApiTrainerProgressApplyEffort(
+  input: input,
+  weeklyTarget: weeklyTarget,
+);
+
+/// Award `badge_id` once (e.g. `first_ftp_test`, `ftp_up` after the rider
+/// accepts a tested FTP). Returns true when newly earned.
+bool progressAwardBadge({
+  required String badgeId,
+  required String localDate,
+  required String uid,
+}) => RustLib.instance.api.crateApiTrainerProgressAwardBadge(
+  badgeId: badgeId,
+  localDate: localDate,
+  uid: uid,
+);
+
+/// Publish the "what you earned" payload for effort `slice_id` as an
+/// `Earned` ride event (step 5's remote shows the same row).
+void publishEarned({required int sliceId, required EarnedPayload payload}) =>
+    RustLib.instance.api.crateApiTrainerPublishEarned(
+      sliceId: sliceId,
+      payload: payload,
+    );
+
+/// Current progress for ISO week index `week` and local day index `today`.
+ProgressView progressView({
+  required PlatformInt64 week,
+  required PlatformInt64 today,
+  required int weeklyTarget,
+}) => RustLib.instance.api.crateApiTrainerProgressView(
+  week: week,
+  today: today,
+  weeklyTarget: weeklyTarget,
+);
+
+/// Saved non-demo rides in the export folder (for a progress rebuild).
+List<TcxRide> scanSavedRides() =>
+    RustLib.instance.api.crateApiTrainerScanSavedRides();
+
+/// Replace progress with one rebuilt from `inputs` (marked `rebuilt`).
+void progressRebuild({
+  required List<EffortInput> inputs,
+  required int weeklyTarget,
+}) => RustLib.instance.api.crateApiTrainerProgressRebuild(
+  inputs: inputs,
+  weeklyTarget: weeklyTarget,
+);

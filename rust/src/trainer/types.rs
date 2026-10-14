@@ -507,18 +507,43 @@ pub struct RideSlice {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RideEventKind {
     RideEnded,
+    /// Progress applied for a closed effort: `earned` is set.
+    Earned,
+}
+
+/// "What you earned" for one effort (post-ride summary row; also carried
+/// on the `Earned` ride event for step 5's remote).
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct EarnedPayload {
+    pub xp_gained: u32,
+    pub xp_total: u64,
+    pub level: u32,
+    pub streak_weeks: u32,
+    pub week_days: u32,
+    pub weekly_target: u32,
+    pub new_badges: Vec<String>,
+    /// e.g. "Climb 1.0–3.0 km (+100 m) 6:41 (−0:12)".
+    pub pr_lines: Vec<String>,
+    pub ctl: f64,
+    pub atl: f64,
+    /// CTL − ATL.
+    pub form: f64,
 }
 
 /// Recorder events (`ride_events` stream). Step 5's remote End & Save
 /// listens to the same stream.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RideEvent {
     pub kind: RideEventKind,
     pub slice_id: u32,
+    pub earned: Option<EarnedPayload>,
 }
 
 impl RideEvent {
     pub fn ride_ended(slice_id: u32) -> Self {
-        Self { kind: RideEventKind::RideEnded, slice_id }
+        Self { kind: RideEventKind::RideEnded, slice_id, earned: None }
+    }
+    pub fn earned(slice_id: u32, e: EarnedPayload) -> Self {
+        Self { kind: RideEventKind::Earned, slice_id, earned: Some(e) }
     }
 }

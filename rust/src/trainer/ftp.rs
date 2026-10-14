@@ -38,7 +38,12 @@ pub struct FtpEstimate {
     pub method: FtpMethod,
     /// Best 60 s (ramp) or best 20 min (20-min test), W.
     pub basis_w: f64,
+    /// The test ended on a dropout, not on the rider's Stop (QA c6 P2-4).
+    pub incomplete: bool,
 }
+
+/// Seconds from the effort start to the 20-min test step (WU 10′ + 5′).
+pub const TWENTY_TEST_OFFSET_S: i64 = 900;
 
 /// Test method for a workout id, if it is an FTP test.
 pub fn method_for_workout(id: &str) -> Option<FtpMethod> {
@@ -79,10 +84,24 @@ fn zero_fraction(w: &[f64]) -> f64 {
 }
 
 /// Estimate FTP from a test effort's points. Errors are rider-facing.
-pub fn estimate(points: &[TrackPoint], method: FtpMethod, demo: bool) -> Result<FtpEstimate, String> {
+/// `test_start_ms`: the 20-min score only uses points from there on (the
+/// warm-up never counts, QA c6 P2-3).
+pub fn estimate(
+    points: &[TrackPoint],
+    method: FtpMethod,
+    demo: bool,
+    test_start_ms: Option<i64>,
+) -> Result<FtpEstimate, String> {
     if demo {
         return Err("Demo rides never set your FTP.".into());
     }
+    let points = match (method, test_start_ms) {
+        (FtpMethod::TwentyMin, Some(t)) => {
+            let i = points.partition_point(|p| p.unix_ms < t);
+            &points[i..]
+        }
+        _ => points,
+    };
     let segs = power_segments(points);
     let total: usize = segs.iter().map(Vec::len).sum();
     let (window, factor) = match method {
@@ -94,7 +113,16 @@ pub fn estimate(points: &[TrackPoint], method: FtpMethod, demo: bool) -> Result<
             }
             (60usize, RAMP_FACTOR)
         }
-        FtpMethod::TwentyMin => (TWENTY_WINDOW_S as usize, TWENTY_FACTOR),
+        FtpMethod::TwentyMin => {
+            if total < TWENTY_WINDOW_S as usize {
+                return Err(format!(
+                    "The 20-minute effort lasted {}:{:02} — it needs the full 20:00.",
+                    total / 60,
+                    total % 60
+                ));
+            }
+            (TWENTY_WINDOW_S as usize, TWENTY_FACTOR)
+        }
     };
     let (basis, win) = best_window(&segs, window).ok_or_else(|| match method {
         FtpMethod::TwentyMin => "No unbroken 20 minutes recorded (a dropout split the effort).".to_string(),
@@ -108,7 +136,7 @@ pub fn estimate(points: &[TrackPoint], method: FtpMethod, demo: bool) -> Result<
     if !(FTP_MIN_W..=FTP_MAX_W).contains(&watts) {
         return Err(format!("{watts} W is outside {FTP_MIN_W}–{FTP_MAX_W} W; not used."));
     }
-    Ok(FtpEstimate { watts, method, basis_w: basis })
+    Ok(FtpEstimate { watts, method, basis_w: basis, incomplete: false })
 }
 
 /// One accepted FTP.
@@ -135,8 +163,19 @@ pub fn read_history(path: &Path) -> Vec<FtpHistoryEntry> {
         .unwrap_or_default()
 }
 
-/// Append (never rewrite old entries); atomic tmp + rename.
+/// Append (never rewrite old entries); atomic tmp + rename. A file that
+/// exists but doesn't parse is kept as `.corrupt-<unix s>` first (QA c6 P2-5).
 pub fn append_history(path: &Path, e: FtpHistoryEntry) -> Result<(), String> {
+    if let Ok(raw) = std::fs::read_to_string(path) {
+        if serde_json::from_str::<Vec<FtpHistoryEntry>>(&raw).is_err() {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let bad = path.with_extension(format!("json.corrupt-{ts}"));
+            std::fs::rename(path, &bad).map_err(|e| e.to_string())?;
+        }
+    }
     let mut all = read_history(path);
     all.push(e);
     if let Some(dir) = path.parent() {
@@ -178,7 +217,7 @@ mod tests {
     #[test]
     fn ramp_peak_minute_340_gives_255() {
         // Steps 100…340 W: best minute 340 → 0.75 × 340 = 255.
-        let e = estimate(&pts(&ramp_to(12)), FtpMethod::Ramp, false).unwrap();
+        let e = estimate(&pts(&ramp_to(12)), FtpMethod::Ramp, false, None).unwrap();
         assert_eq!(e.watts, 255);
         assert_eq!(e.basis_w, 340.0);
     }
@@ -188,29 +227,29 @@ mod tests {
         let mut w = vec![120.0; 900];
         w.extend(std::iter::repeat_n(260.0, 1200));
         w.extend(std::iter::repeat_n(100.0, 300));
-        let e = estimate(&pts(&w), FtpMethod::TwentyMin, false).unwrap();
+        let e = estimate(&pts(&w), FtpMethod::TwentyMin, false, None).unwrap();
         assert_eq!(e.watts, 247);
     }
 
     #[test]
     fn guards_demo_short_gap_zeros_range() {
-        assert!(estimate(&pts(&ramp_to(12)), FtpMethod::Ramp, true).unwrap_err().contains("Demo"));
+        assert!(estimate(&pts(&ramp_to(12)), FtpMethod::Ramp, true, None).unwrap_err().contains("Demo"));
         // Warm-up + 2 steps only.
-        assert!(estimate(&pts(&ramp_to(1)), FtpMethod::Ramp, false).is_err());
+        assert!(estimate(&pts(&ramp_to(1)), FtpMethod::Ramp, false, None).is_err());
         // 20 min broken by a 10 s dropout gap → no unbroken window.
         let mut p = pts(&vec![260.0; 1300]);
         for q in p.iter_mut().skip(700) {
             q.unix_ms += 10_000;
         }
-        assert!(estimate(&p, FtpMethod::TwentyMin, false).unwrap_err().contains("unbroken"));
+        assert!(estimate(&p, FtpMethod::TwentyMin, false, None).unwrap_err().contains("unbroken"));
         // 10 % zeros inside the window.
         let mut w = vec![260.0; 1200];
         for x in w.iter_mut().step_by(10) {
             *x = 0.0;
         }
-        assert!(estimate(&pts(&w), FtpMethod::TwentyMin, false).unwrap_err().contains("dropouts"));
+        assert!(estimate(&pts(&w), FtpMethod::TwentyMin, false, None).unwrap_err().contains("dropouts"));
         // Out of range: 20 min at 30 W → 29 W.
-        assert!(estimate(&pts(&vec![30.0; 1200]), FtpMethod::TwentyMin, false).is_err());
+        assert!(estimate(&pts(&vec![30.0; 1200]), FtpMethod::TwentyMin, false, None).is_err());
     }
 
     #[test]
@@ -240,5 +279,41 @@ mod tests {
         assert!(t.steps.iter().any(|s| s.kind == "resistance" && s.duration_s == Some(1200)));
         assert!(t.validate().is_ok());
         assert!(crate::trainer::workouts::load_workout(RAMP_WORKOUT_ID).unwrap().validate().is_ok());
+    }
+
+    #[test]
+    fn qa_c6_twenty_min_ignores_warmup_and_needs_full_test() {
+        // 900 s warm-up at 120 W, then the test stopped at 18:20 at 240 W.
+        let mut w = vec![120.0; 900];
+        w.extend(std::iter::repeat_n(240.0, 1100));
+        let p = pts(&w);
+        let start = p[900].unix_ms;
+        let e = estimate(&p, FtpMethod::TwentyMin, false, Some(start)).unwrap_err();
+        assert!(e.contains("20:00"), "{e}");
+        // Full 20 min → only the test counts (no warm-up dilution).
+        w.extend(std::iter::repeat_n(240.0, 100));
+        let p = pts(&w);
+        let ok = estimate(&p, FtpMethod::TwentyMin, false, Some(p[900].unix_ms)).unwrap();
+        assert_eq!(ok.basis_w, 240.0);
+    }
+
+    #[test]
+    fn qa_c6_corrupt_history_is_kept_aside() {
+        let dir = std::env::temp_dir().join(format!("tacx-ftp-corrupt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("ftp-history.json");
+        std::fs::write(&p, "[{\"date\":\"x\",\"watts\":240").unwrap();
+        let e = FtpHistoryEntry { date: "d".into(), watts: 250, method: "ramp".into(), source: "t".into() };
+        append_history(&p, e).unwrap();
+        assert_eq!(read_history(&p).len(), 1);
+        let kept: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter(|f| f.file_name().to_string_lossy().contains("corrupt-"))
+            .collect();
+        assert_eq!(kept.len(), 1);
+        assert!(std::fs::read_to_string(kept[0].path()).unwrap().contains("240"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -10,6 +10,7 @@ Future<bool> confirmNewFtp(
   required int newW,
   required int oldW,
   required String method,
+  bool incomplete = false,
 }) async {
   final pct = oldW > 0 ? (newW - oldW) / oldW : 0.0;
   final sign = pct >= 0 ? '+' : '−';
@@ -39,7 +40,9 @@ Future<bool> confirmNewFtp(
 
   final first = await ask(
     'New FTP: $newW W',
-    'From your $method (was $oldW W, $pctText). Use it for zones and '
+    '${incomplete ? 'Incomplete test: it ended on a lost trainer link, so '
+              'this may be low. ' : ''}'
+        'From your $method (was $oldW W, $pctText). Use it for zones and '
         'workout targets?',
     'Use $newW W',
   );

@@ -6,6 +6,7 @@ import 'package:tacx_desktop/src/rust/trainer/types.dart';
 import 'package:tacx_desktop/src/ui/app_tokens.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 import 'package:tacx_desktop/src/util/reveal_in_folder.dart';
+import 'package:tacx_desktop/src/progress/progress_ui.dart';
 import 'package:tacx_desktop/src/ui/route_map.dart';
 import 'package:tacx_desktop/src/workout/route_ghost.dart' show fmtDelta;
 import 'package:tacx_desktop/src/workout/workout_plan.dart'
@@ -50,6 +51,8 @@ class RideSummaryData {
     required this.stats,
     required this.isDemo,
     this.route,
+    this.earned,
+    this.onProgressSettings,
   });
 
   final String title;
@@ -57,6 +60,10 @@ class RideSummaryData {
   final RideStats stats;
   final bool isDemo;
   final RouteResult? route;
+
+  /// "What you earned" (null: Demo, or progress turned off).
+  final EarnedPayload? earned;
+  final VoidCallback? onProgressSettings;
 }
 
 /// Post-ride summary (step 3, PS2): totals, NP / IF / TSS, best efforts,
@@ -292,6 +299,13 @@ class RideSummaryView extends StatelessWidget {
               ],
             ],
             SizedBox(height: tk.l),
+            if (data.earned != null) ...[
+              EarnedRow(
+                earned: data.earned!,
+                onSettings: data.onProgressSettings,
+              ),
+              SizedBox(height: tk.s),
+            ],
             SummaryActions(
               isDemo: data.isDemo,
               saveTcx: saveTcx,

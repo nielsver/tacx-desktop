@@ -39,10 +39,34 @@ bool shouldSaveGhost(RideSlice? s) =>
     !s.demo;
 
 /// The effort that just closed (or the open one) for the summary dialog.
-RideSlice? latestEffort() {
-  final all = api.listEfforts();
-  return all.isEmpty ? null : all.last;
+RideSlice? latestEffort({int? startedId}) =>
+    resolveEndedEffort(api.listEfforts(), startedId: startedId);
+
+/// Which effort a summary / ghost / FTP offer is about (QA c6 P1-A).
+/// With [startedId] (the route / workout the rider started): the latest
+/// effort of that same kind and key from that id on — a > 60 s dropout may
+/// have re-begun it under a new id — never a micro free ride that opened
+/// after the end. Without: the latest closed effort, else the open one.
+RideSlice? resolveEndedEffort(List<RideSlice> all, {int? startedId}) {
+  if (all.isEmpty) return null;
+  if (startedId != null) {
+    final started = all.where((s) => s.id == startedId).firstOrNull;
+    if (started != null) {
+      return all.lastWhere(
+        (s) =>
+            s.id >= startedId &&
+            s.kind.kind == started.kind.kind &&
+            s.kind.key == started.kind.key,
+      );
+    }
+  }
+  return all.lastWhere((s) => s.endReason != null, orElse: () => all.last);
 }
+
+/// Shortest effort that gets a summary: started routes / workouts always
+/// do (NP/IF/TSS read '—' under 60 s); free rides need a minute (P2-2).
+int summaryMinS(EffortType kind) =>
+    kind == EffortType.freeRide ? 60 : 1;
 
 
 class RideDashboard extends StatefulWidget {
@@ -188,7 +212,8 @@ class _RideDashboardState extends State<RideDashboard> {
   bool _summaryOpen = false;
 
   /// Rides shorter than this (recorded seconds) get no summary dialog.
-  static const int kSummaryMinS = 60;
+  /// Effort id of the route / workout the rider started (QA c6 P1-A).
+  int? _startedEffortId;
 
   /// Chart / map hover preview (metres along the route); null = none.
   final ValueNotifier<double?> _hoverM = ValueNotifier(null);
@@ -467,7 +492,7 @@ class _RideDashboardState extends State<RideDashboard> {
         final riding = _ridingGpx;
         if (key != null && store != null && riding != null) {
           final prev = _best;
-          final slice = latestEffort();
+          final slice = latestEffort(startedId: _startedEffortId);
           final saved =
               shouldSaveGhost(slice) &&
               store.saveIfBest(
@@ -562,13 +587,18 @@ class _RideDashboardState extends State<RideDashboard> {
   /// a refresh / setState). Skipped for very short rides and while one is open.
   void _scheduleSummary({String? title, RouteResult? route}) {
     if (_summaryOpen) return;
+    // Bind now: the next start must not retarget this summary.
+    final startedId = _startedEffortId;
+    _startedEffortId = null;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || _summaryOpen) return;
       // The effort that just ended (QA c4 P1-1): never the whole session.
-      final slice = latestEffort();
+      final slice = latestEffort(startedId: startedId);
       if (slice == null) return;
       final summary = api.effortSummary(id: slice.id, ftpW: _ftp);
-      if (summary == null || summary.recordedS < kSummaryMinS) return;
+      if (summary == null || summary.recordedS < summaryMinS(slice.kind.kind)) {
+        return;
+      }
       _summaryOpen = true;
       try {
         await showRideSummary(
@@ -607,6 +637,7 @@ class _RideDashboardState extends State<RideDashboard> {
       newW: est.watts,
       oldW: _ftp,
       method: method,
+      incomplete: est.incomplete,
     );
     if (!ok || !mounted) return;
     _setPref(() => _ftp = est!.watts.clamp(50, 600));
@@ -1556,6 +1587,7 @@ class _RideDashboardState extends State<RideDashboard> {
                                         kg: _userWeightKg,
                                       );
                                       await api.startWorkout(id: id);
+                                      _startedEffortId = api.currentEffort()?.id;
                                     },
                                     success: 'Workout started',
                                     successIcon: Icons.fitness_center,
@@ -1598,6 +1630,7 @@ class _RideDashboardState extends State<RideDashboard> {
                                         kg: _userWeightKg,
                                       );
                                       await api.startGpxRoute(profile: p);
+                                      _startedEffortId = api.currentEffort()?.id;
                                       _ridingGpx = p;
                                     },
                                     success: 'GPX route started',

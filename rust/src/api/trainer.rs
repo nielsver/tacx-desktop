@@ -479,7 +479,12 @@ pub fn ftp_test_for_effort(id: u32) -> Result<Option<FtpEstimate>, String> {
         return Ok(None);
     };
     let pts = crate::trainer::ride::effort_points_copy(id).unwrap_or_default();
-    crate::trainer::ftp::estimate(&pts, method, slice.demo).map(Some)
+    let test_start = (method == FtpMethod::TwentyMin)
+        .then(|| slice.start_ms + crate::trainer::ftp::TWENTY_TEST_OFFSET_S * 1000);
+    let mut est = crate::trainer::ftp::estimate(&pts, method, slice.demo, test_start)?;
+    // Ended on a dropout, not the rider's Stop: say so in the dialog.
+    est.incomplete = slice.end_reason == Some(EndReason::DisconnectTimeout);
+    Ok(Some(est))
 }
 
 /// Record an FTP the rider accepted (append-only `ftp-history.json`).
@@ -498,4 +503,73 @@ pub fn record_accepted_ftp(watts: u32, method: String, source: String) -> Result
 #[flutter_rust_bridge::frb(sync)]
 pub fn ftp_history() -> Vec<FtpHistoryEntry> {
     crate::trainer::ftp::read_history(&crate::trainer::ftp::history_path())
+}
+
+// ---- Progress: streaks / XP / badges + CTL/ATL (step 4, S1–S3) ----
+
+pub use crate::trainer::progress::{Badge, EffortInput, ProgressView};
+pub use crate::trainer::tcx_read::TcxRide;
+
+static PROGRESS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Apply one finished effort (idempotent by `input.uid`) and save.
+#[flutter_rust_bridge::frb(sync)]
+pub fn progress_apply_effort(input: EffortInput, weekly_target: u32) -> Result<ProgressView, String> {
+    let _g = PROGRESS_LOCK.lock().map_err(|e| e.to_string())?;
+    let p = crate::trainer::progress::progress_path();
+    let mut st = crate::trainer::progress::load(&p);
+    let r = crate::trainer::progress::apply(&mut st, &input, weekly_target);
+    if r.counted || !input.uid.is_empty() {
+        crate::trainer::progress::save(&p, &st)?;
+    }
+    let mut v = crate::trainer::progress::view(&st, input.week, input.day, weekly_target);
+    v.xp_gained = r.xp_gained;
+    v.new_badges = r.new_badges;
+    Ok(v)
+}
+
+/// Award `badge_id` once (e.g. `first_ftp_test`, `ftp_up` after the rider
+/// accepts a tested FTP). Returns true when newly earned.
+#[flutter_rust_bridge::frb(sync)]
+pub fn progress_award_badge(badge_id: String, local_date: String, uid: String) -> Result<bool, String> {
+    let _g = PROGRESS_LOCK.lock().map_err(|e| e.to_string())?;
+    let p = crate::trainer::progress::progress_path();
+    let mut st = crate::trainer::progress::load(&p);
+    let new = crate::trainer::progress::award_badge(&mut st, &badge_id, &local_date, &uid);
+    if new {
+        crate::trainer::progress::save(&p, &st)?;
+    }
+    Ok(new)
+}
+
+/// Publish the "what you earned" payload for effort `slice_id` as an
+/// `Earned` ride event (step 5's remote shows the same row).
+#[flutter_rust_bridge::frb(sync)]
+pub fn publish_earned(slice_id: u32, payload: EarnedPayload) {
+    crate::trainer::ride::emit(RideEvent::earned(slice_id, payload));
+}
+
+/// Current progress for ISO week index `week` and local day index `today`.
+#[flutter_rust_bridge::frb(sync)]
+pub fn progress_view(week: i64, today: i64, weekly_target: u32) -> ProgressView {
+    let _g = PROGRESS_LOCK.lock();
+    let st = crate::trainer::progress::load(&crate::trainer::progress::progress_path());
+    crate::trainer::progress::view(&st, week, today, weekly_target)
+}
+
+/// Saved non-demo rides in the export folder (for a progress rebuild).
+#[flutter_rust_bridge::frb(sync)]
+pub fn scan_saved_rides() -> Vec<TcxRide> {
+    crate::trainer::tcx_read::scan_dir(&crate::trainer::ride::default_export_dir())
+}
+
+/// Replace progress with one rebuilt from `inputs` (marked `rebuilt`).
+#[flutter_rust_bridge::frb(sync)]
+pub fn progress_rebuild(inputs: Vec<EffortInput>, weekly_target: u32) -> Result<(), String> {
+    let _g = PROGRESS_LOCK.lock().map_err(|e| e.to_string())?;
+    let mut st = crate::trainer::progress::ProgressState { rebuilt: true, ..Default::default() };
+    for i in &inputs {
+        crate::trainer::progress::apply(&mut st, i, weekly_target);
+    }
+    crate::trainer::progress::save(&crate::trainer::progress::progress_path(), &st)
 }

@@ -13,6 +13,8 @@ import 'dart:convert';
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_web.dart';
 import 'trainer/ftp.dart';
+import 'trainer/progress.dart';
+import 'trainer/tcx_read.dart';
 import 'trainer/types.dart';
 
 abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
@@ -33,6 +35,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  Badge dco_decode_badge(dynamic raw);
+
+  @protected
   BluetoothRadio dco_decode_bluetooth_radio(dynamic raw);
 
   @protected
@@ -40,6 +45,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   bool dco_decode_bool(dynamic raw);
+
+  @protected
+  EarnedPayload dco_decode_box_autoadd_earned_payload(dynamic raw);
+
+  @protected
+  EffortInput dco_decode_box_autoadd_effort_input(dynamic raw);
 
   @protected
   EffortKind dco_decode_box_autoadd_effort_kind(dynamic raw);
@@ -88,6 +99,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DiscoveredDevice dco_decode_discovered_device(dynamic raw);
+
+  @protected
+  EarnedPayload dco_decode_earned_payload(dynamic raw);
+
+  @protected
+  EffortInput dco_decode_effort_input(dynamic raw);
 
   @protected
   EffortKind dco_decode_effort_kind(dynamic raw);
@@ -141,10 +158,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LinkLevel dco_decode_link_level(dynamic raw);
 
   @protected
+  List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<Badge> dco_decode_list_badge(dynamic raw);
+
+  @protected
   List<Climb> dco_decode_list_climb(dynamic raw);
 
   @protected
   List<DiscoveredDevice> dco_decode_list_discovered_device(dynamic raw);
+
+  @protected
+  List<EffortInput> dco_decode_list_effort_input(dynamic raw);
 
   @protected
   List<ElevSample> dco_decode_list_elev_sample(dynamic raw);
@@ -171,10 +197,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RideSlice> dco_decode_list_ride_slice(dynamic raw);
 
   @protected
+  List<TcxRide> dco_decode_list_tcx_ride(dynamic raw);
+
+  @protected
   List<WorkoutInfo> dco_decode_list_workout_info(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  EarnedPayload? dco_decode_opt_box_autoadd_earned_payload(dynamic raw);
 
   @protected
   EndReason? dco_decode_opt_box_autoadd_end_reason(dynamic raw);
@@ -207,6 +239,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PowerRange dco_decode_power_range(dynamic raw);
 
   @protected
+  ProgressView dco_decode_progress_view(dynamic raw);
+
+  @protected
   ProtocolKind dco_decode_protocol_kind(dynamic raw);
 
   @protected
@@ -231,10 +266,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RouteStatus dco_decode_route_status(dynamic raw);
 
   @protected
+  TcxRide dco_decode_tcx_ride(dynamic raw);
+
+  @protected
   TrainerMetrics dco_decode_trainer_metrics(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
+
+  @protected
+  BigInt dco_decode_u_64(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -260,6 +301,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  Badge sse_decode_badge(SseDeserializer deserializer);
+
+  @protected
   BluetoothRadio sse_decode_bluetooth_radio(SseDeserializer deserializer);
 
   @protected
@@ -267,6 +311,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  EarnedPayload sse_decode_box_autoadd_earned_payload(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  EffortInput sse_decode_box_autoadd_effort_input(SseDeserializer deserializer);
 
   @protected
   EffortKind sse_decode_box_autoadd_effort_kind(SseDeserializer deserializer);
@@ -319,6 +371,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DiscoveredDevice sse_decode_discovered_device(SseDeserializer deserializer);
+
+  @protected
+  EarnedPayload sse_decode_earned_payload(SseDeserializer deserializer);
+
+  @protected
+  EffortInput sse_decode_effort_input(SseDeserializer deserializer);
 
   @protected
   EffortKind sse_decode_effort_kind(SseDeserializer deserializer);
@@ -374,12 +432,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LinkLevel sse_decode_link_level(SseDeserializer deserializer);
 
   @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<Badge> sse_decode_list_badge(SseDeserializer deserializer);
+
+  @protected
   List<Climb> sse_decode_list_climb(SseDeserializer deserializer);
 
   @protected
   List<DiscoveredDevice> sse_decode_list_discovered_device(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<EffortInput> sse_decode_list_effort_input(SseDeserializer deserializer);
 
   @protected
   List<ElevSample> sse_decode_list_elev_sample(SseDeserializer deserializer);
@@ -410,10 +477,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RideSlice> sse_decode_list_ride_slice(SseDeserializer deserializer);
 
   @protected
+  List<TcxRide> sse_decode_list_tcx_ride(SseDeserializer deserializer);
+
+  @protected
   List<WorkoutInfo> sse_decode_list_workout_info(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  EarnedPayload? sse_decode_opt_box_autoadd_earned_payload(
+    SseDeserializer deserializer,
+  );
 
   @protected
   EndReason? sse_decode_opt_box_autoadd_end_reason(
@@ -456,6 +531,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PowerRange sse_decode_power_range(SseDeserializer deserializer);
 
   @protected
+  ProgressView sse_decode_progress_view(SseDeserializer deserializer);
+
+  @protected
   ProtocolKind sse_decode_protocol_kind(SseDeserializer deserializer);
 
   @protected
@@ -480,10 +558,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RouteStatus sse_decode_route_status(SseDeserializer deserializer);
 
   @protected
+  TcxRide sse_decode_tcx_ride(SseDeserializer deserializer);
+
+  @protected
   TrainerMetrics sse_decode_trainer_metrics(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
+
+  @protected
+  BigInt sse_decode_u_64(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_8(SseDeserializer deserializer);
@@ -513,6 +597,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_badge(Badge self, SseSerializer serializer);
+
+  @protected
   void sse_encode_bluetooth_radio(
     BluetoothRadio self,
     SseSerializer serializer,
@@ -526,6 +613,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_earned_payload(
+    EarnedPayload self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_effort_input(
+    EffortInput self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_box_autoadd_effort_kind(
@@ -606,6 +705,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_earned_payload(EarnedPayload self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_effort_input(EffortInput self, SseSerializer serializer);
+
+  @protected
   void sse_encode_effort_kind(EffortKind self, SseSerializer serializer);
 
   @protected
@@ -669,11 +774,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_link_level(LinkLevel self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_badge(List<Badge> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_climb(List<Climb> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_discovered_device(
     List<DiscoveredDevice> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_effort_input(
+    List<EffortInput> self,
     SseSerializer serializer,
   );
 
@@ -726,6 +843,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_tcx_ride(List<TcxRide> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_workout_info(
     List<WorkoutInfo> self,
     SseSerializer serializer,
@@ -733,6 +853,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_earned_payload(
+    EarnedPayload? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_end_reason(
@@ -780,6 +906,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_power_range(PowerRange self, SseSerializer serializer);
 
   @protected
+  void sse_encode_progress_view(ProgressView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_protocol_kind(ProtocolKind self, SseSerializer serializer);
 
   @protected
@@ -807,6 +936,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_route_status(RouteStatus self, SseSerializer serializer);
 
   @protected
+  void sse_encode_tcx_ride(TcxRide self, SseSerializer serializer);
+
+  @protected
   void sse_encode_trainer_metrics(
     TrainerMetrics self,
     SseSerializer serializer,
@@ -814,6 +946,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_64(BigInt self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_8(int self, SseSerializer serializer);

@@ -134,6 +134,14 @@ void main() {
     expect(api.getRouteStatus().complete, isTrue);
     expect(find.byKey(const ValueKey('ghost-delta-chip')), findsNothing);
 
+    // A short route still gets its summary (QA c6 P2-2); close it.
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Done'), findsOneWidget);
+    await tester.ensureVisible(find.text('Done'));
+    await tester.pump();
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100));
+
     // Demo must never overwrite the seeded best (G2).
     expect(file.readAsStringSync(), before);
     await reveal(find.byKey(const ValueKey('ghost-reset-best')));

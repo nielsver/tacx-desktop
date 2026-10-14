@@ -171,7 +171,22 @@ pub struct RideRecorder {
     idle_since: Option<Instant>,
     /// Events raised under the lock, delivered after it is released.
     events: Vec<RideEvent>,
+    /// No auto free ride before this wall time (QA c6 P1-A): pedalling on
+    /// after Stop / finish must not open a micro ride that steals the UI.
+    no_auto_until_ms: i64,
+    /// Last wall time the open effort saw ≥ 1 W.
+    last_power_ms: i64,
+    /// Route / workout the controller is running (P2-1): when no effort is
+    /// open (e.g. after a > 60 s dropout) it is re-begun as that kind.
+    active: Option<EffortKind>,
 }
+
+/// Auto free rides are suppressed this long after any effort closes.
+pub const AUTO_BEGIN_COOLDOWN_MS: i64 = 5_000;
+/// An auto free ride with almost no riding closes after this much 0 W.
+pub const BLIP_IDLE_MS: i64 = 60_000;
+/// "Almost no riding" for the blip rule.
+pub const BLIP_MAX_MOVING_S: u32 = 10;
 
 impl RideRecorder {
     /// `wall_ms` is the UTC wall clock (ms since epoch) used for export timestamps.
@@ -191,8 +206,26 @@ impl RideRecorder {
                     }
                     return;
                 }
-                if self.open().is_none() && sane(m.power_w, 3000.0) >= 1.0 {
-                    self.begin_at(EffortKind::free_ride(), demo, wall_ms);
+                let pedalling = sane(m.power_w, 3000.0) >= 1.0;
+                if self.open().is_none() {
+                    if let Some(kind) = self.active.clone() {
+                        // A running route / workout lost its effort to a long
+                        // dropout: continue as that kind, never a FreeRide.
+                        self.begin_at(kind, demo, wall_ms);
+                    } else if pedalling && wall_ms >= self.no_auto_until_ms {
+                        self.begin_at(EffortKind::free_ride(), demo, wall_ms);
+                    }
+                }
+                if pedalling {
+                    self.last_power_ms = wall_ms;
+                } else if let Some(e) = self.open() {
+                    // A ≥ 1 W blip must not leave a free ride open forever.
+                    if e.kind == EffortKind::free_ride()
+                        && e.acc.stats().moving_s <= BLIP_MAX_MOVING_S
+                        && wall_ms - self.last_power_ms.max(e.start_ms) > BLIP_IDLE_MS
+                    {
+                        self.close(false, EndReason::Stopped, wall_ms);
+                    }
                 }
                 self.acc.add_sample(&m, dt);
                 let newer = self.points.last().is_none_or(|p| wall_ms / 1000 > p.unix_ms / 1000);
@@ -274,6 +307,7 @@ impl RideRecorder {
         e.completed = completed;
         e.reason = Some(reason);
         let id = e.id;
+        self.no_auto_until_ms = wall_ms + AUTO_BEGIN_COOLDOWN_MS;
         self.events.push(RideEvent::ride_ended(id));
         self.slice(id)
     }
@@ -286,6 +320,11 @@ impl RideRecorder {
             return self.close(completed, reason, wall_ms);
         }
         self.efforts.last().and_then(|e| self.slice(e.id))
+    }
+
+    /// What the controller is running right now (None: nothing).
+    pub fn set_active(&mut self, kind: Option<EffortKind>) {
+        self.active = kind;
     }
 
     pub fn set_paused(&mut self, paused: bool) {
@@ -400,6 +439,13 @@ pub fn on_ride_event(f: impl Fn(&RideEvent) + Send + Sync + 'static) {
     RIDE_EVENT_HOOKS.lock().push(Box::new(f));
 }
 
+/// Deliver an event to every subscriber (outside the recorder lock).
+pub fn emit(ev: RideEvent) {
+    for h in RIDE_EVENT_HOOKS.lock().iter() {
+        h(&ev);
+    }
+}
+
 /// Run `f` under the recorder lock, then deliver its events outside it.
 fn with_recorder<T>(f: impl FnOnce(&mut RideRecorder) -> T) -> T {
     let (out, events) = {
@@ -427,6 +473,14 @@ fn wall_ms() -> i64 {
 
 pub fn record(t: Tick) {
     with_recorder(|r| r.tick(Instant::now(), wall_ms(), t));
+}
+
+/// Ticker entry: `active` = the route / workout the controller is running.
+pub fn record_with(t: Tick, active: Option<EffortKind>) {
+    with_recorder(|r| {
+        r.set_active(active);
+        r.tick(Instant::now(), wall_ms(), t)
+    });
 }
 
 pub fn begin_effort(kind: EffortKind, demo: bool) -> u32 {
@@ -875,5 +929,55 @@ mod tests {
     #[test]
     fn default_export_dir_is_named() {
         assert!(default_export_dir().ends_with("Tacx Desktop"));
+    }
+
+    #[test]
+    fn qa_c6_p1a_pedalling_on_after_finish_keeps_the_route_latest() {
+        let mut r = RideRecorder::default();
+        let t0 = Instant::now();
+        let id = r.begin_effort(route(), true, at(0));
+        ride(&mut r, t0, 0, 89, 200.0, true);
+        r.end_effort(true, at(89));
+        // Rider keeps pedalling: no micro free ride within the cooldown.
+        ride(&mut r, t0, 89, 4, 200.0, true);
+        assert!(r.current_effort().is_none());
+        assert_eq!(r.latest_id(), Some(id));
+        let sl = r.slice(id).unwrap();
+        assert!(sl.completed && sl.kind == route());
+        // After the cooldown a real free ride may start.
+        ride(&mut r, t0, 95, 3, 200.0, true);
+        assert_eq!(r.current_effort().unwrap().kind, EffortKind::free_ride());
+    }
+
+    #[test]
+    fn qa_c6_blip_free_ride_closes_on_idle() {
+        let mut r = RideRecorder::default();
+        let t0 = Instant::now();
+        ride(&mut r, t0, 0, 1, 5.0, false); // 1 s blip
+        let blip = r.current_effort().unwrap().id;
+        ride(&mut r, t0, 1, 62, 0.0, false); // connected, 0 W
+        assert!(r.current_effort().is_none(), "blip ride closed");
+        assert_eq!(r.slice(blip).unwrap().end_reason, Some(EndReason::Stopped));
+        // A real free ride coasting for 2 min is not split.
+        let mut r = RideRecorder::default();
+        ride(&mut r, t0, 0, 60, 150.0, false);
+        ride(&mut r, t0, 60, 120, 0.0, false);
+        assert!(r.current_effort().is_some());
+    }
+
+    #[test]
+    fn qa_c6_p2_1_long_dropout_mid_route_rebegins_as_route() {
+        let mut r = RideRecorder::default();
+        let t0 = Instant::now();
+        r.set_active(Some(route()));
+        let a = r.begin_effort(route(), false, at(0));
+        ride(&mut r, t0, 0, 30, 200.0, false);
+        idle(&mut r, t0, 30, 62);
+        assert_eq!(r.slice(a).unwrap().end_reason, Some(EndReason::DisconnectTimeout));
+        ride(&mut r, t0, 92, 30, 200.0, false);
+        let cur = r.current_effort().unwrap();
+        assert_eq!(cur.kind, route(), "not a FreeRide");
+        let done = r.end_effort(true, at(122)).unwrap();
+        assert!(done.completed && done.kind == route());
     }
 }

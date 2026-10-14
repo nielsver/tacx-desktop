@@ -52,7 +52,7 @@ void main() {
       [c.calls.single.$1, ...c.calls.single.$2],
       [
         'explorer',
-        ...['/select,$p'],
+        ...['/select,', p],
       ],
     );
     await Reveal(run: c.run, os: 'windows').openUrl(kGarminImportUrl);

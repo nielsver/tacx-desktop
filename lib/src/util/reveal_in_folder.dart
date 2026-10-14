@@ -15,7 +15,8 @@ const kGarminImportUrl = 'https://connect.garmin.com/modern/import-data';
 ///
 /// * Linux: `org.freedesktop.FileManager1.ShowItems` over D-Bus (Dolphin /
 ///   Nautilus select the file), falling back to `xdg-open <folder>`.
-/// * Windows: `explorer /select,<path>`.
+/// * Windows: `explorer /select, <path>` (two args, so paths with spaces
+///   or commas reach Explorer intact).
 /// * macOS: `open -R <path>`.
 class Reveal {
   Reveal({ProcRunner? run, String? os})
@@ -33,7 +34,8 @@ class Reveal {
     '--type=method_call',
     '/org/freedesktop/FileManager1',
     'org.freedesktop.FileManager1.ShowItems',
-    'array:string:${Uri.file(absPath)}',
+    // A literal ',' would split dbus-send's array (QA c6 P2-6).
+    'array:string:${Uri.file(absPath).toString().replaceAll(',', '%2C')}',
     'string:',
   ];
 
@@ -66,7 +68,7 @@ class Reveal {
         return _ok('xdg-open', [folderOf(path)]);
       case 'windows':
         // Explorer exits 1 even on success; only a launch failure counts.
-        return _ok('explorer', ['/select,$path'], anyExit: true);
+        return _ok('explorer', ['/select,', path], anyExit: true);
       case 'macos':
         return _ok('open', ['-R', path]);
       default:

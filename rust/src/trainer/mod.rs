@@ -12,10 +12,12 @@ pub mod ftms;
 pub mod intervals;
 pub mod workouts;
 pub mod gpx;
+pub mod progress;
 pub mod reconnect;
 pub mod ride;
 pub mod summary;
 pub mod tcx;
+pub mod tcx_read;
 pub mod types;
 
 pub use types::*;

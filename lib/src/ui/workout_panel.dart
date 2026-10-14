@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
@@ -25,7 +26,8 @@ class WorkoutPanel extends StatelessWidget {
     required this.onStopRoute,
     required this.onErgFromGrade,
     required this.onSaveAsCopy,
-    this.ghostDeltaS,
+    this.ghostDelta,
+    this.routeLive,
     this.bestS,
     this.queuedGpxName,
     this.onResetBest,
@@ -51,9 +53,13 @@ class WorkoutPanel extends StatelessWidget {
   final ValueChanged<bool> onErgFromGrade;
   final ValueChanged<WorkoutInfo> onSaveAsCopy;
 
-
   /// Seconds behind (+) / ahead (−) of the best attempt while riding.
-  final double? ghostDeltaS;
+  /// Live "± vs best" seconds (null hides the chip).
+  final ValueListenable<double?>? ghostDelta;
+
+  /// Live route status for the progress text; [routeStatus] only needs to
+  /// be current for running / complete (R4/R5: no panel rebuild per tick).
+  final ValueListenable<RouteStatus>? routeLive;
 
   /// Best time on the loaded route, seconds (null = no attempt yet).
   final double? bestS;
@@ -73,6 +79,16 @@ class WorkoutPanel extends StatelessWidget {
   /// plain profile is shown when null.
   final Widget? elevChart;
 
+  static Widget _statusLine(String text) => Text(
+    text,
+    key: const ValueKey('workout-status-line'),
+    style: const TextStyle(
+      fontSize: RideType.label,
+      fontWeight: FontWeight.w600,
+      color: RideColors.textPrimary,
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final active = workoutStatus.running || routeStatus.running;
@@ -91,25 +107,31 @@ class WorkoutPanel extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              active
-                  ? (workoutStatus.running
-                      ? workoutStatus.statusText
-                      : routeStatus.statusText)
-                  : 'Built-ins + saved JSON · edit outside Focus',
-              style: const TextStyle(
-                fontSize: RideType.label,
-                fontWeight: FontWeight.w600,
-                color: RideColors.textPrimary,
+            if (active && !workoutStatus.running && routeLive != null)
+              ValueListenableBuilder<RouteStatus>(
+                valueListenable: routeLive!,
+                builder: (context, r, _) => _statusLine(r.statusText),
+              )
+            else
+              _statusLine(
+                active
+                    ? (workoutStatus.running
+                          ? workoutStatus.statusText
+                          : routeStatus.statusText)
+                    : 'Built-ins + saved JSON · edit outside Focus',
               ),
-            ),
-            if (ghostDeltaS != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: GhostDeltaChip(deltaS: ghostDeltaS!),
-                ),
+            if (ghostDelta != null)
+              ValueListenableBuilder<double?>(
+                valueListenable: ghostDelta!,
+                builder: (context, d, _) => d == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: GhostDeltaChip(deltaS: d),
+                        ),
+                      ),
               ),
             if (routeStatus.complete)
               const Padding(
@@ -162,9 +184,7 @@ class WorkoutPanel extends StatelessWidget {
                           ),
                           if (w.builtin)
                             TextButton(
-                              onPressed: enabled
-                                  ? () => onSaveAsCopy(w)
-                                  : null,
+                              onPressed: enabled ? () => onSaveAsCopy(w) : null,
                               child: const Text('Save copy'),
                             ),
                         ],
@@ -183,14 +203,13 @@ class WorkoutPanel extends StatelessWidget {
                     children: [
                       FilledButton.tonal(
                         key: const ValueKey('gpx-paste'),
-                        onPressed: enabled
-                            ? () => _pasteGpx(context)
-                            : null,
+                        onPressed: enabled ? () => _pasteGpx(context) : null,
                         child: const Text('Paste GPX'),
                       ),
                       FilledButton(
                         key: const ValueKey('gpx-start'),
-                        onPressed: enabled &&
+                        onPressed:
+                            enabled &&
                                 gpxProfile != null &&
                                 (supportsSimulation) &&
                                 !active
@@ -316,12 +335,13 @@ class WorkoutPanel extends StatelessWidget {
   Future<void> _pasteGpx(BuildContext context) async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final text = data?.text?.trim() ?? '';
-    if (text.isEmpty ||
-        !(text.contains('<trkpt') || text.contains('<rtept'))) {
+    if (text.isEmpty || !(text.contains('<trkpt') || text.contains('<rtept'))) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Clipboard has no GPX track — copy a .gpx file first'),
+            content: Text(
+              'Clipboard has no GPX track — copy a .gpx file first',
+            ),
           ),
         );
       }
@@ -363,7 +383,9 @@ Future<void> showCreateWorkoutDialog(BuildContext context) async {
                     Row(
                       children: [
                         Expanded(
-                          child: Text('Step ${i + 1}: ${steps[i].watts} W × ${steps[i].dur}s'),
+                          child: Text(
+                            'Step ${i + 1}: ${steps[i].watts} W × ${steps[i].dur}s',
+                          ),
                         ),
                         IconButton(
                           onPressed: () => setLocal(() => steps.removeAt(i)),
@@ -384,8 +406,9 @@ Future<void> showCreateWorkoutDialog(BuildContext context) async {
                             children: [
                               TextField(
                                 controller: watts,
-                                decoration:
-                                    const InputDecoration(labelText: 'Watts'),
+                                decoration: const InputDecoration(
+                                  labelText: 'Watts',
+                                ),
                                 keyboardType: TextInputType.number,
                               ),
                               TextField(
@@ -444,8 +467,7 @@ Future<void> showCreateWorkoutDialog(BuildContext context) async {
   if (ok != true || steps.isEmpty) return;
   final id = 'custom_${DateTime.now().millisecondsSinceEpoch}';
   final stepJson = steps
-      .map((s) =>
-          '{"kind":"erg","durationS":${s.dur},"watts":${s.watts}}')
+      .map((s) => '{"kind":"erg","durationS":${s.dur},"watts":${s.watts}}')
       .join(',');
   final json =
       '{"version":1,"id":"$id","name":"${nameCtrl.text.replaceAll('"', '')}",'

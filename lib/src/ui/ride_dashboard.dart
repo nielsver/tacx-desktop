@@ -126,6 +126,12 @@ class _RideDashboardState extends State<RideDashboard> {
     complete: false,
     statusText: '',
   );
+  /// Live route status (progress, grade, status text) at 4 Hz. The
+  /// dashboard itself only rebuilds on [_routeShape] changes (R4/R5).
+  late final ValueNotifier<RouteStatus> _routeN = ValueNotifier(_route);
+
+  /// Live "± vs best" (seconds); null hides the chip.
+  final ValueNotifier<double?> _ghostDeltaN = ValueNotifier(null);
   GpxProfileInfo? _gpx;
   /// Planned steps of the running / just-finished workout (ride graph).
   WorkoutPlan? _plan;
@@ -243,6 +249,8 @@ class _RideDashboardState extends State<RideDashboard> {
     _mapRiderM.dispose();
     _mapGhostM.dispose();
     _hoverM.dispose();
+    _routeN.dispose();
+    _ghostDeltaN.dispose();
     super.dispose();
   }
 
@@ -291,7 +299,7 @@ class _RideDashboardState extends State<RideDashboard> {
         resRange != _resRange ||
         interval != _interval ||
         _workoutShape(workout) != _workoutShape(_workout) ||
-        route != _route ||
+        _routeShape(route) != _routeShape(_route) ||
         strap != _strap ||
         !identical(plan, _plan) ||
         ghostChanged ||
@@ -300,6 +308,9 @@ class _RideDashboardState extends State<RideDashboard> {
     _rideN.value = ride;
     _linkN.value = api.getLinkHealth();
     _workoutN.value = workout;
+    _route = route; // live fields; structural changes still go via setState
+    _routeN.value = route;
+    _ghostDeltaN.value = _ghostDeltaS;
     if (_workout.running &&
         !workout.running &&
         workout.done &&
@@ -390,10 +401,11 @@ class _RideDashboardState extends State<RideDashboard> {
     _loadBestForGpx(); // the queued / loaded GPX becomes current again
   }
 
-  /// Ghost race bookkeeping for one poll. Returns true when the visible
-  /// ghost state (marker / delta) changed.
+  /// Ghost race bookkeeping for one poll. Returns true when the layout
+  /// must change (a different route key); marker / delta values reach the
+  /// UI through notifiers.
   bool _trackGhost(RouteStatus route) {
-    final oldM = _ghostM, oldD = _ghostDeltaS, oldKey = _routeKey;
+    final oldKey = _routeKey;
     final nowS = _mono.elapsedMicroseconds / 1e6;
     if (route.running) {
       _notRunningSinceS = null;
@@ -464,9 +476,9 @@ class _RideDashboardState extends State<RideDashboard> {
         if (nowS - _notRunningSinceS! >= 1.0) _endAttempt();
       }
     }
-    return oldM != _ghostM ||
-        oldD?.round() != _ghostDeltaS?.round() ||
-        oldKey != _routeKey;
+    // Marker / delta values flow through notifiers (_mapGhostM, _ghostDeltaN);
+    // only a different route key changes the layout.
+    return oldKey != _routeKey;
   }
 
   /// Route part of the summary for [riding] (call before [_endAttempt]).
@@ -604,6 +616,11 @@ class _RideDashboardState extends State<RideDashboard> {
 
   /// The parts of a workout status that change the dashboard layout.
   /// Time left / ramp target change 4×/s and only drive [_workoutN].
+  /// Route fields that change the dashboard layout (not progress / grade /
+  /// status text, which tick at 4 Hz and are read via [_routeN]).
+  static Object _routeShape(RouteStatus r) =>
+      (r.running, r.complete, r.routeName, r.distanceM);
+
   static Object _workoutShape(WorkoutStatus w) => (
     w.running,
     w.done,
@@ -1125,7 +1142,11 @@ class _RideDashboardState extends State<RideDashboard> {
             Expanded(
               child: _inFocus
                   ? ListenableBuilder(
-                    listenable: Listenable.merge([_metricsN, _rideN]),
+                    listenable: Listenable.merge([
+                      _metricsN,
+                      _rideN,
+                      _ghostDeltaN,
+                    ]),
                     builder: (context, _) => FocusRideView(
                       key: const ValueKey('focus-ride-view'),
                       metrics: _metrics,
@@ -1141,9 +1162,12 @@ class _RideDashboardState extends State<RideDashboard> {
                       workoutView: _plan == null
                           ? null
                           : _workoutView(large: true),
-                      routeChip: _ghostDeltaS == null
+                      routeChip: _ghostDeltaN.value == null
                           ? null
-                          : GhostDeltaChip(deltaS: _ghostDeltaS!, large: true),
+                          : GhostDeltaChip(
+                              deltaS: _ghostDeltaN.value!,
+                              large: true,
+                            ),
                       onExitFocus: _toggleFocusMode,
                       onDisconnect: () => _run(
                         () => api.disconnectTrainer(),
@@ -1486,7 +1510,8 @@ class _RideDashboardState extends State<RideDashboard> {
                                     setState(() => _ergFromGrade = v);
                                     api.setErgFromGrade(enabled: v);
                                   },
-                                  ghostDeltaS: _ghostDeltaS,
+                                  ghostDelta: _ghostDeltaN,
+                                  routeLive: _routeN,
                                   bestS: _best?.totalS,
                                   onSaveAsCopy: (info) {
                                     try {

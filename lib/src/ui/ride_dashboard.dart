@@ -557,7 +557,7 @@ class _RideDashboardState extends State<RideDashboard> {
             isDemo: slice.demo, // captured at effort begin
             route: route,
           ),
-          onSaveTcx: () => _exportRide(effortId: slice.id),
+          saveTcx: () => _saveEffortTcx(slice.id),
         );
       } finally {
         _summaryOpen = false;
@@ -803,6 +803,16 @@ class _RideDashboardState extends State<RideDashboard> {
   /// Effort id → saved path: a second tap never writes a second file.
   final Map<int, String> _savedTcx = {};
   bool _savingTcx = false;
+
+  /// Summary dialog save: one file per effort, path back to the dialog
+  /// (which shows the result itself; errors propagate).
+  Future<String> _saveEffortTcx(int id) async {
+    final done = _savedTcx[id];
+    if (done != null) return done;
+    final path = await api.exportEffortTcx(id: id);
+    _savedTcx[id] = path;
+    return path;
+  }
 
   Future<void> _exportRide({int? effortId}) async {
     if (_savingTcx) return; // double tap while writing

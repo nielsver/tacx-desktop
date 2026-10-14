@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,10 @@ import 'package:tacx_desktop/src/rust/trainer/types.dart';
 import 'package:tacx_desktop/src/ui/ride_summary_view.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
 import 'package:tacx_desktop/src/ui/route_map.dart';
+import 'package:tacx_desktop/src/util/reveal_in_folder.dart';
+
+Future<ProcessResult> _fakeRun(String exe, List<String> args) async =>
+    ProcessResult(0, 0, '', '');
 
 /// Matches the Rust fixture: 200 W for 1 h at FTP 200.
 RideSummary _fixture({int ftp = 200}) => RideSummary(
@@ -94,7 +99,11 @@ Future<void> _pump(
         body: Center(
           child: RideSummaryView(
             data: data,
-            onSaveTcx: onSave ?? () {},
+            saveTcx: () async {
+              (onSave ?? () {})();
+              return '/tmp/tacx-ride-x.tcx';
+            },
+            reveal: Reveal(run: _fakeRun, os: 'linux'),
             onDone: onDone ?? () {},
           ),
         ),
@@ -277,7 +286,7 @@ void main() {
                       elevGainM: 30,
                     ),
                   ),
-                  onSaveTcx: () async {},
+                  saveTcx: () async => '/tmp/x.tcx',
                 ),
                 child: const Text('open'),
               ),

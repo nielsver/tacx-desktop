@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
 import 'package:tacx_desktop/src/ui/app_tokens.dart';
 import 'package:tacx_desktop/src/ui/ride_theme.dart';
+import 'package:tacx_desktop/src/util/reveal_in_folder.dart';
 import 'package:tacx_desktop/src/ui/route_map.dart';
 import 'package:tacx_desktop/src/workout/route_ghost.dart' show fmtDelta;
 import 'package:tacx_desktop/src/workout/workout_plan.dart'
@@ -65,13 +66,19 @@ class RideSummaryView extends StatelessWidget {
   const RideSummaryView({
     super.key,
     required this.data,
-    required this.onSaveTcx,
+    required this.saveTcx,
     required this.onDone,
+    this.reveal,
   });
 
   final RideSummaryData data;
-  final VoidCallback? onSaveTcx;
+
+  /// Writes the ride's TCX and returns its path (throws on failure).
+  final Future<String> Function()? saveTcx;
   final VoidCallback onDone;
+
+  /// File-manager / browser seam (tests inject a fake).
+  final Reveal? reveal;
 
   static String watts(double? w) => w == null ? '—' : '${w.round()} W';
   static String dec(double? v, int places) =>
@@ -285,22 +292,11 @@ class RideSummaryView extends StatelessWidget {
               ],
             ],
             SizedBox(height: tk.l),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                OutlinedButton.icon(
-                  key: const ValueKey('summary-save-tcx'),
-                  onPressed: onSaveTcx,
-                  icon: const Icon(Icons.save_alt, size: 18),
-                  label: const Text('Save TCX'),
-                ),
-                SizedBox(width: tk.s),
-                FilledButton(
-                  key: const ValueKey('summary-done'),
-                  onPressed: onDone,
-                  child: const Text('Done'),
-                ),
-              ],
+            SummaryActions(
+              isDemo: data.isDemo,
+              saveTcx: saveTcx,
+              reveal: reveal ?? Reveal(),
+              onDone: onDone,
             ),
           ],
         ),
@@ -320,7 +316,8 @@ class RideSummaryView extends StatelessWidget {
 Future<void> showRideSummary(
   BuildContext context, {
   required RideSummaryData data,
-  required Future<void> Function() onSaveTcx,
+  required Future<String> Function() saveTcx,
+  Reveal? reveal,
 }) {
   return showDialog<void>(
     context: context,
@@ -330,11 +327,163 @@ Future<void> showRideSummary(
       insetPadding: const EdgeInsets.all(24),
       child: RideSummaryView(
         data: data,
-        onSaveTcx: () => onSaveTcx(),
+        saveTcx: saveTcx,
+        reveal: reveal,
         onDone: () => Navigator.of(ctx).pop(),
       ),
     ),
   );
+}
+
+/// Save TCX · Show in folder · Garmin Connect import · Done (step 4, R2).
+/// Results show inside the dialog (a snackbar would sit behind the modal).
+class SummaryActions extends StatefulWidget {
+  const SummaryActions({
+    super.key,
+    required this.isDemo,
+    required this.saveTcx,
+    required this.reveal,
+    required this.onDone,
+  });
+
+  final bool isDemo;
+  final Future<String> Function()? saveTcx;
+  final Reveal reveal;
+  final VoidCallback onDone;
+
+  static const demoRefusal =
+      'Demo rides are synthetic — they are never sent to Garmin Connect.';
+
+  @override
+  State<SummaryActions> createState() => _SummaryActionsState();
+}
+
+class _SummaryActionsState extends State<SummaryActions> {
+  String? _path;
+  String? _status;
+  bool _error = false;
+  bool _busy = false;
+
+  Future<String?> _save() async {
+    final p = _path;
+    if (p != null) return p; // never a second file
+    final save = widget.saveTcx;
+    if (save == null) return null;
+    try {
+      final path = await save();
+      _path = path;
+      _set('Saved $path');
+      return path;
+    } catch (e) {
+      _set('$e', error: true);
+      return null;
+    }
+  }
+
+  void _set(String msg, {bool error = false}) {
+    if (!mounted) return;
+    setState(() {
+      _status = msg;
+      _error = error;
+    });
+  }
+
+  Future<void> _guard(Future<void> Function() f) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await f();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _show() async {
+    final p = await _save();
+    if (p == null) return;
+    final ok = await widget.reveal.showInFolder(p);
+    if (!ok) _set('Could not open the folder. File: $p', error: true);
+  }
+
+  Future<void> _garmin() async {
+    if (widget.isDemo) {
+      _set(SummaryActions.demoRefusal, error: true);
+      return;
+    }
+    final p = await _save();
+    if (p == null) return;
+    await widget.reveal.showInFolder(p);
+    final ok = await widget.reveal.openUrl(kGarminImportUrl);
+    _set(
+      ok
+          ? 'Drag ${p.split(RegExp(r'[/\\]')).last} onto Garmin Connect → Import Data.'
+          : 'Open $kGarminImportUrl and import $p',
+      error: !ok,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tk = context.tk;
+    final canSave = widget.saveTcx != null && !_busy;
+    final status = _status;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (status != null)
+          Padding(
+            padding: EdgeInsets.only(bottom: tk.s),
+            child: Text(
+              status,
+              key: const ValueKey('summary-status'),
+              textAlign: TextAlign.end,
+              style: TextStyle(
+                color: _error ? RideColors.danger : RideColors.textSecondary,
+                fontSize: RideType.caption,
+              ),
+            ),
+          ),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tk.s,
+          runSpacing: tk.s,
+          children: [
+            OutlinedButton.icon(
+              key: const ValueKey('summary-save-tcx'),
+              onPressed: canSave && _path == null ? () => _guard(_save) : null,
+              icon: Icon(_path == null ? Icons.save_alt : Icons.check, size: 18),
+              label: Text(_path == null ? 'Save TCX' : 'Saved'),
+            ),
+            OutlinedButton.icon(
+              key: const ValueKey('summary-show-folder'),
+              onPressed: canSave ? () => _guard(_show) : null,
+              icon: const Icon(Icons.folder_open, size: 18),
+              label: const Text('Show in folder'),
+            ),
+            Tooltip(
+              message: widget.isDemo
+                  ? SummaryActions.demoRefusal
+                  : 'Save the TCX, show it, and open Garmin Connect import',
+              child: OutlinedButton.icon(
+                key: const ValueKey('summary-garmin'),
+                onPressed: canSave && !widget.isDemo
+                    ? () => _guard(_garmin)
+                    : null,
+                icon: const Icon(Icons.upload_file, size: 18),
+                label: const Text('Garmin Connect'),
+              ),
+            ),
+            FilledButton(
+              key: const ValueKey('summary-done'),
+              onPressed: widget.onDone,
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 class _Fixed<T> implements ValueListenable<T> {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show AppExitResponse;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart'
@@ -66,19 +67,16 @@ RideSlice? resolveEndedEffort(List<RideSlice> all, {int? startedId}) {
   return all.lastWhere((s) => s.endReason != null, orElse: () => all.last);
 }
 
-/// Whether the RideEnded listener applies progress for [s] (QA c7 P1-B):
-/// every non-demo ended effort, except a route / workout cut by a dropout
-/// (it may resume as the same effort, P2-g) and a completed route (the
-/// route path applies it with its ghost / climb PR flags).
-bool progressOnEnd(RideSlice s) {
-  final r = s.endReason;
-  if (s.demo || r == null) return false;
-  final kind = s.kind.kind;
-  if (r == EndReason.disconnectTimeout && kind != EffortType.freeRide) {
-    return false;
-  }
-  return !(kind == EffortType.route && r == EndReason.completed);
-}
+/// Whether progress is applied for [s] when it ends (QA c7 P1-B, c8):
+/// every really-ended, non-demo effort. Rust only raises RideEnded at the
+/// real end (a route / workout dropout is LinkLost, not an end).
+bool progressOnEnd(RideSlice s) => !s.demo && s.endReason != null;
+
+/// Only a free ride gets a "link lost" summary: a route / workout dropout
+/// pauses the ride and it carries on (QA c8 P1-C).
+bool linkLostSummary(RideSlice s) =>
+    s.kind.kind == EffortType.freeRide &&
+    s.endReason == EndReason.disconnectTimeout;
 
 /// Shortest effort that gets a summary: started routes / workouts always
 /// do (NP/IF/TSS read '—' under 60 s); free rides need a minute (P2-2).
@@ -287,17 +285,45 @@ class _RideDashboardState extends State<RideDashboard> {
   @override
   void initState() {
     super.initState();
-    // RideEnded for efforts no button closed (link lost > 60 s): still show
-    // the summary. Stop / complete open it from their own call sites.
+    // Summary, progress, PRs and export run on RideEnded only; LinkLost /
+    // LinkRestored just tell the rider the ride is paused (QA c8 P1-C).
     _rideEvents = api.rideEvents().listen((e) {
-      if (e.kind != RideEventKind.rideEnded) return;
+      switch (e.kind) {
+        case RideEventKind.linkLost:
+          _toast('Trainer link lost — ride paused, reconnecting…', Icons.link_off);
+          return;
+        case RideEventKind.linkRestored:
+          _toast('Trainer back — ride continues', Icons.link);
+          return;
+        case RideEventKind.earned:
+          return;
+        case RideEventKind.rideEnded:
+          break;
+      }
       final s = api.getEffort(id: e.sliceId);
       if (s == null) return;
-      _onEffortEnded(s);
-      if (s.endReason == EndReason.disconnectTimeout) {
+      if (!s.demo && s.kind.kind == EffortType.route && s.completed) {
+        // Give the route path (it sees `complete` on its next poll) the
+        // first go, with ghost / climb-PR flags; then make sure it counts.
+        Timer(const Duration(seconds: 2), () {
+          if (mounted) _onEffortEnded(s);
+        });
+      } else {
+        _onEffortEnded(s);
+      }
+      if (linkLostSummary(s)) {
         _scheduleSummary(title: 'Ride ended — link lost', effortId: s.id);
       }
     });
+    // Window close / app exit: count what is open or pending (QA c8 P2-c);
+    // State.dispose is not called by the desktop embedders on close.
+    _exitListener = AppLifecycleListener(
+      onExitRequested: () async {
+        _countOnExit();
+        return AppExitResponse.exit;
+      },
+      onDetach: _countOnExit,
+    );
     // Demo defaults OFF (Rust + prefs). Prefs may re-enable after load.
     api.setDemoMode(enabled: false);
     WidgetsBinding.instance.addPostFrameCallback((_) => _reloadWorkouts());
@@ -312,11 +338,8 @@ class _RideDashboardState extends State<RideDashboard> {
 
   @override
   void dispose() {
-    // App closing mid free ride: still count it (QA c7 P1-B).
-    if (api.currentEffort()?.kind.kind == EffortType.freeRide) {
-      final s = api.endEffort(completed: false);
-      if (s != null) _onEffortEnded(s);
-    }
+    _countOnExit();
+    _exitListener?.dispose();
     _rideEvents?.cancel();
     _poll?.cancel();
     if (_prefsSave?.isActive ?? false) {
@@ -547,6 +570,20 @@ class _RideDashboardState extends State<RideDashboard> {
                   finishS: t,
                 )
               : const <PrImprovement>[];
+          // Progress now, with its flags (the summary may wait in the queue).
+          if (slice != null) {
+            final sum = api.effortSummary(id: slice.id, ftpW: _ftp);
+            final st = api.effortStats(id: slice.id);
+            if (sum != null && st != null) {
+              _applyProgress(
+                slice,
+                sum,
+                st,
+                ghostBeat: saved && prev != null,
+                prs: prs,
+              );
+            }
+          }
           _scheduleSummary(
             title: riding.name,
             route: _routeResult(
@@ -670,8 +707,34 @@ class _RideDashboardState extends State<RideDashboard> {
     // Queued, never dropped, while another summary is open (QA c7 P1-B).
     if (_summaryQueuedIds.contains(boundId)) return;
     _summaryQueuedIds.add(boundId);
-    _summaryQueue.add(show);
+    _summaryQueue.add(() async {
+      try {
+        await show();
+      } finally {
+        // Shown (or skipped): a later end of the same id may queue again.
+        _summaryQueuedIds.remove(boundId);
+      }
+    });
     _pumpSummaries();
+  }
+
+  AppLifecycleListener? _exitListener;
+  bool _exitCounted = false;
+
+  /// App exit: end an open free ride and apply progress for every ended,
+  /// non-demo effort not applied yet (a completed route whose summary was
+  /// still queued). Idempotent by uid in Rust and in [_earnedByUid].
+  void _countOnExit() {
+    if (_exitCounted) return;
+    _exitCounted = true;
+    try {
+      if (api.currentEffort()?.kind.kind == EffortType.freeRide) {
+        api.endEffort(completed: false);
+      }
+      for (final s in api.listEfforts()) {
+        _onEffortEnded(s);
+      }
+    } catch (_) {}
   }
 
   final List<Future<void> Function()> _summaryQueue = [];
@@ -695,9 +758,11 @@ class _RideDashboardState extends State<RideDashboard> {
   final Map<String, EarnedPayload?> _earnedByUid = {};
 
   /// Progress for every non-demo ended effort, dialog or not (QA c7 P1-B).
-  /// Completed routes are left to the route path (ghost / climb PR flags).
+  /// A completed route is applied by the route path first (ghost / climb
+  /// PR flags); the listener only applies it if that hasn't happened.
   void _onEffortEnded(RideSlice s) {
     if (!progressOnEnd(s)) return;
+    if (_earnedByUid.containsKey(_effortUid(s))) return;
     final summary = api.effortSummary(id: s.id, ftpW: _ftp);
     final stats = api.effortStats(id: s.id);
     if (summary == null || stats == null) return;
@@ -3072,14 +3137,19 @@ class RideSummaryStrip extends StatelessWidget {
               ),
             ),
           ),
-          if (onEndRide != null)
-            TextButton.icon(
-              key: const ValueKey('end-free-ride'),
-              onPressed: onEndRide,
-              style: TextButton.styleFrom(minimumSize: const Size(88, 44)),
-              icon: const Icon(Icons.flag_outlined, size: 16),
-              label: const Text('End ride'),
-            ),
+          // Fixed slot, always reserved: the stats never rescale when a
+          // free ride opens or ends (QA c8 P2-b).
+          SizedBox(
+            width: 48,
+            child: onEndRide == null
+                ? null
+                : IconButton(
+                    key: const ValueKey('end-free-ride'),
+                    tooltip: 'End ride and show its summary',
+                    onPressed: onEndRide,
+                    icon: const Icon(Icons.flag_outlined, size: 20),
+                  ),
+          ),
           Tooltip(
             message: 'Save this ride as a TCX file for Garmin Connect',
             child: TextButton.icon(

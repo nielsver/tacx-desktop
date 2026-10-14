@@ -376,6 +376,9 @@ enum EndReason {
 
   /// Another effort began while this one was open.
   superseded,
+
+  /// Route / workout without a trainer for 30 min (LinkLost safety net).
+  abandoned,
 }
 
 class GpxProfileInfo {
@@ -719,6 +722,13 @@ enum RideEventKind {
 
   /// Progress applied for a closed effort: `earned` is set.
   earned,
+
+  /// A route / workout lost the trainer for > 60 s: paused, NOT ended
+  /// (QA c8 P1-C). The ride only ends via `end_effort` (`RideEnded`).
+  linkLost,
+
+  /// The trainer is back after `LinkLost`; the same effort continues.
+  linkRestored,
 }
 
 /// One effort inside the session: `points[first..end]` of the recorder.

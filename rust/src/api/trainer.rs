@@ -517,11 +517,7 @@ static PROGRESS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 pub fn progress_apply_effort(input: EffortInput, weekly_target: u32) -> Result<ProgressView, String> {
     let _g = PROGRESS_LOCK.lock().map_err(|e| e.to_string())?;
     let p = crate::trainer::progress::progress_path();
-    let mut st = crate::trainer::progress::load_for_write(&p)?;
-    let r = crate::trainer::progress::apply(&mut st, &input, weekly_target);
-    if r.counted || !input.uid.is_empty() {
-        crate::trainer::progress::save(&p, &st)?;
-    }
+    let (r, st) = crate::trainer::progress::apply_file(&p, &input, weekly_target)?;
     let mut v = crate::trainer::progress::view(&st, input.week, input.day, weekly_target);
     v.xp_gained = r.xp_gained;
     v.new_badges = r.new_badges;

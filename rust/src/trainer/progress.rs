@@ -168,10 +168,12 @@ pub fn apply(st: &mut ProgressState, e: &EffortInput, target: u32) -> ApplyResul
     if e.demo || e.uid.is_empty() || st.processed.contains_key(&e.uid) {
         return r;
     }
-    st.processed.insert(e.uid.clone(), e.day);
+    // Only a counted effort locks its uid (QA c8 P1-C): a short or partial
+    // apply must not block the full ride from counting later.
     if !qualifies(e) {
         return r;
     }
+    st.processed.insert(e.uid.clone(), e.day);
     r.counted = true;
     let used = st.xp_by_day.get(&e.local_date).copied().unwrap_or(0);
     let gained = xp_for(e).min(XP_DAILY_CAP.saturating_sub(used));
@@ -307,6 +309,24 @@ pub fn load(path: &Path) -> ProgressState {
     try_load(path).unwrap_or_default()
 }
 
+/// Load, apply, and save only when the effort counted: Demo, short or
+/// repeated efforts never write (or create) the file (QA c8 P2-d).
+pub fn apply_file(
+    path: &Path,
+    e: &EffortInput,
+    target: u32,
+) -> Result<(ApplyResult, ProgressState), String> {
+    if e.demo {
+        return Ok((ApplyResult::default(), load(path)));
+    }
+    let mut st = load_for_write(path)?;
+    let r = apply(&mut st, e, target);
+    if r.counted {
+        save(path, &st)?;
+    }
+    Ok((r, st))
+}
+
 pub fn save(path: &Path, st: &ProgressState) -> Result<(), String> {
     if let Some(d) = path.parent() {
         std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
@@ -368,6 +388,42 @@ mod tests {
         assert!(!qualifies(&eff("x", "d", 0, 0, 100.0, 599)));
         assert!(!qualifies(&eff("x", "d", 0, 0, 23.0, 600))); // 38 W
         assert!(qualifies(&eff("x", "d", 0, 0, 24.0, 600))); // 40 W
+    }
+
+    #[test]
+    fn c8_demo_never_creates_progress_json() {
+        let dir = std::env::temp_dir().join(format!("tacx-progress-demo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("progress.json");
+        let mut e = eff("1-freeRide-", "2026-10-14", 100, 14, 540.0, 3600);
+        e.demo = true;
+        let (r, _) = apply_file(&p, &e, 2).unwrap();
+        assert!(!r.counted);
+        assert!(!p.exists(), "demo wrote progress.json");
+        // A short real ride doesn't write either; a real one does.
+        let (r, _) = apply_file(&p, &eff("2-freeRide-", "d", 1, 0, 10.0, 60), 2).unwrap();
+        assert!(!r.counted && !p.exists());
+        e.demo = false;
+        assert!(apply_file(&p, &e, 2).unwrap().0.counted);
+        assert!(p.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn c8_partial_apply_does_not_lock_the_uid() {
+        let mut s = ProgressState::default();
+        // A partial (5 min) view of a ride, then the whole 40 min ride.
+        let part = eff("7-route-r", "2026-10-14", 100, 14, 60.0, 300);
+        assert!(!apply(&mut s, &part, 2).counted);
+        assert!(s.processed.is_empty(), "not locked");
+        let mut full = eff("7-route-r", "2026-10-14", 100, 14, 480.0, 2400);
+        full.kind = "route".into();
+        full.completed = true;
+        let r = apply(&mut s, &full, 2);
+        assert!(r.counted && r.xp_gained > 0);
+        assert!(r.new_badges.contains(&"first_route".to_string()));
+        assert!(!apply(&mut s, &full, 2).counted, "once");
     }
 
     #[test]

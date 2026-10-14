@@ -484,6 +484,8 @@ pub enum EndReason {
     DisconnectTimeout,
     /// Another effort began while this one was open.
     Superseded,
+    /// Route / workout without a trainer for 30 min (LinkLost safety net).
+    Abandoned,
 }
 
 /// One effort inside the session: `points[first..end]` of the recorder.
@@ -511,6 +513,11 @@ pub enum RideEventKind {
     RideEnded,
     /// Progress applied for a closed effort: `earned` is set.
     Earned,
+    /// A route / workout lost the trainer for > 60 s: paused, NOT ended
+    /// (QA c8 P1-C). The ride only ends via `end_effort` (`RideEnded`).
+    LinkLost,
+    /// The trainer is back after `LinkLost`; the same effort continues.
+    LinkRestored,
 }
 
 /// "What you earned" for one effort (post-ride summary row; also carried
@@ -565,6 +572,9 @@ impl RideEvent {
     }
     pub fn ride_ended(s: &RideSlice) -> Self {
         Self::base(RideEventKind::RideEnded, s.id, Some(s))
+    }
+    pub fn link(kind: RideEventKind, s: &RideSlice) -> Self {
+        Self::base(kind, s.id, Some(s))
     }
     pub fn earned(slice_id: u32, s: Option<&RideSlice>, e: EarnedPayload) -> Self {
         Self { earned: Some(e), ..Self::base(RideEventKind::Earned, slice_id, s) }

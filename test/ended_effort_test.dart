@@ -63,34 +63,32 @@ void main() {
     expect(arr, contains('a%2Cb'));
   });
 
-  test('QA c7 P1-B: progress applies on every non-demo end, dialog or not', () {
+  test('QA c7 P1-B / c8: progress on every real, non-demo end', () {
     final free = EffortType.freeRide, route = EffortType.route;
-    for (final r in [
-      EndReason.stopped,
-      EndReason.superseded,
-      EndReason.disconnectTimeout,
-    ]) {
+    for (final r in EndReason.values) {
       expect(progressOnEnd(_s(1, free, 'free', end: r)), isTrue, reason: '$r');
+      expect(progressOnEnd(_s(1, route, 'r', end: r)), isTrue, reason: '$r');
     }
     expect(progressOnEnd(_s(1, free, 'free')), isFalse, reason: 'still open');
     expect(
       progressOnEnd(_s(1, free, 'free', end: EndReason.stopped, demo: true)),
       isFalse,
     );
+  });
+
+  test('QA c8 P1-C: link-lost summary only for free rides', () {
     expect(
-      progressOnEnd(_s(1, route, 'r', end: EndReason.disconnectTimeout)),
-      isFalse,
-      reason: 'may resume (P2-g)',
-    );
-    expect(
-      progressOnEnd(_s(1, route, 'r', end: EndReason.completed, done: true)),
-      isFalse,
-      reason: 'route path applies it with PR flags',
-    );
-    expect(progressOnEnd(_s(1, route, 'r', end: EndReason.stopped)), isTrue);
-    expect(
-      progressOnEnd(_s(1, EffortType.workout, 'w', end: EndReason.completed)),
+      linkLostSummary(
+        _s(1, EffortType.freeRide, 'free', end: EndReason.disconnectTimeout),
+      ),
       isTrue,
     );
+    for (final k in [EffortType.route, EffortType.workout]) {
+      expect(
+        linkLostSummary(_s(1, k, 'k', end: EndReason.disconnectTimeout)),
+        isFalse,
+      );
+      expect(linkLostSummary(_s(1, k, 'k', end: EndReason.stopped)), isFalse);
+    }
   });
 }

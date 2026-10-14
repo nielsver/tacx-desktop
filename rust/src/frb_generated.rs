@@ -844,6 +844,7 @@ return crate::trainer::types::ElevSample{distance_m: var_distanceM, elev_m: var_
 1 => crate::trainer::types::EndReason::Completed,
 2 => crate::trainer::types::EndReason::DisconnectTimeout,
 3 => crate::trainer::types::EndReason::Superseded,
+4 => crate::trainer::types::EndReason::Abandoned,
             _ => unreachable!("Invalid variant for EndReason: {}", inner),
         };}
                 }
@@ -1258,6 +1259,8 @@ return crate::trainer::types::RideEvent{kind: var_kind, slice_id: var_sliceId, u
         return match inner {
             0 => crate::trainer::types::RideEventKind::RideEnded,
 1 => crate::trainer::types::RideEventKind::Earned,
+2 => crate::trainer::types::RideEventKind::LinkLost,
+3 => crate::trainer::types::RideEventKind::LinkRestored,
             _ => unreachable!("Invalid variant for RideEventKind: {}", inner),
         };}
                 }
@@ -1773,6 +1776,7 @@ impl flutter_rust_bridge::IntoIntoDart<crate::trainer::types::ElevSample> for cr
 Self::Completed => 1.into_dart(),
 Self::DisconnectTimeout => 2.into_dart(),
 Self::Superseded => 3.into_dart(),
+Self::Abandoned => 4.into_dart(),
                     _ => unreachable!(),
                 }
                 }
@@ -2079,6 +2083,8 @@ impl flutter_rust_bridge::IntoIntoDart<crate::trainer::types::RideEvent> for cra
                     match self {
                     Self::RideEnded => 0.into_dart(),
 Self::Earned => 1.into_dart(),
+Self::LinkLost => 2.into_dart(),
+Self::LinkRestored => 3.into_dart(),
                     _ => unreachable!(),
                 }
                 }
@@ -2442,6 +2448,7 @@ crate::trainer::types::EffortType::Workout => { 2 }
 crate::trainer::types::EndReason::Completed => { 1 }
 crate::trainer::types::EndReason::DisconnectTimeout => { 2 }
 crate::trainer::types::EndReason::Superseded => { 3 }
+crate::trainer::types::EndReason::Abandoned => { 4 }
  _ => { unimplemented!(""); }}, serializer);}
                 }
                 
@@ -2788,6 +2795,8 @@ crate::trainer::types::ProtocolKind::TacxFecBle => { 2 }
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(match self {crate::trainer::types::RideEventKind::RideEnded => { 0 }
 crate::trainer::types::RideEventKind::Earned => { 1 }
+crate::trainer::types::RideEventKind::LinkLost => { 2 }
+crate::trainer::types::RideEventKind::LinkRestored => { 3 }
  _ => { unimplemented!(""); }}, serializer);}
                 }
                 

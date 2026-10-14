@@ -459,3 +459,43 @@ pub async fn run_headless_demo_smoke() -> Result<String, String> {
     }
     Ok("HEADLESS DEMO OK".into())
 }
+
+// ---- FTP tests (step 4, F1–F3) ----
+
+pub use crate::trainer::ftp::{FtpEstimate, FtpHistoryEntry, FtpMethod};
+
+/// FTP proposal for effort `id`: `Ok(None)` when it was not an FTP test
+/// workout, `Err` with a rider-facing reason when a guard refused it.
+/// Never applies anything.
+#[flutter_rust_bridge::frb(sync)]
+pub fn ftp_test_for_effort(id: u32) -> Result<Option<FtpEstimate>, String> {
+    let Some(slice) = crate::trainer::ride::effort(id) else {
+        return Ok(None);
+    };
+    if slice.kind.kind != EffortType::Workout {
+        return Ok(None);
+    }
+    let Some(method) = crate::trainer::ftp::method_for_workout(&slice.kind.key) else {
+        return Ok(None);
+    };
+    let pts = crate::trainer::ride::effort_points_copy(id).unwrap_or_default();
+    crate::trainer::ftp::estimate(&pts, method, slice.demo).map(Some)
+}
+
+/// Record an FTP the rider accepted (append-only `ftp-history.json`).
+#[flutter_rust_bridge::frb(sync)]
+pub fn record_accepted_ftp(watts: u32, method: String, source: String) -> Result<(), String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    crate::trainer::ftp::append_history(
+        &crate::trainer::ftp::history_path(),
+        FtpHistoryEntry { date: crate::trainer::tcx::iso8601_utc(now), watts, method, source },
+    )
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn ftp_history() -> Vec<FtpHistoryEntry> {
+    crate::trainer::ftp::read_history(&crate::trainer::ftp::history_path())
+}

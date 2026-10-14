@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
                     default_rust_auto_opaque = RustAutoOpaqueMoi,
                 );
                 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 875681234;
+                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1150115254;
             
 
 // Section: executor
@@ -170,6 +170,22 @@ let api_dir = <Option<String>>::sse_decode(&mut deserializer);deserializer.end()
                          let output_ok = crate::api::trainer::export_ride_tcx(api_dir)?;   std::result::Result::Ok(output_ok)
                     })())
                 } })
+            }fn wire__crate__api__trainer__ftp_history_impl(ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "ftp_history", port: None, mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+                transform_result_sse::<_, ()>((move || {
+                     let output_ok = Ok::<_, ()>(crate::api::trainer::ftp_history())?;   std::result::Result::Ok(output_ok)
+                })()) })
+            }fn wire__crate__api__trainer__ftp_test_for_effort_impl(ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "ftp_test_for_effort", port: None, mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <u32>::sse_decode(&mut deserializer);deserializer.end();
+                transform_result_sse::<_, String>((move || {
+                     let output_ok = crate::api::trainer::ftp_test_for_effort(api_id)?;   std::result::Result::Ok(output_ok)
+                })()) })
             }fn wire__crate__api__trainer__get_connection_snapshot_impl(ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
                 FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "get_connection_snapshot", port: None, mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync }, move || {
             let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
@@ -348,6 +364,16 @@ let api_dir = <Option<String>>::sse_decode(&mut deserializer);deserializer.end()
                          let output_ok = crate::api::trainer::reconnect_trainer().await?;   std::result::Result::Ok(output_ok)
                     })().await)
                 } })
+            }fn wire__crate__api__trainer__record_accepted_ftp_impl(ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "record_accepted_ftp", port: None, mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_watts = <u32>::sse_decode(&mut deserializer);
+let api_method = <String>::sse_decode(&mut deserializer);
+let api_source = <String>::sse_decode(&mut deserializer);deserializer.end();
+                transform_result_sse::<_, String>((move || {
+                     let output_ok = crate::api::trainer::record_accepted_ftp(api_watts, api_method, api_source)?;   std::result::Result::Ok(output_ok)
+                })()) })
             }fn wire__crate__api__trainer__reset_ride_stats_impl(ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
                 FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "reset_ride_stats", port: None, mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync }, move || {
             let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
@@ -699,6 +725,33 @@ return crate::trainer::types::ElevSample{distance_m: var_distanceM, elev_m: var_
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {deserializer.cursor.read_f64::<NativeEndian>().unwrap()}
                 }
                 
+                impl SseDecode for crate::trainer::ftp::FtpEstimate {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_watts = <u32>::sse_decode(deserializer);
+let mut var_method = <crate::trainer::ftp::FtpMethod>::sse_decode(deserializer);
+let mut var_basisW = <f64>::sse_decode(deserializer);
+return crate::trainer::ftp::FtpEstimate{watts: var_watts, method: var_method, basis_w: var_basisW};}
+                }
+                
+                impl SseDecode for crate::trainer::ftp::FtpHistoryEntry {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_date = <String>::sse_decode(deserializer);
+let mut var_watts = <u32>::sse_decode(deserializer);
+let mut var_method = <String>::sse_decode(deserializer);
+let mut var_source = <String>::sse_decode(deserializer);
+return crate::trainer::ftp::FtpHistoryEntry{date: var_date, watts: var_watts, method: var_method, source: var_source};}
+                }
+                
+                impl SseDecode for crate::trainer::ftp::FtpMethod {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::trainer::ftp::FtpMethod::Ramp,
+1 => crate::trainer::ftp::FtpMethod::TwentyMin,
+            _ => unreachable!("Invalid variant for FtpMethod: {}", inner),
+        };}
+                }
+                
                 impl SseDecode for crate::trainer::types::GpxProfileInfo {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_name = <String>::sse_decode(deserializer);
@@ -800,6 +853,14 @@ return crate::trainer::types::LinkHealth{packets_per_s: var_packetsPerS, last_pa
         return ans_;}
                 }
                 
+                impl SseDecode for Vec<crate::trainer::ftp::FtpHistoryEntry> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ { ans_.push(<crate::trainer::ftp::FtpHistoryEntry>::sse_decode(deserializer)); }
+        return ans_;}
+                }
+                
                 impl SseDecode for Vec<crate::trainer::types::IntervalPresetInfo> {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut len_ = <i32>::sse_decode(deserializer);
@@ -878,6 +939,15 @@ return crate::trainer::types::LinkHealth{packets_per_s: var_packetsPerS, last_pa
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {if (<bool>::sse_decode(deserializer)) {
                 return Some(<f64>::sse_decode(deserializer));
+            } else {
+                return None;
+            }}
+                }
+                
+                impl SseDecode for Option<crate::trainer::ftp::FtpEstimate> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {if (<bool>::sse_decode(deserializer)) {
+                return Some(<crate::trainer::ftp::FtpEstimate>::sse_decode(deserializer));
             } else {
                 return None;
             }}
@@ -1111,21 +1181,21 @@ return crate::trainer::types::WorkoutStatus{running: var_running, workout_id: va
 9 => wire__crate__api__trainer__disconnect_trainer_impl(port, ptr, rust_vec_len, data_len),
 13 => wire__crate__api__trainer__export_effort_tcx_impl(port, ptr, rust_vec_len, data_len),
 14 => wire__crate__api__trainer__export_ride_tcx_impl(port, ptr, rust_vec_len, data_len),
-29 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-36 => wire__crate__api__trainer__reconnect_trainer_impl(port, ptr, rust_vec_len, data_len),
-38 => wire__crate__api__trainer__ride_events_impl(port, ptr, rust_vec_len, data_len),
-39 => wire__crate__api__trainer__run_headless_demo_smoke_impl(port, ptr, rust_vec_len, data_len),
-41 => wire__crate__api__trainer__scan_heart_rate_straps_impl(port, ptr, rust_vec_len, data_len),
-42 => wire__crate__api__trainer__scan_trainers_impl(port, ptr, rust_vec_len, data_len),
-45 => wire__crate__api__trainer__set_indoor_bike_simulation_impl(port, ptr, rust_vec_len, data_len),
-46 => wire__crate__api__trainer__set_resistance_percent_impl(port, ptr, rust_vec_len, data_len),
-48 => wire__crate__api__trainer__set_target_power_impl(port, ptr, rust_vec_len, data_len),
-49 => wire__crate__api__trainer__set_track_resistance_impl(port, ptr, rust_vec_len, data_len),
-50 => wire__crate__api__trainer__set_user_configuration_impl(port, ptr, rust_vec_len, data_len),
-51 => wire__crate__api__trainer__set_wind_resistance_impl(port, ptr, rust_vec_len, data_len),
-53 => wire__crate__api__trainer__start_gpx_route_impl(port, ptr, rust_vec_len, data_len),
-54 => wire__crate__api__trainer__start_interval_impl(port, ptr, rust_vec_len, data_len),
-55 => wire__crate__api__trainer__start_workout_impl(port, ptr, rust_vec_len, data_len),
+31 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+38 => wire__crate__api__trainer__reconnect_trainer_impl(port, ptr, rust_vec_len, data_len),
+41 => wire__crate__api__trainer__ride_events_impl(port, ptr, rust_vec_len, data_len),
+42 => wire__crate__api__trainer__run_headless_demo_smoke_impl(port, ptr, rust_vec_len, data_len),
+44 => wire__crate__api__trainer__scan_heart_rate_straps_impl(port, ptr, rust_vec_len, data_len),
+45 => wire__crate__api__trainer__scan_trainers_impl(port, ptr, rust_vec_len, data_len),
+48 => wire__crate__api__trainer__set_indoor_bike_simulation_impl(port, ptr, rust_vec_len, data_len),
+49 => wire__crate__api__trainer__set_resistance_percent_impl(port, ptr, rust_vec_len, data_len),
+51 => wire__crate__api__trainer__set_target_power_impl(port, ptr, rust_vec_len, data_len),
+52 => wire__crate__api__trainer__set_track_resistance_impl(port, ptr, rust_vec_len, data_len),
+53 => wire__crate__api__trainer__set_user_configuration_impl(port, ptr, rust_vec_len, data_len),
+54 => wire__crate__api__trainer__set_wind_resistance_impl(port, ptr, rust_vec_len, data_len),
+56 => wire__crate__api__trainer__start_gpx_route_impl(port, ptr, rust_vec_len, data_len),
+57 => wire__crate__api__trainer__start_interval_impl(port, ptr, rust_vec_len, data_len),
+58 => wire__crate__api__trainer__start_workout_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }
@@ -1145,36 +1215,39 @@ return crate::trainer::types::WorkoutStatus{running: var_running, workout_id: va
 10 => wire__crate__api__trainer__effort_stats_impl(ptr, rust_vec_len, data_len),
 11 => wire__crate__api__trainer__effort_summary_impl(ptr, rust_vec_len, data_len),
 12 => wire__crate__api__trainer__end_effort_impl(ptr, rust_vec_len, data_len),
-15 => wire__crate__api__trainer__get_connection_snapshot_impl(ptr, rust_vec_len, data_len),
-16 => wire__crate__api__trainer__get_effort_impl(ptr, rust_vec_len, data_len),
-17 => wire__crate__api__trainer__get_heart_rate_strap_status_impl(ptr, rust_vec_len, data_len),
-18 => wire__crate__api__trainer__get_interval_status_impl(ptr, rust_vec_len, data_len),
-19 => wire__crate__api__trainer__get_link_health_impl(ptr, rust_vec_len, data_len),
-20 => wire__crate__api__trainer__get_metrics_impl(ptr, rust_vec_len, data_len),
-21 => wire__crate__api__trainer__get_power_range_impl(ptr, rust_vec_len, data_len),
-22 => wire__crate__api__trainer__get_resistance_range_impl(ptr, rust_vec_len, data_len),
-23 => wire__crate__api__trainer__get_ride_stats_impl(ptr, rust_vec_len, data_len),
-24 => wire__crate__api__trainer__get_ride_summary_impl(ptr, rust_vec_len, data_len),
-25 => wire__crate__api__trainer__get_route_status_impl(ptr, rust_vec_len, data_len),
-26 => wire__crate__api__trainer__get_workout_status_impl(ptr, rust_vec_len, data_len),
-27 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
-28 => wire__crate__api__trainer__import_gpx_file_impl(ptr, rust_vec_len, data_len),
-30 => wire__crate__api__trainer__is_demo_mode_impl(ptr, rust_vec_len, data_len),
-31 => wire__crate__api__trainer__list_efforts_impl(ptr, rust_vec_len, data_len),
-32 => wire__crate__api__trainer__list_interval_presets_impl(ptr, rust_vec_len, data_len),
-33 => wire__crate__api__trainer__list_workouts_impl(ptr, rust_vec_len, data_len),
-34 => wire__crate__api__trainer__load_workout_json_impl(ptr, rust_vec_len, data_len),
-35 => wire__crate__api__trainer__parse_gpx_xml_impl(ptr, rust_vec_len, data_len),
-37 => wire__crate__api__trainer__reset_ride_stats_impl(ptr, rust_vec_len, data_len),
-40 => wire__crate__api__trainer__save_workout_json_impl(ptr, rust_vec_len, data_len),
-43 => wire__crate__api__trainer__set_demo_mode_impl(ptr, rust_vec_len, data_len),
-44 => wire__crate__api__trainer__set_erg_from_grade_impl(ptr, rust_vec_len, data_len),
-47 => wire__crate__api__trainer__set_ride_paused_impl(ptr, rust_vec_len, data_len),
-52 => wire__crate__api__trainer__set_workout_rider_mass_kg_impl(ptr, rust_vec_len, data_len),
-56 => wire__crate__api__trainer__stop_gpx_route_impl(ptr, rust_vec_len, data_len),
-57 => wire__crate__api__trainer__stop_interval_impl(ptr, rust_vec_len, data_len),
-58 => wire__crate__api__trainer__stop_workout_impl(ptr, rust_vec_len, data_len),
-59 => wire__crate__api__trainer__workouts_dir_impl(ptr, rust_vec_len, data_len),
+15 => wire__crate__api__trainer__ftp_history_impl(ptr, rust_vec_len, data_len),
+16 => wire__crate__api__trainer__ftp_test_for_effort_impl(ptr, rust_vec_len, data_len),
+17 => wire__crate__api__trainer__get_connection_snapshot_impl(ptr, rust_vec_len, data_len),
+18 => wire__crate__api__trainer__get_effort_impl(ptr, rust_vec_len, data_len),
+19 => wire__crate__api__trainer__get_heart_rate_strap_status_impl(ptr, rust_vec_len, data_len),
+20 => wire__crate__api__trainer__get_interval_status_impl(ptr, rust_vec_len, data_len),
+21 => wire__crate__api__trainer__get_link_health_impl(ptr, rust_vec_len, data_len),
+22 => wire__crate__api__trainer__get_metrics_impl(ptr, rust_vec_len, data_len),
+23 => wire__crate__api__trainer__get_power_range_impl(ptr, rust_vec_len, data_len),
+24 => wire__crate__api__trainer__get_resistance_range_impl(ptr, rust_vec_len, data_len),
+25 => wire__crate__api__trainer__get_ride_stats_impl(ptr, rust_vec_len, data_len),
+26 => wire__crate__api__trainer__get_ride_summary_impl(ptr, rust_vec_len, data_len),
+27 => wire__crate__api__trainer__get_route_status_impl(ptr, rust_vec_len, data_len),
+28 => wire__crate__api__trainer__get_workout_status_impl(ptr, rust_vec_len, data_len),
+29 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
+30 => wire__crate__api__trainer__import_gpx_file_impl(ptr, rust_vec_len, data_len),
+32 => wire__crate__api__trainer__is_demo_mode_impl(ptr, rust_vec_len, data_len),
+33 => wire__crate__api__trainer__list_efforts_impl(ptr, rust_vec_len, data_len),
+34 => wire__crate__api__trainer__list_interval_presets_impl(ptr, rust_vec_len, data_len),
+35 => wire__crate__api__trainer__list_workouts_impl(ptr, rust_vec_len, data_len),
+36 => wire__crate__api__trainer__load_workout_json_impl(ptr, rust_vec_len, data_len),
+37 => wire__crate__api__trainer__parse_gpx_xml_impl(ptr, rust_vec_len, data_len),
+39 => wire__crate__api__trainer__record_accepted_ftp_impl(ptr, rust_vec_len, data_len),
+40 => wire__crate__api__trainer__reset_ride_stats_impl(ptr, rust_vec_len, data_len),
+43 => wire__crate__api__trainer__save_workout_json_impl(ptr, rust_vec_len, data_len),
+46 => wire__crate__api__trainer__set_demo_mode_impl(ptr, rust_vec_len, data_len),
+47 => wire__crate__api__trainer__set_erg_from_grade_impl(ptr, rust_vec_len, data_len),
+50 => wire__crate__api__trainer__set_ride_paused_impl(ptr, rust_vec_len, data_len),
+55 => wire__crate__api__trainer__set_workout_rider_mass_kg_impl(ptr, rust_vec_len, data_len),
+59 => wire__crate__api__trainer__stop_gpx_route_impl(ptr, rust_vec_len, data_len),
+60 => wire__crate__api__trainer__stop_interval_impl(ptr, rust_vec_len, data_len),
+61 => wire__crate__api__trainer__stop_workout_impl(ptr, rust_vec_len, data_len),
+62 => wire__crate__api__trainer__workouts_dir_impl(ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }
@@ -1361,6 +1434,55 @@ Self::Superseded => 3.into_dart(),
             impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::trainer::types::EndReason {}
 impl flutter_rust_bridge::IntoIntoDart<crate::trainer::types::EndReason> for crate::trainer::types::EndReason {
             fn into_into_dart(self) -> crate::trainer::types::EndReason {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::trainer::ftp::FtpEstimate {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.watts.into_into_dart().into_dart(),
+self.method.into_into_dart().into_dart(),
+self.basis_w.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::trainer::ftp::FtpEstimate {}
+impl flutter_rust_bridge::IntoIntoDart<crate::trainer::ftp::FtpEstimate> for crate::trainer::ftp::FtpEstimate {
+            fn into_into_dart(self) -> crate::trainer::ftp::FtpEstimate {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::trainer::ftp::FtpHistoryEntry {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.date.into_into_dart().into_dart(),
+self.watts.into_into_dart().into_dart(),
+self.method.into_into_dart().into_dart(),
+self.source.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::trainer::ftp::FtpHistoryEntry {}
+impl flutter_rust_bridge::IntoIntoDart<crate::trainer::ftp::FtpHistoryEntry> for crate::trainer::ftp::FtpHistoryEntry {
+            fn into_into_dart(self) -> crate::trainer::ftp::FtpHistoryEntry {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::trainer::ftp::FtpMethod {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    match self {
+                    Self::Ramp => 0.into_dart(),
+Self::TwentyMin => 1.into_dart(),
+                    _ => unreachable!(),
+                }
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::trainer::ftp::FtpMethod {}
+impl flutter_rust_bridge::IntoIntoDart<crate::trainer::ftp::FtpMethod> for crate::trainer::ftp::FtpMethod {
+            fn into_into_dart(self) -> crate::trainer::ftp::FtpMethod {
                 self
             }
         }
@@ -1862,6 +1984,28 @@ crate::trainer::types::EndReason::Superseded => { 3 }
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {serializer.cursor.write_f64::<NativeEndian>(self).unwrap();}
                 }
                 
+                impl SseEncode for crate::trainer::ftp::FtpEstimate {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<u32>::sse_encode(self.watts, serializer);
+<crate::trainer::ftp::FtpMethod>::sse_encode(self.method, serializer);
+<f64>::sse_encode(self.basis_w, serializer);}
+                }
+                
+                impl SseEncode for crate::trainer::ftp::FtpHistoryEntry {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.date, serializer);
+<u32>::sse_encode(self.watts, serializer);
+<String>::sse_encode(self.method, serializer);
+<String>::sse_encode(self.source, serializer);}
+                }
+                
+                impl SseEncode for crate::trainer::ftp::FtpMethod {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(match self {crate::trainer::ftp::FtpMethod::Ramp => { 0 }
+crate::trainer::ftp::FtpMethod::TwentyMin => { 1 }
+ _ => { unimplemented!(""); }}, serializer);}
+                }
+                
                 impl SseEncode for crate::trainer::types::GpxProfileInfo {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.name, serializer);
@@ -1948,6 +2092,12 @@ crate::trainer::types::LinkLevel::Lost => { 3 }
         for item in self { <crate::trainer::types::ElevSample>::sse_encode(item, serializer); }}
                 }
                 
+                impl SseEncode for Vec<crate::trainer::ftp::FtpHistoryEntry> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(self.len() as _, serializer);
+        for item in self { <crate::trainer::ftp::FtpHistoryEntry>::sse_encode(item, serializer); }}
+                }
+                
                 impl SseEncode for Vec<crate::trainer::types::IntervalPresetInfo> {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(self.len() as _, serializer);
@@ -2011,6 +2161,14 @@ crate::trainer::types::LinkLevel::Lost => { 3 }
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<bool>::sse_encode(self.is_some(), serializer);
                 if let Some(value) = self {
                     <f64>::sse_encode(value, serializer);
+                }}
+                }
+                
+                impl SseEncode for Option<crate::trainer::ftp::FtpEstimate> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<bool>::sse_encode(self.is_some(), serializer);
+                if let Some(value) = self {
+                    <crate::trainer::ftp::FtpEstimate>::sse_encode(value, serializer);
                 }}
                 }
                 

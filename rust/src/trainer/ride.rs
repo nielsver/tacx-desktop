@@ -449,6 +449,11 @@ pub fn effort(id: u32) -> Option<RideSlice> {
     RECORDER.lock().slice(id)
 }
 
+/// Copy of effort `id`'s points (for analysis outside the lock).
+pub fn effort_points_copy(id: u32) -> Option<Vec<TrackPoint>> {
+    RECORDER.lock().effort_points(id).map(<[TrackPoint]>::to_vec)
+}
+
 pub fn effort_stats(id: u32) -> Option<RideStats> {
     RECORDER.lock().effort_stats(id)
 }

@@ -1,6 +1,7 @@
 pub mod controller;
 pub mod demo;
 pub mod fec;
+pub mod ftp;
 pub mod fec_rate;
 pub mod gatt;
 mod scan;

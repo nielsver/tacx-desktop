@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
+import 'trainer/ftp.dart';
 import 'trainer/types.dart';
 
 abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
@@ -46,6 +47,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double dco_decode_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  FtpEstimate dco_decode_box_autoadd_ftp_estimate(dynamic raw);
 
   @protected
   GpxProfileInfo dco_decode_box_autoadd_gpx_profile_info(dynamic raw);
@@ -93,6 +97,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_f_64(dynamic raw);
 
   @protected
+  FtpEstimate dco_decode_ftp_estimate(dynamic raw);
+
+  @protected
+  FtpHistoryEntry dco_decode_ftp_history_entry(dynamic raw);
+
+  @protected
+  FtpMethod dco_decode_ftp_method(dynamic raw);
+
+  @protected
   GpxProfileInfo dco_decode_gpx_profile_info(dynamic raw);
 
   @protected
@@ -126,6 +139,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ElevSample> dco_decode_list_elev_sample(dynamic raw);
 
   @protected
+  List<FtpHistoryEntry> dco_decode_list_ftp_history_entry(dynamic raw);
+
+  @protected
   List<IntervalPresetInfo> dco_decode_list_interval_preset_info(dynamic raw);
 
   @protected
@@ -154,6 +170,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  FtpEstimate? dco_decode_opt_box_autoadd_ftp_estimate(dynamic raw);
 
   @protected
   int? dco_decode_opt_box_autoadd_i_32(dynamic raw);
@@ -248,6 +267,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
+  FtpEstimate sse_decode_box_autoadd_ftp_estimate(SseDeserializer deserializer);
+
+  @protected
   GpxProfileInfo sse_decode_box_autoadd_gpx_profile_info(
     SseDeserializer deserializer,
   );
@@ -297,6 +319,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_f_64(SseDeserializer deserializer);
 
   @protected
+  FtpEstimate sse_decode_ftp_estimate(SseDeserializer deserializer);
+
+  @protected
+  FtpHistoryEntry sse_decode_ftp_history_entry(SseDeserializer deserializer);
+
+  @protected
+  FtpMethod sse_decode_ftp_method(SseDeserializer deserializer);
+
+  @protected
   GpxProfileInfo sse_decode_gpx_profile_info(SseDeserializer deserializer);
 
   @protected
@@ -334,6 +365,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ElevSample> sse_decode_list_elev_sample(SseDeserializer deserializer);
 
   @protected
+  List<FtpHistoryEntry> sse_decode_list_ftp_history_entry(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<IntervalPresetInfo> sse_decode_list_interval_preset_info(
     SseDeserializer deserializer,
   );
@@ -366,6 +402,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  FtpEstimate? sse_decode_opt_box_autoadd_ftp_estimate(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer);
@@ -482,6 +523,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_ftp_estimate(
+    FtpEstimate self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_gpx_profile_info(
     GpxProfileInfo self,
     SseSerializer serializer,
@@ -548,6 +595,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_ftp_estimate(FtpEstimate self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ftp_history_entry(
+    FtpHistoryEntry self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ftp_method(FtpMethod self, SseSerializer serializer);
+
+  @protected
   void sse_encode_gpx_profile_info(
     GpxProfileInfo self,
     SseSerializer serializer,
@@ -592,6 +651,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_elev_sample(
     List<ElevSample> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ftp_history_entry(
+    List<FtpHistoryEntry> self,
     SseSerializer serializer,
   );
 
@@ -648,6 +713,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_ftp_estimate(
+    FtpEstimate? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer);

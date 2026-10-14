@@ -71,6 +71,19 @@ impl WorkoutStep {
         }
     }
 
+    pub fn resistance(duration_s: u32, pct: f64) -> Self {
+        Self {
+            kind: "resistance".into(),
+            duration_s: Some(duration_s),
+            distance_m: None,
+            watts: None,
+            watts_start: None,
+            watts_end: None,
+            resistance_pct: Some(pct),
+            grade_pct: None,
+        }
+    }
+
     pub fn sim_grade(duration_s: u32, grade_pct: f64) -> Self {
         Self {
             kind: "simGrade".into(),
@@ -196,6 +209,34 @@ fn builtins() -> Vec<WorkoutFile> {
         description: "30′ @ 100 W flat".into(),
         builtin: true,
         steps: vec![WorkoutStep::erg(1800, 100)],
+    });
+
+    // FTP tests (step 4, F1). Results come from ftp.rs; never auto-applied.
+    let mut ramp = vec![WorkoutStep::erg(300, crate::trainer::ftp::RAMP_START_W)];
+    for k in 0..crate::trainer::ftp::RAMP_MAX_STEPS {
+        ramp.push(WorkoutStep::erg(60, crate::trainer::ftp::RAMP_START_W + k * crate::trainer::ftp::RAMP_STEP_W));
+    }
+    ramp.push(WorkoutStep::erg(300, 90));
+    out.push(WorkoutFile {
+        version: 1,
+        id: crate::trainer::ftp::RAMP_WORKOUT_ID.into(),
+        name: "FTP ramp test".into(),
+        description: "Max effort. 5′ @ 100 W, then +20 W every minute until you can't hold it — press Stop. FTP = 75 % of your best minute.".into(),
+        builtin: true,
+        steps: ramp,
+    });
+    out.push(WorkoutFile {
+        version: 1,
+        id: crate::trainer::ftp::TWENTY_WORKOUT_ID.into(),
+        name: "FTP 20-min test".into(),
+        description: "Max effort. 10′ warm-up, 5′ easy, then 20′ as hard as you can hold in resistance mode (shift to pace it), 10′ cool-down. FTP = 95 % of the 20′.".into(),
+        builtin: true,
+        steps: vec![
+            WorkoutStep::erg(600, 120),
+            WorkoutStep::erg(300, 100),
+            WorkoutStep::resistance(1200, 40.0),
+            WorkoutStep::erg(600, 100),
+        ],
     });
 
     // Hilly sim demo — 20′ of grade changes.

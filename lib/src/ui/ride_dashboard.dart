@@ -8,7 +8,9 @@ import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
 import 'package:flutter/services.dart';
 import 'package:tacx_desktop/src/ride_prefs.dart';
+import 'package:tacx_desktop/src/rust/trainer/ftp.dart';
 import 'package:tacx_desktop/src/ui/focus_ride_view.dart';
+import 'package:tacx_desktop/src/ui/ftp_accept_dialog.dart';
 import 'package:tacx_desktop/src/ui/hr_strap_bar.dart';
 import 'package:tacx_desktop/src/ui/live_trend_chart.dart';
 import 'package:tacx_desktop/src/ui/workout_panel.dart';
@@ -559,10 +561,44 @@ class _RideDashboardState extends State<RideDashboard> {
           ),
           saveTcx: () => _saveEffortTcx(slice.id),
         );
+        if (mounted) await _offerFtp(slice.id);
       } finally {
         _summaryOpen = false;
       }
     });
+  }
+
+  /// After an FTP test effort: propose, never auto-apply (step 4, F3).
+  Future<void> _offerFtp(int effortId) async {
+    final FtpEstimate? est;
+    try {
+      est = api.ftpTestForEffort(id: effortId);
+    } catch (e) {
+      _toast('FTP not updated: $e', Icons.info_outline);
+      return;
+    }
+    if (est == null || !mounted) return;
+    final method = est.method == FtpMethod.ramp
+        ? 'ramp test'
+        : '20-minute test';
+    final ok = await confirmNewFtp(
+      context,
+      newW: est.watts,
+      oldW: _ftp,
+      method: method,
+    );
+    if (!ok || !mounted) return;
+    _setPref(() => _ftp = est!.watts.clamp(50, 600));
+    try {
+      api.recordAcceptedFtp(
+        watts: est.watts,
+        method: est.method.name,
+        source: 'effort-$effortId',
+      );
+    } catch (_) {
+      // History is a log; the FTP itself is already applied.
+    }
+    _toast('FTP set to ${est.watts} W', Icons.check);
   }
 
   /// "Reset best" for the shown route.

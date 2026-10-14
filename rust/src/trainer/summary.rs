@@ -84,6 +84,14 @@ fn per_second(points: &[TrackPoint]) -> Vec<(i64, Sample)> {
     out
 }
 
+/// Per-second power split at gaps > `MAX_SAMPLE_GAP_S` (unbroken segments).
+pub(crate) fn power_segments(points: &[TrackPoint]) -> Vec<Vec<f64>> {
+    segments(points)
+        .iter()
+        .map(|s| s.iter().map(|x| x.power_w).collect())
+        .collect()
+}
+
 /// Split per-second samples into 1 Hz segments (see module docs).
 fn segments(points: &[TrackPoint]) -> Vec<Vec<Sample>> {
     let mut out: Vec<Vec<Sample>> = Vec::new();

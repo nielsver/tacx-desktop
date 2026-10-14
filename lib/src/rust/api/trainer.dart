@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import '../trainer/ftp.dart';
 import '../trainer/types.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
@@ -236,3 +237,23 @@ void setWorkoutRiderMassKg({required double kg}) =>
 /// Headless smoke test used by CI / README.
 Future<String> runHeadlessDemoSmoke() =>
     RustLib.instance.api.crateApiTrainerRunHeadlessDemoSmoke();
+
+/// FTP proposal for effort `id`: `Ok(None)` when it was not an FTP test
+/// workout, `Err` with a rider-facing reason when a guard refused it.
+/// Never applies anything.
+FtpEstimate? ftpTestForEffort({required int id}) =>
+    RustLib.instance.api.crateApiTrainerFtpTestForEffort(id: id);
+
+/// Record an FTP the rider accepted (append-only `ftp-history.json`).
+void recordAcceptedFtp({
+  required int watts,
+  required String method,
+  required String source,
+}) => RustLib.instance.api.crateApiTrainerRecordAcceptedFtp(
+  watts: watts,
+  method: method,
+  source: source,
+);
+
+List<FtpHistoryEntry> ftpHistory() =>
+    RustLib.instance.api.crateApiTrainerFtpHistory();

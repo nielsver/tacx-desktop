@@ -1,3 +1,4 @@
+pub mod climbs;
 pub mod controller;
 pub mod demo;
 pub mod fec;

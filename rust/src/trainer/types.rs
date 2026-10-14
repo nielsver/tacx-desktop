@@ -402,6 +402,34 @@ pub struct GpxProfileInfo {
     pub samples: Vec<ElevSample>,
     /// Stable route identity, `v2-<16 hex>` (see `gpx::route_key_v2`).
     pub route_key: String,
+    /// Auto-detected climbs (`climbs::detect_climbs`), by start.
+    pub climbs: Vec<Climb>,
+}
+
+/// Strava-style climb category from score = length (m) × grade (%).
+/// `Climb` = 1 500–8 000 (uncategorised, still gets PRs).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClimbCat {
+    Climb,
+    Cat4,
+    Cat3,
+    Cat2,
+    Cat1,
+    Hc,
+}
+
+/// One detected climb on a route (detector v1).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Climb {
+    /// `{routeKey}:{start10}-{end10}`; loop repeats get separate ids.
+    pub id: String,
+    pub start_m: f64,
+    pub end_m: f64,
+    pub gain_m: f64,
+    pub avg_grade: f64,
+    pub max_grade_100m: f64,
+    pub score: f64,
+    pub category: ClimbCat,
 }
 
 #[derive(Clone, Debug, Default)]

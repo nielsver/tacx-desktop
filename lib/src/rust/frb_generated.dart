@@ -1964,6 +1964,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Climb dco_decode_climb(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    return Climb(
+      id: dco_decode_String(arr[0]),
+      startM: dco_decode_f_64(arr[1]),
+      endM: dco_decode_f_64(arr[2]),
+      gainM: dco_decode_f_64(arr[3]),
+      avgGrade: dco_decode_f_64(arr[4]),
+      maxGrade100M: dco_decode_f_64(arr[5]),
+      score: dco_decode_f_64(arr[6]),
+      category: dco_decode_climb_cat(arr[7]),
+    );
+  }
+
+  @protected
+  ClimbCat dco_decode_climb_cat(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ClimbCat.values[raw as int];
+  }
+
+  @protected
   ConnectionSnapshot dco_decode_connection_snapshot(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -2092,14 +2116,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   GpxProfileInfo dco_decode_gpx_profile_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return GpxProfileInfo(
       name: dco_decode_String(arr[0]),
       distanceM: dco_decode_f_64(arr[1]),
       elevGainM: dco_decode_f_64(arr[2]),
       samples: dco_decode_list_elev_sample(arr[3]),
       routeKey: dco_decode_String(arr[4]),
+      climbs: dco_decode_list_climb(arr[5]),
     );
   }
 
@@ -2186,6 +2211,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   LinkLevel dco_decode_link_level(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return LinkLevel.values[raw as int];
+  }
+
+  @protected
+  List<Climb> dco_decode_list_climb(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_climb).toList();
   }
 
   @protected
@@ -2635,6 +2666,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Climb sse_decode_climb(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_startM = sse_decode_f_64(deserializer);
+    var var_endM = sse_decode_f_64(deserializer);
+    var var_gainM = sse_decode_f_64(deserializer);
+    var var_avgGrade = sse_decode_f_64(deserializer);
+    var var_maxGrade100M = sse_decode_f_64(deserializer);
+    var var_score = sse_decode_f_64(deserializer);
+    var var_category = sse_decode_climb_cat(deserializer);
+    return Climb(
+      id: var_id,
+      startM: var_startM,
+      endM: var_endM,
+      gainM: var_gainM,
+      avgGrade: var_avgGrade,
+      maxGrade100M: var_maxGrade100M,
+      score: var_score,
+      category: var_category,
+    );
+  }
+
+  @protected
+  ClimbCat sse_decode_climb_cat(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ClimbCat.values[inner];
+  }
+
+  @protected
   ConnectionSnapshot sse_decode_connection_snapshot(
     SseDeserializer deserializer,
   ) {
@@ -2782,12 +2843,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_elevGainM = sse_decode_f_64(deserializer);
     var var_samples = sse_decode_list_elev_sample(deserializer);
     var var_routeKey = sse_decode_String(deserializer);
+    var var_climbs = sse_decode_list_climb(deserializer);
     return GpxProfileInfo(
       name: var_name,
       distanceM: var_distanceM,
       elevGainM: var_elevGainM,
       samples: var_samples,
       routeKey: var_routeKey,
+      climbs: var_climbs,
     );
   }
 
@@ -2887,6 +2950,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
     return LinkLevel.values[inner];
+  }
+
+  @protected
+  List<Climb> sse_decode_list_climb(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <Climb>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_climb(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -3503,6 +3578,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_climb(Climb self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_f_64(self.startM, serializer);
+    sse_encode_f_64(self.endM, serializer);
+    sse_encode_f_64(self.gainM, serializer);
+    sse_encode_f_64(self.avgGrade, serializer);
+    sse_encode_f_64(self.maxGrade100M, serializer);
+    sse_encode_f_64(self.score, serializer);
+    sse_encode_climb_cat(self.category, serializer);
+  }
+
+  @protected
+  void sse_encode_climb_cat(ClimbCat self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_connection_snapshot(
     ConnectionSnapshot self,
     SseSerializer serializer,
@@ -3620,6 +3714,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_f_64(self.elevGainM, serializer);
     sse_encode_list_elev_sample(self.samples, serializer);
     sse_encode_String(self.routeKey, serializer);
+    sse_encode_list_climb(self.climbs, serializer);
   }
 
   @protected
@@ -3694,6 +3789,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_link_level(LinkLevel self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_list_climb(List<Climb> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_climb(item, serializer);
+    }
   }
 
   @protected

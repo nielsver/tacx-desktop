@@ -53,6 +53,59 @@ class BluetoothStatus {
           canScan == other.canScan;
 }
 
+/// One detected climb on a route (detector v1).
+class Climb {
+  /// `{routeKey}:{start10}-{end10}`; loop repeats get separate ids.
+  final String id;
+  final double startM;
+  final double endM;
+  final double gainM;
+  final double avgGrade;
+  final double maxGrade100M;
+  final double score;
+  final ClimbCat category;
+
+  const Climb({
+    required this.id,
+    required this.startM,
+    required this.endM,
+    required this.gainM,
+    required this.avgGrade,
+    required this.maxGrade100M,
+    required this.score,
+    required this.category,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      startM.hashCode ^
+      endM.hashCode ^
+      gainM.hashCode ^
+      avgGrade.hashCode ^
+      maxGrade100M.hashCode ^
+      score.hashCode ^
+      category.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Climb &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          startM == other.startM &&
+          endM == other.endM &&
+          gainM == other.gainM &&
+          avgGrade == other.avgGrade &&
+          maxGrade100M == other.maxGrade100M &&
+          score == other.score &&
+          category == other.category;
+}
+
+/// Strava-style climb category from score = length (m) × grade (%).
+/// `Climb` = 1 500–8 000 (uncategorised, still gets PRs).
+enum ClimbCat { climb, cat4, cat3, cat2, cat1, hc }
+
 class ConnectionSnapshot {
   final ConnectionState state;
   final String detail;
@@ -259,12 +312,16 @@ class GpxProfileInfo {
   /// Stable route identity, `v2-<16 hex>` (see `gpx::route_key_v2`).
   final String routeKey;
 
+  /// Auto-detected climbs (`climbs::detect_climbs`), by start.
+  final List<Climb> climbs;
+
   const GpxProfileInfo({
     required this.name,
     required this.distanceM,
     required this.elevGainM,
     required this.samples,
     required this.routeKey,
+    required this.climbs,
   });
 
   @override
@@ -273,7 +330,8 @@ class GpxProfileInfo {
       distanceM.hashCode ^
       elevGainM.hashCode ^
       samples.hashCode ^
-      routeKey.hashCode;
+      routeKey.hashCode ^
+      climbs.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -284,7 +342,8 @@ class GpxProfileInfo {
           distanceM == other.distanceM &&
           elevGainM == other.elevGainM &&
           samples == other.samples &&
-          routeKey == other.routeKey;
+          routeKey == other.routeKey &&
+          climbs == other.climbs;
 }
 
 /// Separate BLE heart-rate strap link (Heart Rate Service 0x180D).

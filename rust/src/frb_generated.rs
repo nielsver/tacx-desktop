@@ -629,6 +629,33 @@ return crate::trainer::types::BluetoothStatus{radio: var_radio, hint: var_hint, 
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {deserializer.cursor.read_u8().unwrap() != 0}
                 }
                 
+                impl SseDecode for crate::trainer::types::Climb {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_id = <String>::sse_decode(deserializer);
+let mut var_startM = <f64>::sse_decode(deserializer);
+let mut var_endM = <f64>::sse_decode(deserializer);
+let mut var_gainM = <f64>::sse_decode(deserializer);
+let mut var_avgGrade = <f64>::sse_decode(deserializer);
+let mut var_maxGrade100M = <f64>::sse_decode(deserializer);
+let mut var_score = <f64>::sse_decode(deserializer);
+let mut var_category = <crate::trainer::types::ClimbCat>::sse_decode(deserializer);
+return crate::trainer::types::Climb{id: var_id, start_m: var_startM, end_m: var_endM, gain_m: var_gainM, avg_grade: var_avgGrade, max_grade_100m: var_maxGrade100M, score: var_score, category: var_category};}
+                }
+                
+                impl SseDecode for crate::trainer::types::ClimbCat {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::trainer::types::ClimbCat::Climb,
+1 => crate::trainer::types::ClimbCat::Cat4,
+2 => crate::trainer::types::ClimbCat::Cat3,
+3 => crate::trainer::types::ClimbCat::Cat2,
+4 => crate::trainer::types::ClimbCat::Cat1,
+5 => crate::trainer::types::ClimbCat::Hc,
+            _ => unreachable!("Invalid variant for ClimbCat: {}", inner),
+        };}
+                }
+                
                 impl SseDecode for crate::trainer::types::ConnectionSnapshot {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_state = <crate::trainer::types::ConnectionState>::sse_decode(deserializer);
@@ -759,7 +786,8 @@ let mut var_distanceM = <f64>::sse_decode(deserializer);
 let mut var_elevGainM = <f64>::sse_decode(deserializer);
 let mut var_samples = <Vec<crate::trainer::types::ElevSample>>::sse_decode(deserializer);
 let mut var_routeKey = <String>::sse_decode(deserializer);
-return crate::trainer::types::GpxProfileInfo{name: var_name, distance_m: var_distanceM, elev_gain_m: var_elevGainM, samples: var_samples, route_key: var_routeKey};}
+let mut var_climbs = <Vec<crate::trainer::types::Climb>>::sse_decode(deserializer);
+return crate::trainer::types::GpxProfileInfo{name: var_name, distance_m: var_distanceM, elev_gain_m: var_elevGainM, samples: var_samples, route_key: var_routeKey, climbs: var_climbs};}
                 }
                 
                 impl SseDecode for crate::trainer::types::HrStrapState {
@@ -835,6 +863,14 @@ return crate::trainer::types::LinkHealth{packets_per_s: var_packetsPerS, last_pa
 3 => crate::trainer::types::LinkLevel::Lost,
             _ => unreachable!("Invalid variant for LinkLevel: {}", inner),
         };}
+                }
+                
+                impl SseDecode for Vec<crate::trainer::types::Climb> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ { ans_.push(<crate::trainer::types::Climb>::sse_decode(deserializer)); }
+        return ans_;}
                 }
                 
                 impl SseDecode for Vec<crate::trainer::types::DiscoveredDevice> {
@@ -1291,6 +1327,47 @@ impl flutter_rust_bridge::IntoIntoDart<crate::trainer::types::BluetoothStatus> f
             }
         }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::trainer::types::Climb {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    [
+                    self.id.into_into_dart().into_dart(),
+self.start_m.into_into_dart().into_dart(),
+self.end_m.into_into_dart().into_dart(),
+self.gain_m.into_into_dart().into_dart(),
+self.avg_grade.into_into_dart().into_dart(),
+self.max_grade_100m.into_into_dart().into_dart(),
+self.score.into_into_dart().into_dart(),
+self.category.into_into_dart().into_dart()
+                ].into_dart()
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::trainer::types::Climb {}
+impl flutter_rust_bridge::IntoIntoDart<crate::trainer::types::Climb> for crate::trainer::types::Climb {
+            fn into_into_dart(self) -> crate::trainer::types::Climb {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+            impl flutter_rust_bridge::IntoDart for crate::trainer::types::ClimbCat {
+                fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+                    match self {
+                    Self::Climb => 0.into_dart(),
+Self::Cat4 => 1.into_dart(),
+Self::Cat3 => 2.into_dart(),
+Self::Cat2 => 3.into_dart(),
+Self::Cat1 => 4.into_dart(),
+Self::Hc => 5.into_dart(),
+                    _ => unreachable!(),
+                }
+                }
+            }
+            impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::trainer::types::ClimbCat {}
+impl flutter_rust_bridge::IntoIntoDart<crate::trainer::types::ClimbCat> for crate::trainer::types::ClimbCat {
+            fn into_into_dart(self) -> crate::trainer::types::ClimbCat {
+                self
+            }
+        }
+// Codec=Dco (DartCObject based), see doc to use other codecs
             impl flutter_rust_bridge::IntoDart for crate::trainer::types::ConnectionSnapshot {
                 fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
                     [
@@ -1494,7 +1571,8 @@ impl flutter_rust_bridge::IntoIntoDart<crate::trainer::ftp::FtpMethod> for crate
 self.distance_m.into_into_dart().into_dart(),
 self.elev_gain_m.into_into_dart().into_dart(),
 self.samples.into_into_dart().into_dart(),
-self.route_key.into_into_dart().into_dart()
+self.route_key.into_into_dart().into_dart(),
+self.climbs.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -1904,6 +1982,29 @@ crate::trainer::types::BluetoothRadio::Unknown => { 4 }
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {serializer.cursor.write_u8(self as _).unwrap();}
                 }
                 
+                impl SseEncode for crate::trainer::types::Climb {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<String>::sse_encode(self.id, serializer);
+<f64>::sse_encode(self.start_m, serializer);
+<f64>::sse_encode(self.end_m, serializer);
+<f64>::sse_encode(self.gain_m, serializer);
+<f64>::sse_encode(self.avg_grade, serializer);
+<f64>::sse_encode(self.max_grade_100m, serializer);
+<f64>::sse_encode(self.score, serializer);
+<crate::trainer::types::ClimbCat>::sse_encode(self.category, serializer);}
+                }
+                
+                impl SseEncode for crate::trainer::types::ClimbCat {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(match self {crate::trainer::types::ClimbCat::Climb => { 0 }
+crate::trainer::types::ClimbCat::Cat4 => { 1 }
+crate::trainer::types::ClimbCat::Cat3 => { 2 }
+crate::trainer::types::ClimbCat::Cat2 => { 3 }
+crate::trainer::types::ClimbCat::Cat1 => { 4 }
+crate::trainer::types::ClimbCat::Hc => { 5 }
+ _ => { unimplemented!(""); }}, serializer);}
+                }
+                
                 impl SseEncode for crate::trainer::types::ConnectionSnapshot {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<crate::trainer::types::ConnectionState>::sse_encode(self.state, serializer);
@@ -2012,7 +2113,8 @@ crate::trainer::ftp::FtpMethod::TwentyMin => { 1 }
 <f64>::sse_encode(self.distance_m, serializer);
 <f64>::sse_encode(self.elev_gain_m, serializer);
 <Vec<crate::trainer::types::ElevSample>>::sse_encode(self.samples, serializer);
-<String>::sse_encode(self.route_key, serializer);}
+<String>::sse_encode(self.route_key, serializer);
+<Vec<crate::trainer::types::Climb>>::sse_encode(self.climbs, serializer);}
                 }
                 
                 impl SseEncode for crate::trainer::types::HrStrapState {
@@ -2078,6 +2180,12 @@ crate::trainer::types::LinkLevel::Good => { 1 }
 crate::trainer::types::LinkLevel::Stale => { 2 }
 crate::trainer::types::LinkLevel::Lost => { 3 }
  _ => { unimplemented!(""); }}, serializer);}
+                }
+                
+                impl SseEncode for Vec<crate::trainer::types::Climb> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(self.len() as _, serializer);
+        for item in self { <crate::trainer::types::Climb>::sse_encode(item, serializer); }}
                 }
                 
                 impl SseEncode for Vec<crate::trainer::types::DiscoveredDevice> {

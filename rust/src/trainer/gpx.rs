@@ -179,6 +179,7 @@ pub fn parse_gpx(xml: &str) -> Result<GpxProfileInfo, String> {
     let elev_gain = elevation_gain(&samples, GAIN_HYSTERESIS_M);
     grades_over_distance(&mut samples, GRADE_WINDOW_M);
     let route_key = route_key_v2(&samples);
+    let climbs = crate::trainer::climbs::detect_climbs(&samples, &route_key);
 
     Ok(GpxProfileInfo {
         name,
@@ -186,6 +187,7 @@ pub fn parse_gpx(xml: &str) -> Result<GpxProfileInfo, String> {
         elev_gain_m: elev_gain,
         samples,
         route_key,
+        climbs,
     })
 }
 
@@ -221,7 +223,7 @@ pub fn elevation_gain(samples: &[ElevSample], threshold: f64) -> f64 {
 }
 
 /// Elevation at distance [d] by linear interpolation (clamped to the ends).
-fn elev_at(samples: &[ElevSample], d: f64) -> f64 {
+pub(crate) fn elev_at(samples: &[ElevSample], d: f64) -> f64 {
     if d <= samples[0].distance_m {
         return samples[0].elev_m;
     }

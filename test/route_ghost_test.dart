@@ -19,6 +19,7 @@ GpxProfileInfo _profile({
   distanceM: 1000,
   elevGainM: 50,
   routeKey: routeKey,
+  climbs: const [],
   samples: [
     for (var i = 0; i <= 10; i++)
       ElevSample(

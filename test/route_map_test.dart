@@ -240,6 +240,7 @@ void main() {
       elevGainM: 0,
       samples: samples,
       routeKey: 'k',
+      climbs: const [],
     );
     final geo = RouteGeo(samples);
     final rider = ValueNotifier<double?>(0);

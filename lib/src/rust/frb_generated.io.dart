@@ -70,6 +70,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int dco_decode_box_autoadd_u_32(dynamic raw);
 
   @protected
+  Climb dco_decode_climb(dynamic raw);
+
+  @protected
+  ClimbCat dco_decode_climb_cat(dynamic raw);
+
+  @protected
   ConnectionSnapshot dco_decode_connection_snapshot(dynamic raw);
 
   @protected
@@ -131,6 +137,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LinkLevel dco_decode_link_level(dynamic raw);
+
+  @protected
+  List<Climb> dco_decode_list_climb(dynamic raw);
 
   @protected
   List<DiscoveredDevice> dco_decode_list_discovered_device(dynamic raw);
@@ -290,6 +299,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
+  Climb sse_decode_climb(SseDeserializer deserializer);
+
+  @protected
+  ClimbCat sse_decode_climb_cat(SseDeserializer deserializer);
+
+  @protected
   ConnectionSnapshot sse_decode_connection_snapshot(
     SseDeserializer deserializer,
   );
@@ -355,6 +370,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LinkLevel sse_decode_link_level(SseDeserializer deserializer);
+
+  @protected
+  List<Climb> sse_decode_list_climb(SseDeserializer deserializer);
 
   @protected
   List<DiscoveredDevice> sse_decode_list_discovered_device(
@@ -559,6 +577,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_climb(Climb self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_climb_cat(ClimbCat self, SseSerializer serializer);
+
+  @protected
   void sse_encode_connection_snapshot(
     ConnectionSnapshot self,
     SseSerializer serializer,
@@ -641,6 +665,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_link_level(LinkLevel self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_climb(List<Climb> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_discovered_device(

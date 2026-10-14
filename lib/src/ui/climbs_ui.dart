@@ -10,6 +10,7 @@ String climbCatLabel(ClimbCat c) => switch (c) {
   ClimbCat.cat2 => 'Cat 2',
   ClimbCat.cat1 => 'Cat 1',
   ClimbCat.hc => 'HC',
+  ClimbCat.wall => 'Wall',
 };
 
 /// Band colour: calm amber for small climbs, deeper red up to HC.
@@ -38,8 +39,14 @@ String climbSummary(Climb c) =>
 String? climbLiveText(List<Climb> climbs, double? riderM) {
   final c = climbAt(climbs, riderM);
   if (c == null) return null;
-  final left = ((c.endM - riderM!) / 1000).clamp(0.0, 999.0);
-  return '${climbCatLabel(c.category)} · ${left.toStringAsFixed(1)} km to top'
+  final leftM = (c.endM - riderM!).clamp(0.0, 999000.0);
+  // Metres under 1 km, "summit" for the last ~50 m (QA c7 P2-f).
+  final left = leftM <= 50
+      ? 'summit'
+      : leftM < 1000
+      ? '${(leftM / 10).round() * 10} m to top'
+      : '${(leftM / 1000).toStringAsFixed(1)} km to top';
+  return '${climbCatLabel(c.category)} · $left'
       ' · ${c.avgGrade.toStringAsFixed(1)} %';
 }
 

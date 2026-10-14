@@ -100,7 +100,10 @@ pub fn scan_dir(dir: &Path) -> Vec<TcxRide> {
             parse(&xml, &name)
         })
         .collect();
-    out.sort_by_key(|r| r.start_ms);
+    out.sort_by(|a, b| a.start_ms.cmp(&b.start_ms).then(a.file_name.cmp(&b.file_name)));
+    // One ride exported twice (pre-409747c `…Z-2.tcx`) shares its Lap
+    // StartTime: count it once (QA c7).
+    out.dedup_by_key(|r| r.start_ms);
     out
 }
 
@@ -164,8 +167,19 @@ mod tests {
             );
             write_tcx_doc(&r.effort_tcx(id).unwrap(), sl.start_ms, demo, &dir).unwrap();
         }
+        // A duplicate export of one ride (old `…Z-2.tcx` naming) counts once.
+        let first = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|f| f.path())
+            .find(|p| !p.to_string_lossy().contains("-demo"))
+            .unwrap();
+        let dup = first.with_file_name(
+            first.file_name().unwrap().to_string_lossy().replace(".tcx", "-2.tcx"),
+        );
+        std::fs::copy(&first, &dup).unwrap();
         let rides = scan_dir(&dir);
-        assert_eq!(rides.len(), 3, "demo skipped: {rides:?}");
+        assert_eq!(rides.len(), 3, "demo skipped, duplicate deduped: {rides:?}");
         let mut rebuilt = ProgressState::default();
         for t in &rides {
             let day = day_of(t.start_ms);

@@ -715,6 +715,7 @@ return crate::trainer::types::Climb{id: var_id, start_m: var_startM, end_m: var_
 3 => crate::trainer::types::ClimbCat::Cat2,
 4 => crate::trainer::types::ClimbCat::Cat1,
 5 => crate::trainer::types::ClimbCat::Hc,
+6 => crate::trainer::types::ClimbCat::Wall,
             _ => unreachable!("Invalid variant for ClimbCat: {}", inner),
         };}
                 }
@@ -1104,6 +1105,15 @@ return crate::trainer::types::LinkHealth{packets_per_s: var_packetsPerS, last_pa
             }}
                 }
                 
+                impl SseDecode for Option<crate::trainer::types::EffortKind> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {if (<bool>::sse_decode(deserializer)) {
+                return Some(<crate::trainer::types::EffortKind>::sse_decode(deserializer));
+            } else {
+                return None;
+            }}
+                }
+                
                 impl SseDecode for Option<crate::trainer::types::EndReason> {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {if (<bool>::sse_decode(deserializer)) {
@@ -1232,8 +1242,14 @@ return crate::trainer::types::ResistanceRange{min_pct: var_minPct, max_pct: var_
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut var_kind = <crate::trainer::types::RideEventKind>::sse_decode(deserializer);
 let mut var_sliceId = <u32>::sse_decode(deserializer);
+let mut var_uid = <String>::sse_decode(deserializer);
+let mut var_effortKind = <Option<crate::trainer::types::EffortKind>>::sse_decode(deserializer);
+let mut var_demo = <bool>::sse_decode(deserializer);
+let mut var_endReason = <Option<crate::trainer::types::EndReason>>::sse_decode(deserializer);
+let mut var_startMs = <i64>::sse_decode(deserializer);
+let mut var_endMs = <i64>::sse_decode(deserializer);
 let mut var_earned = <Option<crate::trainer::types::EarnedPayload>>::sse_decode(deserializer);
-return crate::trainer::types::RideEvent{kind: var_kind, slice_id: var_sliceId, earned: var_earned};}
+return crate::trainer::types::RideEvent{kind: var_kind, slice_id: var_sliceId, uid: var_uid, effort_kind: var_effortKind, demo: var_demo, end_reason: var_endReason, start_ms: var_startMs, end_ms: var_endMs, earned: var_earned};}
                 }
                 
                 impl SseDecode for crate::trainer::types::RideEventKind {
@@ -1556,6 +1572,7 @@ Self::Cat3 => 2.into_dart(),
 Self::Cat2 => 3.into_dart(),
 Self::Cat1 => 4.into_dart(),
 Self::Hc => 5.into_dart(),
+Self::Wall => 6.into_dart(),
                     _ => unreachable!(),
                 }
                 }
@@ -2040,6 +2057,12 @@ impl flutter_rust_bridge::IntoIntoDart<crate::trainer::types::ResistanceRange> f
                     [
                     self.kind.into_into_dart().into_dart(),
 self.slice_id.into_into_dart().into_dart(),
+self.uid.into_into_dart().into_dart(),
+self.effort_kind.into_into_dart().into_dart(),
+self.demo.into_into_dart().into_dart(),
+self.end_reason.into_into_dart().into_dart(),
+self.start_ms.into_into_dart().into_dart(),
+self.end_ms.into_into_dart().into_dart(),
 self.earned.into_into_dart().into_dart()
                 ].into_dart()
                 }
@@ -2308,6 +2331,7 @@ crate::trainer::types::ClimbCat::Cat3 => { 2 }
 crate::trainer::types::ClimbCat::Cat2 => { 3 }
 crate::trainer::types::ClimbCat::Cat1 => { 4 }
 crate::trainer::types::ClimbCat::Hc => { 5 }
+crate::trainer::types::ClimbCat::Wall => { 6 }
  _ => { unimplemented!(""); }}, serializer);}
                 }
                 
@@ -2630,6 +2654,14 @@ crate::trainer::types::LinkLevel::Lost => { 3 }
                 }}
                 }
                 
+                impl SseEncode for Option<crate::trainer::types::EffortKind> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<bool>::sse_encode(self.is_some(), serializer);
+                if let Some(value) = self {
+                    <crate::trainer::types::EffortKind>::sse_encode(value, serializer);
+                }}
+                }
+                
                 impl SseEncode for Option<crate::trainer::types::EndReason> {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<bool>::sse_encode(self.is_some(), serializer);
@@ -2743,6 +2775,12 @@ crate::trainer::types::ProtocolKind::TacxFecBle => { 2 }
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<crate::trainer::types::RideEventKind>::sse_encode(self.kind, serializer);
 <u32>::sse_encode(self.slice_id, serializer);
+<String>::sse_encode(self.uid, serializer);
+<Option<crate::trainer::types::EffortKind>>::sse_encode(self.effort_kind, serializer);
+<bool>::sse_encode(self.demo, serializer);
+<Option<crate::trainer::types::EndReason>>::sse_encode(self.end_reason, serializer);
+<i64>::sse_encode(self.start_ms, serializer);
+<i64>::sse_encode(self.end_ms, serializer);
 <Option<crate::trainer::types::EarnedPayload>>::sse_encode(self.earned, serializer);}
                 }
                 

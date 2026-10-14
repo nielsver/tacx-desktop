@@ -37,6 +37,11 @@ void main() {
     expect(climbSummary(_c), 'Cat 4 · 2.0 km · +100 m · 5.0 %');
     expect(climbLiveText(const [_c], 1800), 'Cat 4 · 1.2 km to top · 5.0 %');
     expect(climbLiveText(const [_c], 500), isNull);
+    // QA c7 P2-f: metres under 1 km, "summit" for the last ~50 m.
+    expect(climbLiveText(const [_c], 2400), 'Cat 4 · 600 m to top · 5.0 %');
+    expect(climbLiveText(const [_c], 2960), 'Cat 4 · summit · 5.0 %');
+    expect(climbLiveText(const [_c], 2000), 'Cat 4 · 1.0 km to top · 5.0 %');
+    expect(climbCatLabel(ClimbCat.wall), 'Wall');
   });
 
   test('parse_gpx fills climbs (F1 through FRB)', () {

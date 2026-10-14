@@ -210,8 +210,10 @@ impl RideRecorder {
                 if self.open().is_none() {
                     if let Some(kind) = self.active.clone() {
                         // A running route / workout lost its effort to a long
-                        // dropout: continue as that kind, never a FreeRide.
-                        self.begin_at(kind, demo, wall_ms);
+                        // dropout: continue it (QA c7 P2-g), never a FreeRide.
+                        if !self.reopen_after_dropout(&kind) {
+                            self.begin_at(kind, demo, wall_ms);
+                        }
                     } else if pedalling && wall_ms >= self.no_auto_until_ms {
                         self.begin_at(EffortKind::free_ride(), demo, wall_ms);
                     }
@@ -308,8 +310,29 @@ impl RideRecorder {
         e.reason = Some(reason);
         let id = e.id;
         self.no_auto_until_ms = wall_ms + AUTO_BEGIN_COOLDOWN_MS;
-        self.events.push(RideEvent::ride_ended(id));
-        self.slice(id)
+        let sl = self.slice(id)?;
+        self.events.push(RideEvent::ride_ended(&sl));
+        Some(sl)
+    }
+
+    /// Re-open the last effort when it is [kind] and ended on a dropout, so
+    /// one route / workout stays one effort across a > 60 s link loss.
+    fn reopen_after_dropout(&mut self, kind: &EffortKind) -> bool {
+        let n = self.points.len();
+        match self.efforts.last_mut() {
+            Some(e)
+                if e.end.is_some()
+                    && &e.kind == kind
+                    && e.reason == Some(EndReason::DisconnectTimeout) =>
+            {
+                // Range stays contiguous: no effort recorded points since.
+                debug_assert!(e.end == Some(n));
+                e.end = None;
+                e.reason = None;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Close the open effort (`Completed` or `Stopped`) and raise one
@@ -318,6 +341,19 @@ impl RideRecorder {
         if self.open().is_some() {
             let reason = if completed { EndReason::Completed } else { EndReason::Stopped };
             return self.close(completed, reason, wall_ms);
+        }
+        // A route / workout that ended on a dropout and was never resumed:
+        // the rider's Stop / finish is its real end (one more RideEnded,
+        // so progress is applied to the final effort — QA c7 P1-B / P2-g).
+        if let Some(e) = self.efforts.last_mut() {
+            if e.reason == Some(EndReason::DisconnectTimeout) && e.kind.kind != crate::trainer::types::EffortType::FreeRide {
+                e.reason = Some(if completed { EndReason::Completed } else { EndReason::Stopped });
+                e.completed = completed;
+                let id = e.id;
+                let sl = self.slice(id)?;
+                self.events.push(RideEvent::ride_ended(&sl));
+                return Some(sl);
+            }
         }
         self.efforts.last().and_then(|e| self.slice(e.id))
     }
@@ -865,7 +901,7 @@ mod tests {
         let sl = r.slice(id).unwrap();
         assert_eq!(sl.end_reason, Some(EndReason::DisconnectTimeout));
         assert!(!sl.completed);
-        assert_eq!(r.take_events(), vec![RideEvent::ride_ended(id)]);
+        assert_eq!(r.take_events(), vec![RideEvent::ride_ended(&r.slice(id).unwrap())]);
     }
 
     #[test]
@@ -879,7 +915,7 @@ mod tests {
         let s2 = r.end_effort(true, at(11)).unwrap();
         assert_eq!(s1.id, s2.id);
         assert_eq!(s1.end_reason, Some(EndReason::Completed));
-        assert_eq!(r.take_events(), vec![RideEvent::ride_ended(a)]);
+        assert_eq!(r.take_events(), vec![RideEvent::ride_ended(&r.slice(a).unwrap())]);
     }
 
     #[test]
@@ -910,7 +946,7 @@ mod tests {
         assert_ne!(rt, free.id);
         assert_eq!(r.slice(free.id).unwrap().end_reason, Some(EndReason::Superseded));
         assert_eq!(r.current_effort().unwrap().kind, route());
-        assert_eq!(r.take_events(), vec![RideEvent::ride_ended(free.id)]);
+        assert_eq!(r.take_events(), vec![RideEvent::ride_ended(&r.slice(free.id).unwrap())]);
     }
 
     #[test]
@@ -923,6 +959,10 @@ mod tests {
         let id = begin_effort(EffortKind::workout("hook"), false);
         let sl = end_effort(false).unwrap();
         assert_eq!(sl.id, id);
+        let ev = RideEvent::ride_ended(&sl);
+        assert_eq!(ev.uid, format!("{}-workout-hook", sl.start_ms));
+        assert_eq!(ev.end_reason, Some(EndReason::Stopped));
+        assert!(!ev.demo && ev.end_ms >= ev.start_ms);
         assert_eq!(SEEN.load(Ordering::SeqCst), id);
     }
 
@@ -977,7 +1017,22 @@ mod tests {
         ride(&mut r, t0, 92, 30, 200.0, false);
         let cur = r.current_effort().unwrap();
         assert_eq!(cur.kind, route(), "not a FreeRide");
+        // QA c7 P2-g: the same effort continues, not a second Route.
+        assert_eq!(cur.id, a);
         let done = r.end_effort(true, at(122)).unwrap();
         assert!(done.completed && done.kind == route());
+        assert!(done.moving_s >= 58, "both halves count: {}", done.moving_s);
+        assert_eq!(r.list_efforts().len(), 1);
+        // Dropout, never resumed, then Stop: finalised with one more event.
+        let mut r = RideRecorder::default();
+        let b = r.begin_effort(route(), false, at(0));
+        ride(&mut r, t0, 0, 30, 200.0, false);
+        idle(&mut r, t0, 30, 62);
+        r.take_events();
+        let s = r.end_effort(false, at(100)).unwrap();
+        assert_eq!((s.id, s.end_reason), (b, Some(EndReason::Stopped)));
+        assert_eq!(r.take_events().len(), 1);
+        assert!(r.end_effort(false, at(101)).is_some());
+        assert!(r.take_events().is_empty(), "only once");
     }
 }

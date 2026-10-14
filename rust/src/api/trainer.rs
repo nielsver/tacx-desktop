@@ -517,7 +517,7 @@ static PROGRESS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 pub fn progress_apply_effort(input: EffortInput, weekly_target: u32) -> Result<ProgressView, String> {
     let _g = PROGRESS_LOCK.lock().map_err(|e| e.to_string())?;
     let p = crate::trainer::progress::progress_path();
-    let mut st = crate::trainer::progress::load(&p);
+    let mut st = crate::trainer::progress::load_for_write(&p)?;
     let r = crate::trainer::progress::apply(&mut st, &input, weekly_target);
     if r.counted || !input.uid.is_empty() {
         crate::trainer::progress::save(&p, &st)?;
@@ -534,7 +534,7 @@ pub fn progress_apply_effort(input: EffortInput, weekly_target: u32) -> Result<P
 pub fn progress_award_badge(badge_id: String, local_date: String, uid: String) -> Result<bool, String> {
     let _g = PROGRESS_LOCK.lock().map_err(|e| e.to_string())?;
     let p = crate::trainer::progress::progress_path();
-    let mut st = crate::trainer::progress::load(&p);
+    let mut st = crate::trainer::progress::load_for_write(&p)?;
     let new = crate::trainer::progress::award_badge(&mut st, &badge_id, &local_date, &uid);
     if new {
         crate::trainer::progress::save(&p, &st)?;
@@ -546,7 +546,8 @@ pub fn progress_award_badge(badge_id: String, local_date: String, uid: String) -
 /// `Earned` ride event (step 5's remote shows the same row).
 #[flutter_rust_bridge::frb(sync)]
 pub fn publish_earned(slice_id: u32, payload: EarnedPayload) {
-    crate::trainer::ride::emit(RideEvent::earned(slice_id, payload));
+    let s = crate::trainer::ride::effort(slice_id);
+    crate::trainer::ride::emit(RideEvent::earned(slice_id, s.as_ref(), payload));
 }
 
 /// Current progress for ISO week index `week` and local day index `today`.
@@ -567,9 +568,12 @@ pub fn scan_saved_rides() -> Vec<TcxRide> {
 #[flutter_rust_bridge::frb(sync)]
 pub fn progress_rebuild(inputs: Vec<EffortInput>, weekly_target: u32) -> Result<(), String> {
     let _g = PROGRESS_LOCK.lock().map_err(|e| e.to_string())?;
+    let p = crate::trainer::progress::progress_path();
+    // Refuses a newer-version file; a corrupt one is kept as .bad-<ts>.
+    crate::trainer::progress::load_for_write(&p)?;
     let mut st = crate::trainer::progress::ProgressState { rebuilt: true, ..Default::default() };
     for i in &inputs {
         crate::trainer::progress::apply(&mut st, i, weekly_target);
     }
-    crate::trainer::progress::save(&crate::trainer::progress::progress_path(), &st)
+    crate::trainer::progress::save(&p, &st)
 }

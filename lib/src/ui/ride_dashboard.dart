@@ -66,6 +66,20 @@ RideSlice? resolveEndedEffort(List<RideSlice> all, {int? startedId}) {
   return all.lastWhere((s) => s.endReason != null, orElse: () => all.last);
 }
 
+/// Whether the RideEnded listener applies progress for [s] (QA c7 P1-B):
+/// every non-demo ended effort, except a route / workout cut by a dropout
+/// (it may resume as the same effort, P2-g) and a completed route (the
+/// route path applies it with its ghost / climb PR flags).
+bool progressOnEnd(RideSlice s) {
+  final r = s.endReason;
+  if (s.demo || r == null) return false;
+  final kind = s.kind.kind;
+  if (r == EndReason.disconnectTimeout && kind != EffortType.freeRide) {
+    return false;
+  }
+  return !(kind == EffortType.route && r == EndReason.completed);
+}
+
 /// Shortest effort that gets a summary: started routes / workouts always
 /// do (NP/IF/TSS read '—' under 60 s); free rides need a minute (P2-2).
 int summaryMinS(EffortType kind) =>
@@ -129,6 +143,8 @@ class _RideDashboardState extends State<RideDashboard> {
     repeatIndex: 0,
     remainingS: 0,
   );
+  /// A free ride is open: shows "End ride" (QA c7 P1-B).
+  final ValueNotifier<bool> _freeRideOpenN = ValueNotifier(false);
   final ValueNotifier<RideStats> _rideN = ValueNotifier(
     const RideStats(
       elapsedS: 0,
@@ -274,9 +290,12 @@ class _RideDashboardState extends State<RideDashboard> {
     // RideEnded for efforts no button closed (link lost > 60 s): still show
     // the summary. Stop / complete open it from their own call sites.
     _rideEvents = api.rideEvents().listen((e) {
+      if (e.kind != RideEventKind.rideEnded) return;
       final s = api.getEffort(id: e.sliceId);
-      if (s?.endReason == EndReason.disconnectTimeout) {
-        _scheduleSummary(title: 'Ride ended — link lost');
+      if (s == null) return;
+      _onEffortEnded(s);
+      if (s.endReason == EndReason.disconnectTimeout) {
+        _scheduleSummary(title: 'Ride ended — link lost', effortId: s.id);
       }
     });
     // Demo defaults OFF (Rust + prefs). Prefs may re-enable after load.
@@ -293,6 +312,11 @@ class _RideDashboardState extends State<RideDashboard> {
 
   @override
   void dispose() {
+    // App closing mid free ride: still count it (QA c7 P1-B).
+    if (api.currentEffort()?.kind.kind == EffortType.freeRide) {
+      final s = api.endEffort(completed: false);
+      if (s != null) _onEffortEnded(s);
+    }
     _rideEvents?.cancel();
     _poll?.cancel();
     if (_prefsSave?.isActive ?? false) {
@@ -302,6 +326,7 @@ class _RideDashboardState extends State<RideDashboard> {
     _scroll.dispose();
     _metricsN.dispose();
     _rideN.dispose();
+    _freeRideOpenN.dispose();
     _linkN.dispose();
     _trend.dispose();
     _wTrace.dispose();
@@ -366,6 +391,8 @@ class _RideDashboardState extends State<RideDashboard> {
         metrics.targetPowerW != _metrics.targetPowerW;
     _metricsN.value = metrics;
     _rideN.value = ride;
+    _freeRideOpenN.value =
+        api.currentEffort()?.kind.kind == EffortType.freeRide;
     _linkN.value = api.getLinkHealth();
     _workoutN.value = workout;
     _route = route; // live fields; structural changes still go via setState
@@ -593,54 +620,96 @@ class _RideDashboardState extends State<RideDashboard> {
   }
 
   /// Opens the post-ride summary after the current frame (never from inside
-  /// a refresh / setState). Skipped for very short rides and while one is open.
+  /// a refresh / setState). Skipped for very short free rides; queued while
+  /// another summary is open.
   void _scheduleSummary({
     String? title,
     RouteResult? route,
     bool ghostBeat = false,
     List<PrImprovement> prs = const [],
+    int? effortId,
   }) {
-    if (_summaryOpen) return;
-    // Bind now: the next start must not retarget this summary.
+    // Bind now (QA c6 P1-A / c7 P1-B): the next start, or a summary that
+    // waits in the queue, must not retarget this one.
     final startedId = _startedEffortId;
     _startedEffortId = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted || _summaryOpen) return;
-      // The effort that just ended (QA c4 P1-1): never the whole session.
-      final slice = latestEffort(startedId: startedId);
+    final boundId = effortId ?? latestEffort(startedId: startedId)?.id;
+    if (boundId == null) return;
+    Future<void> show() async {
+      if (!mounted) return;
+      final slice = api.getEffort(id: boundId);
       if (slice == null) return;
       final summary = api.effortSummary(id: slice.id, ftpW: _ftp);
       if (summary == null || summary.recordedS < summaryMinS(slice.kind.kind)) {
         return;
       }
-      _summaryOpen = true;
+      final stats = api.effortStats(id: slice.id) ?? api.getRideStats();
+      final earned = _applyProgress(
+        slice,
+        summary,
+        stats,
+        ghostBeat: ghostBeat,
+        prs: prs,
+      );
+      await showRideSummary(
+        context,
+        data: RideSummaryData(
+          title: (title == null || title.trim().isEmpty) ? 'Ride summary' : title,
+          summary: summary,
+          stats: stats,
+          isDemo: slice.demo, // captured at effort begin
+          route: route,
+          earned: earned,
+          onProgressSettings: _openProgressSettings,
+        ),
+        saveTcx: () => _saveEffortTcx(slice.id),
+      );
+      if (mounted) await _offerFtp(slice.id);
+    }
+
+    // Queued, never dropped, while another summary is open (QA c7 P1-B).
+    if (_summaryQueuedIds.contains(boundId)) return;
+    _summaryQueuedIds.add(boundId);
+    _summaryQueue.add(show);
+    _pumpSummaries();
+  }
+
+  final List<Future<void> Function()> _summaryQueue = [];
+  final Set<int> _summaryQueuedIds = {};
+
+  void _pumpSummaries() {
+    if (_summaryOpen || _summaryQueue.isEmpty) return;
+    _summaryOpen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        final stats = api.effortStats(id: slice.id) ?? api.getRideStats();
-        final earned = _applyProgress(
-          slice,
-          summary,
-          stats,
-          ghostBeat: ghostBeat,
-          prs: prs,
-        );
-        await showRideSummary(
-          context,
-          data: RideSummaryData(
-            title: (title == null || title.trim().isEmpty) ? 'Ride summary' : title,
-            summary: summary,
-            stats: stats,
-            isDemo: slice.demo, // captured at effort begin
-            route: route,
-            earned: earned,
-            onProgressSettings: _openProgressSettings,
-          ),
-          saveTcx: () => _saveEffortTcx(slice.id),
-        );
-        if (mounted) await _offerFtp(slice.id);
+        if (_summaryQueue.isNotEmpty) await _summaryQueue.removeAt(0)();
       } finally {
         _summaryOpen = false;
+        if (mounted) _pumpSummaries();
       }
     });
+  }
+
+  /// Payload per effort uid: progress is applied once (from the RideEnded
+  /// listener or the summary, whichever is first) and both reuse it.
+  final Map<String, EarnedPayload?> _earnedByUid = {};
+
+  /// Progress for every non-demo ended effort, dialog or not (QA c7 P1-B).
+  /// Completed routes are left to the route path (ghost / climb PR flags).
+  void _onEffortEnded(RideSlice s) {
+    if (!progressOnEnd(s)) return;
+    final summary = api.effortSummary(id: s.id, ftpW: _ftp);
+    final stats = api.effortStats(id: s.id);
+    if (summary == null || stats == null) return;
+    _applyProgress(s, summary, stats);
+  }
+
+  /// "End ride" for a free ride: close it and show its summary.
+  void _endFreeRide() {
+    final cur = api.currentEffort();
+    if (cur == null || cur.kind.kind != EffortType.freeRide) return;
+    final s = api.endEffort(completed: false);
+    if (s != null) _scheduleSummary(title: 'Free ride', effortId: s.id);
   }
 
   /// "{startMs}-{kind}-{key}": stable across restarts, so applying twice
@@ -668,13 +737,15 @@ class _RideDashboardState extends State<RideDashboard> {
     List<PrImprovement> prs = const [],
   }) {
     if (!_progressEnabled || slice.demo) return null;
+    final uid = _effortUid(slice);
+    if (_earnedByUid.containsKey(uid)) return _earnedByUid[uid];
     try {
       final start = slice.startMs;
       final day = localDayIndex(start);
       final climbPrs = prs.where((p) => p.label != 'Route').toList();
       final v = api.progressApplyEffort(
         input: EffortInput(
-          uid: _effortUid(slice),
+          uid: uid,
           demo: slice.demo,
           kind: _kindName(slice.kind.kind),
           completed: slice.completed,
@@ -712,6 +783,7 @@ class _RideDashboardState extends State<RideDashboard> {
         form: v.form,
       );
       api.publishEarned(sliceId: slice.id, payload: earned);
+      _earnedByUid[uid] = earned;
       return earned;
     } catch (e) {
       _toast('Progress not updated: $e', Icons.info_outline);
@@ -763,6 +835,8 @@ class _RideDashboardState extends State<RideDashboard> {
 
   /// Rebuild from saved TCX files (Demo exports are skipped in Rust).
   Future<String> _rebuildProgress() async {
+    // Opted out: never touch progress files (QA c7).
+    if (!_progressEnabled) return 'Progress is off — turn it on to rebuild';
     try {
       final rides = api.scanSavedRides();
       api.progressRebuild(
@@ -1600,9 +1674,14 @@ class _RideDashboardState extends State<RideDashboard> {
                         RepaintBoundary(
                           child: ValueListenableBuilder<RideStats>(
                             valueListenable: _rideN,
-                            builder: (context, r, _) => RideSummaryStrip(
+                            builder: (context, r, _) =>
+                                ValueListenableBuilder<bool>(
+                              valueListenable: _freeRideOpenN,
+                              builder: (context, freeOpen, _) => RideSummaryStrip(
                               key: const ValueKey('ride-totals'),
                               stats: r,
+                              // QA c7 P1-B: a free ride can be ended.
+                              onEndRide: freeOpen ? _endFreeRide : null,
                               // Disabled mid route / workout (G7).
                               onReset: _route.running || _workout.running
                                   ? null
@@ -1612,6 +1691,7 @@ class _RideDashboardState extends State<RideDashboard> {
                                       _refresh();
                                     },
                               onExport: _exportRide,
+                            ),
                             ),
                           ),
                         ),
@@ -2902,9 +2982,13 @@ class RideSummaryStrip extends StatelessWidget {
     required this.stats,
     required this.onReset,
     this.onExport,
+    this.onEndRide,
   });
 
   final RideStats stats;
+
+  /// Set while a free ride is open: "End ride" closes it + shows the summary.
+  final VoidCallback? onEndRide;
   /// Null while a route / workout runs (button disabled).
   final VoidCallback? onReset;
 
@@ -2988,9 +3072,16 @@ class RideSummaryStrip extends StatelessWidget {
               ),
             ),
           ),
+          if (onEndRide != null)
+            TextButton.icon(
+              key: const ValueKey('end-free-ride'),
+              onPressed: onEndRide,
+              style: TextButton.styleFrom(minimumSize: const Size(88, 44)),
+              icon: const Icon(Icons.flag_outlined, size: 16),
+              label: const Text('End ride'),
+            ),
           Tooltip(
-            message:
-                'Save this ride as a TCX file for Garmin Connect or Strava',
+            message: 'Save this ride as a TCX file for Garmin Connect',
             child: TextButton.icon(
               key: const ValueKey('ride-export'),
               onPressed: stats.elapsedS > 0 ? onExport : null,

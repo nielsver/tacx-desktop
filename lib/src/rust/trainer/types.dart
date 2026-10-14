@@ -104,7 +104,17 @@ class Climb {
 
 /// Strava-style climb category from score = length (m) × grade (%).
 /// `Climb` = 1 500–8 000 (uncategorised, still gets PRs).
-enum ClimbCat { climb, cat4, cat3, cat2, cat1, hc }
+enum ClimbCat {
+  climb,
+  cat4,
+  cat3,
+  cat2,
+  cat1,
+  hc,
+
+  /// Short steep wall (≥ 250 m, ≥ 8 %, ≥ 25 m gain), under 500 m.
+  wall,
+}
 
 class ConnectionSnapshot {
   final ConnectionState state;
@@ -652,12 +662,40 @@ class ResistanceRange {
 class RideEvent {
   final RideEventKind kind;
   final int sliceId;
+
+  /// Stable across restarts: "{start_ms}-{freeRide|route|workout}-{key}"
+  /// (same as the progress uid). Empty when the effort is unknown.
+  final String uid;
+  final EffortKind? effortKind;
+  final bool demo;
+  final EndReason? endReason;
+  final PlatformInt64 startMs;
+  final PlatformInt64 endMs;
   final EarnedPayload? earned;
 
-  const RideEvent({required this.kind, required this.sliceId, this.earned});
+  const RideEvent({
+    required this.kind,
+    required this.sliceId,
+    required this.uid,
+    this.effortKind,
+    required this.demo,
+    this.endReason,
+    required this.startMs,
+    required this.endMs,
+    this.earned,
+  });
 
   @override
-  int get hashCode => kind.hashCode ^ sliceId.hashCode ^ earned.hashCode;
+  int get hashCode =>
+      kind.hashCode ^
+      sliceId.hashCode ^
+      uid.hashCode ^
+      effortKind.hashCode ^
+      demo.hashCode ^
+      endReason.hashCode ^
+      startMs.hashCode ^
+      endMs.hashCode ^
+      earned.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -666,6 +704,12 @@ class RideEvent {
           runtimeType == other.runtimeType &&
           kind == other.kind &&
           sliceId == other.sliceId &&
+          uid == other.uid &&
+          effortKind == other.effortKind &&
+          demo == other.demo &&
+          endReason == other.endReason &&
+          startMs == other.startMs &&
+          endMs == other.endMs &&
           earned == other.earned;
 }
 

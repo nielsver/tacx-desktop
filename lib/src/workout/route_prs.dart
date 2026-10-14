@@ -7,7 +7,7 @@ import 'package:tacx_desktop/src/workout/route_ghost.dart';
 /// Must match `climbs::DETECTOR_VERSION` in Rust. Climb ids depend on the
 /// detector, so a stored file from another version is re-keyed (stale ids
 /// dropped) on the next write.
-const kClimbDetector = 1;
+const kClimbDetector = 2;
 
 /// One personal record.
 class ClimbPr {
@@ -127,7 +127,14 @@ class RoutePrStore {
     required bool isDemo,
     double? finishS,
   }) {
-    if (isDemo || track.length < 2) return const [];
+    if (isDemo) return const [];
+    // Non-finite samples would make "PR = NaN" (QA c7 P2-e).
+    track = [
+      for (final p in track)
+        if (p.d.isFinite && p.t.isFinite) p,
+    ];
+    if (track.length < 2) return const [];
+    final corrupt = _isCorrupt(routeKey);
     final prs = read(routeKey);
     final stamp = now().toUtc().toIso8601String();
     final out = <PrImprovement>[];
@@ -135,7 +142,7 @@ class RoutePrStore {
     prs.climbs.removeWhere((id, _) => !valid.contains(id));
     for (final c in climbs) {
       final t = climbTimeS(track, c.startM, c.endM);
-      if (t == null) continue;
+      if (t == null || !t.isFinite || t <= 0) continue;
       final prev = prs.climbs[c.id];
       if (prev == null || t < prev.bestS) {
         prs.climbs[c.id] = ClimbPr(
@@ -157,15 +164,38 @@ class RoutePrStore {
         );
       }
     }
-    if (finishS != null && finishS > 0) {
+    if (finishS != null && finishS.isFinite && finishS > 0) {
       final prev = prs.routeBestS;
       if (prev == null || finishS < prev) {
         prs.routeBestS = finishS;
         out.add(PrImprovement(label: 'Route', timeS: finishS, prevS: prev));
       }
     }
-    if (out.isNotEmpty) _write(routeKey, prs);
-    return out;
+    if (out.isEmpty) return out;
+    // A corrupt file may hold faster PRs: keep it aside (QA c7 P2-d).
+    if (corrupt) {
+      try {
+        file(routeKey).renameSync(
+          '${file(routeKey).path}.corrupt-${now().millisecondsSinceEpoch}',
+        );
+      } catch (_) {
+        return const [];
+      }
+    }
+    // Only claim PRs that were actually stored.
+    return _write(routeKey, prs) ? out : const [];
+  }
+
+  /// The file exists but isn't a readable v1 PR file.
+  bool _isCorrupt(String key) {
+    final f = file(key);
+    if (!f.existsSync()) return false;
+    try {
+      final j = jsonDecode(f.readAsStringSync());
+      return j is! Map || j['v'] != 1;
+    } catch (_) {
+      return true;
+    }
   }
 
   bool _write(String key, RoutePrs p) {

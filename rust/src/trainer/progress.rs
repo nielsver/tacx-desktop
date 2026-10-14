@@ -252,19 +252,59 @@ pub fn progress_path() -> PathBuf {
     crate::trainer::ride::default_export_dir().join("progress.json")
 }
 
-/// Load; a corrupt file is moved to `.bad` and an empty state returned
-/// (the caller can rebuild from TCX).
-pub fn load(path: &Path) -> ProgressState {
+/// Schema version this build reads and writes.
+pub const PROGRESS_VERSION: u32 = 1;
+
+/// Why a load gave no usable state.
+#[derive(Debug, PartialEq)]
+pub enum LoadIssue {
+    /// Written by a newer app: left untouched, read-only (QA c7 P2-h).
+    Newer(u32),
+    /// Unreadable: kept as `.bad-<unix s>` when `quarantine` was asked.
+    Corrupt,
+}
+
+/// Load without side effects. Missing → empty state.
+pub fn try_load(path: &Path) -> Result<ProgressState, LoadIssue> {
     let Ok(raw) = std::fs::read_to_string(path) else {
-        return ProgressState::default();
+        return Ok(ProgressState::default());
     };
-    match serde_json::from_str::<ProgressState>(&raw) {
-        Ok(s) if s.version == 1 => s,
-        _ => {
-            let _ = std::fs::rename(path, path.with_extension("json.bad"));
-            ProgressState::default()
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
+        if let Some(n) = v.get("version").and_then(|x| x.as_u64()) {
+            if n as u32 > PROGRESS_VERSION {
+                return Err(LoadIssue::Newer(n as u32));
+            }
         }
     }
+    match serde_json::from_str::<ProgressState>(&raw) {
+        Ok(s) if s.version == PROGRESS_VERSION => Ok(s),
+        _ => Err(LoadIssue::Corrupt),
+    }
+}
+
+/// Load for a write. A corrupt file is moved to `.bad-<unix s>` (older
+/// `.bad` files are never overwritten) and an empty state returned; a
+/// newer-version file is an error so it is never overwritten.
+pub fn load_for_write(path: &Path) -> Result<ProgressState, String> {
+    match try_load(path) {
+        Ok(s) => Ok(s),
+        Err(LoadIssue::Newer(v)) => Err(format!(
+            "progress.json is from a newer app version (v{v}); left untouched"
+        )),
+        Err(LoadIssue::Corrupt) => {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let _ = std::fs::rename(path, path.with_extension(format!("json.bad-{ts}")));
+            Ok(ProgressState::default())
+        }
+    }
+}
+
+/// Read-only load (views, opted-out reads): never renames anything.
+pub fn load(path: &Path) -> ProgressState {
+    try_load(path).unwrap_or_default()
 }
 
 pub fn save(path: &Path, st: &ProgressState) -> Result<(), String> {
@@ -435,19 +475,43 @@ mod tests {
     }
 
     #[test]
-    fn corrupt_file_moves_to_bad_and_save_is_atomic() {
+    fn corrupt_file_moves_to_bad_ts_and_save_is_atomic() {
         let dir = std::env::temp_dir().join(format!("tacx-progress-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("progress.json");
         std::fs::write(&p, "{not json").unwrap();
+        // Read-only load never renames.
         assert_eq!(load(&p), ProgressState::default());
-        assert!(dir.join("progress.json.bad").exists());
+        assert!(p.exists());
+        assert_eq!(load_for_write(&p).unwrap(), ProgressState::default());
+        let bad: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter(|f| f.file_name().to_string_lossy().starts_with("progress.json.bad-"))
+            .collect();
+        assert_eq!(bad.len(), 1);
         let mut s = ProgressState::default();
         apply(&mut s, &eff("1-free-", "2026-10-14", 100, 14, 540.0, 3600), 2);
         save(&p, &s).unwrap();
         assert_eq!(load(&p), s);
         assert!(!dir.join("progress.json.tmp").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn c7_newer_version_is_left_untouched() {
+        let dir = std::env::temp_dir().join(format!("tacx-progress-v2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("progress.json");
+        let body = r#"{"version":2,"xp":999,"future":true}"#;
+        std::fs::write(&p, body).unwrap();
+        assert_eq!(try_load(&p), Err(LoadIssue::Newer(2)));
+        assert!(load_for_write(&p).unwrap_err().contains("newer"));
+        assert_eq!(load(&p), ProgressState::default());
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), body);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "nothing renamed");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

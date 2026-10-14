@@ -416,6 +416,8 @@ pub enum ClimbCat {
     Cat2,
     Cat1,
     Hc,
+    /// Short steep wall (≥ 250 m, ≥ 8 %, ≥ 25 m gain), under 500 m.
+    Wall,
 }
 
 /// One detected climb on a route (detector v1).
@@ -536,14 +538,47 @@ pub struct EarnedPayload {
 pub struct RideEvent {
     pub kind: RideEventKind,
     pub slice_id: u32,
+    /// Stable across restarts: "{start_ms}-{freeRide|route|workout}-{key}"
+    /// (same as the progress uid). Empty when the effort is unknown.
+    pub uid: String,
+    pub effort_kind: Option<EffortKind>,
+    pub demo: bool,
+    pub end_reason: Option<EndReason>,
+    pub start_ms: i64,
+    pub end_ms: i64,
     pub earned: Option<EarnedPayload>,
 }
 
 impl RideEvent {
-    pub fn ride_ended(slice_id: u32) -> Self {
-        Self { kind: RideEventKind::RideEnded, slice_id, earned: None }
+    fn base(kind: RideEventKind, slice_id: u32, s: Option<&RideSlice>) -> Self {
+        Self {
+            kind,
+            slice_id,
+            uid: s.map(|s| s.uid()).unwrap_or_default(),
+            effort_kind: s.map(|s| s.kind.clone()),
+            demo: s.is_some_and(|s| s.demo),
+            end_reason: s.and_then(|s| s.end_reason),
+            start_ms: s.map_or(0, |s| s.start_ms),
+            end_ms: s.map_or(0, |s| s.end_ms),
+            earned: None,
+        }
     }
-    pub fn earned(slice_id: u32, e: EarnedPayload) -> Self {
-        Self { kind: RideEventKind::Earned, slice_id, earned: Some(e) }
+    pub fn ride_ended(s: &RideSlice) -> Self {
+        Self::base(RideEventKind::RideEnded, s.id, Some(s))
+    }
+    pub fn earned(slice_id: u32, s: Option<&RideSlice>, e: EarnedPayload) -> Self {
+        Self { earned: Some(e), ..Self::base(RideEventKind::Earned, slice_id, s) }
+    }
+}
+
+impl RideSlice {
+    /// "{start_ms}-{kind}-{key}", kind in Dart enum names (progress uid).
+    pub fn uid(&self) -> String {
+        let k = match self.kind.kind {
+            EffortType::FreeRide => "freeRide",
+            EffortType::Route => "route",
+            EffortType::Workout => "workout",
+        };
+        format!("{}-{}-{}", self.start_ms, k, self.kind.key)
     }
 }

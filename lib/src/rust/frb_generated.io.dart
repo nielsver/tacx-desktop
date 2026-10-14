@@ -207,6 +207,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EarnedPayload? dco_decode_opt_box_autoadd_earned_payload(dynamic raw);
 
   @protected
+  EffortKind? dco_decode_opt_box_autoadd_effort_kind(dynamic raw);
+
+  @protected
   EndReason? dco_decode_opt_box_autoadd_end_reason(dynamic raw);
 
   @protected
@@ -485,6 +488,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   EarnedPayload? sse_decode_opt_box_autoadd_earned_payload(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  EffortKind? sse_decode_opt_box_autoadd_effort_kind(
     SseDeserializer deserializer,
   );
 
@@ -855,6 +863,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_earned_payload(
     EarnedPayload? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_effort_kind(
+    EffortKind? self,
     SseSerializer serializer,
   );
 

@@ -109,4 +109,43 @@ void main() {
     expect(p.climbs, isEmpty);
     expect(p.routeBestS, 700);
   });
+
+  test('QA c7 P2-d: corrupt prs.json is kept as .corrupt-<ts>', () {
+    final store = RoutePrStore(tmp);
+    store.file('k').writeAsStringSync('{"v":1,"routeBestS":800,"cli');
+    final out = store.recordRide(
+      routeKey: 'k',
+      climbs: const [],
+      track: _ride(0.5),
+      isDemo: false,
+      finishS: 2000,
+    );
+    expect(out.single.label, 'Route');
+    final kept = tmp
+        .listSync()
+        .where((f) => f.path.contains('.prs.json.corrupt-'))
+        .toList();
+    expect(kept, hasLength(1));
+    expect(File(kept.single.path).readAsStringSync(), contains('800'));
+    expect(store.read('k').routeBestS, 2000);
+  });
+
+  test('QA c7 P2-e: NaN times never become PRs', () {
+    final store = RoutePrStore(tmp);
+    final track = [
+      for (final p in _ride(0.5))
+        (d: p.d, t: p.d > 1500 && p.d < 2500 ? double.nan : p.t),
+    ];
+    final out = store.recordRide(
+      routeKey: 'n',
+      climbs: [_climb('n:1000-3000', 1000, 3000)],
+      track: track,
+      isDemo: false,
+      finishS: double.nan,
+    );
+    for (final p in out) {
+      expect(p.timeS.isFinite, isTrue);
+    }
+    expect(store.read('n').routeBestS, isNull);
+  });
 }

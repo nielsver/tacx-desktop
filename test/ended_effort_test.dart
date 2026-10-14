@@ -9,10 +9,11 @@ RideSlice _s(
   String key, {
   EndReason? end,
   bool done = false,
+  bool demo = false,
 }) => RideSlice(
   id: id,
   kind: EffortKind(kind: t, key: key),
-  demo: false,
+  demo: demo,
   startMs: id * 1000,
   endMs: id * 1000 + 500,
   first: 0,
@@ -60,5 +61,36 @@ void main() {
     final arr = a.firstWhere((x) => x.startsWith('array:string:'));
     expect(arr, isNot(contains(',')));
     expect(arr, contains('a%2Cb'));
+  });
+
+  test('QA c7 P1-B: progress applies on every non-demo end, dialog or not', () {
+    final free = EffortType.freeRide, route = EffortType.route;
+    for (final r in [
+      EndReason.stopped,
+      EndReason.superseded,
+      EndReason.disconnectTimeout,
+    ]) {
+      expect(progressOnEnd(_s(1, free, 'free', end: r)), isTrue, reason: '$r');
+    }
+    expect(progressOnEnd(_s(1, free, 'free')), isFalse, reason: 'still open');
+    expect(
+      progressOnEnd(_s(1, free, 'free', end: EndReason.stopped, demo: true)),
+      isFalse,
+    );
+    expect(
+      progressOnEnd(_s(1, route, 'r', end: EndReason.disconnectTimeout)),
+      isFalse,
+      reason: 'may resume (P2-g)',
+    );
+    expect(
+      progressOnEnd(_s(1, route, 'r', end: EndReason.completed, done: true)),
+      isFalse,
+      reason: 'route path applies it with PR flags',
+    );
+    expect(progressOnEnd(_s(1, route, 'r', end: EndReason.stopped)), isTrue);
+    expect(
+      progressOnEnd(_s(1, EffortType.workout, 'w', end: EndReason.completed)),
+      isTrue,
+    );
   });
 }

@@ -2596,6 +2596,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  EffortKind? dco_decode_opt_box_autoadd_effort_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_effort_kind(raw);
+  }
+
+  @protected
   EndReason? dco_decode_opt_box_autoadd_end_reason(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_end_reason(raw);
@@ -2714,12 +2720,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RideEvent dco_decode_ride_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return RideEvent(
       kind: dco_decode_ride_event_kind(arr[0]),
       sliceId: dco_decode_u_32(arr[1]),
-      earned: dco_decode_opt_box_autoadd_earned_payload(arr[2]),
+      uid: dco_decode_String(arr[2]),
+      effortKind: dco_decode_opt_box_autoadd_effort_kind(arr[3]),
+      demo: dco_decode_bool(arr[4]),
+      endReason: dco_decode_opt_box_autoadd_end_reason(arr[5]),
+      startMs: dco_decode_i_64(arr[6]),
+      endMs: dco_decode_i_64(arr[7]),
+      earned: dco_decode_opt_box_autoadd_earned_payload(arr[8]),
     );
   }
 
@@ -3598,6 +3610,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  EffortKind? sse_decode_opt_box_autoadd_effort_kind(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_effort_kind(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   EndReason? sse_decode_opt_box_autoadd_end_reason(
     SseDeserializer deserializer,
   ) {
@@ -3770,8 +3795,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_kind = sse_decode_ride_event_kind(deserializer);
     var var_sliceId = sse_decode_u_32(deserializer);
+    var var_uid = sse_decode_String(deserializer);
+    var var_effortKind = sse_decode_opt_box_autoadd_effort_kind(deserializer);
+    var var_demo = sse_decode_bool(deserializer);
+    var var_endReason = sse_decode_opt_box_autoadd_end_reason(deserializer);
+    var var_startMs = sse_decode_i_64(deserializer);
+    var var_endMs = sse_decode_i_64(deserializer);
     var var_earned = sse_decode_opt_box_autoadd_earned_payload(deserializer);
-    return RideEvent(kind: var_kind, sliceId: var_sliceId, earned: var_earned);
+    return RideEvent(
+      kind: var_kind,
+      sliceId: var_sliceId,
+      uid: var_uid,
+      effortKind: var_effortKind,
+      demo: var_demo,
+      endReason: var_endReason,
+      startMs: var_startMs,
+      endMs: var_endMs,
+      earned: var_earned,
+    );
   }
 
   @protected
@@ -4609,6 +4650,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_effort_kind(
+    EffortKind? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_effort_kind(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_end_reason(
     EndReason? self,
     SseSerializer serializer,
@@ -4758,6 +4812,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_ride_event_kind(self.kind, serializer);
     sse_encode_u_32(self.sliceId, serializer);
+    sse_encode_String(self.uid, serializer);
+    sse_encode_opt_box_autoadd_effort_kind(self.effortKind, serializer);
+    sse_encode_bool(self.demo, serializer);
+    sse_encode_opt_box_autoadd_end_reason(self.endReason, serializer);
+    sse_encode_i_64(self.startMs, serializer);
+    sse_encode_i_64(self.endMs, serializer);
     sse_encode_opt_box_autoadd_earned_payload(self.earned, serializer);
   }
 

@@ -4,15 +4,15 @@
 //!
 //! Pipeline: zero-elevation repair → 10 m resample → 50 m median → ±50 m
 //! moving average → rising runs with a 3 m deadband → merge short dips →
-//! trim ends at half the peak 100 m grade (≥ 3 %), snap to foot/summit →
-//! accept len ≥ 500 m, grade ≥ 3 %, or a Wall (≥ 250 m, ≥ 8 %, ≥ 25 m),
+//! trim ends flatter than 2 % (walls: half the peak, ≥ 3 %), snap to the
+//! foot/summit → accept len ≥ 500 m, grade ≥ 3 %, or a Wall (≥ 250 m, ≥ 8 %, ≥ 25 m),
 //! score ≥ 1 500 (Garmin ClimbPro "All"). Score = len_m × grade_% = 100 × gain.
 
 use crate::trainer::gpx::elev_at;
 use crate::trainer::types::{Climb, ClimbCat, ElevSample};
 
 /// Bumped when any parameter changes: stored as `detector` in `.prs.json`.
-pub const DETECTOR_VERSION: u32 = 2;
+pub const DETECTOR_VERSION: u32 = 3;
 pub const STEP_M: f64 = 10.0;
 pub const DEADBAND_M: f64 = 3.0;
 /// Median window, samples (50 m).
@@ -22,7 +22,14 @@ const SMOOTH_HALF: usize = 5;
 pub const MIN_LEN_M: f64 = 500.0;
 pub const MIN_GRADE_PCT: f64 = 3.0;
 pub const MIN_SCORE: f64 = 1500.0;
-pub const TRIM_GRADE_PCT: f64 = 3.0;
+/// Normal climbs: trim only what is flatter than this, so a long climb
+/// with one steep pitch keeps its easy lower / upper parts (QA c8 P2-a).
+pub const TRIM_GRADE_PCT: f64 = 2.0;
+/// Walls: trim at half the peak grade, at least this.
+pub const WALL_TRIM_MIN_PCT: f64 = 3.0;
+/// Normal trim: first over 300 m (GPS jitter on a flat top can't pass
+/// 2 %), then refined inward over 100 m.
+const TRIM_WIN_NORMAL: usize = 30;
 /// Short steep "walls" (QA c7 P2-b, e.g. Paterberg 360 m @ 12.9 %).
 pub const WALL_MIN_LEN_M: f64 = 250.0;
 pub const WALL_MIN_GRADE_PCT: f64 = 8.0;
@@ -177,21 +184,23 @@ fn grade_pct(e: &[f64], i: usize, j: usize) -> f64 {
 
 /// Grade over the 100 m centred on `i` (shrunk at the profile ends).
 fn grade_at(e: &[f64], i: usize) -> f64 {
-    let h = WIN_100 / 2;
+    grade_win(e, i, WIN_100)
+}
+
+/// Grade over `win` samples centred on `i`.
+fn grade_win(e: &[f64], i: usize, win: usize) -> f64 {
+    let h = win / 2;
     let (a, b) = (i.saturating_sub(h), (i + h).min(e.len() - 1));
     if b > a { grade_pct(e, a, b) } else { 0.0 }
 }
 
-/// Drop flat ends. Smoothing spreads a climb's corners symmetrically, so
-/// trimming at half the run's grade (never under 3 %) lands on the true
-/// corner instead of widening the climb (QA c7 P2-c).
-fn trim_flat((mut i0, mut i1): (usize, usize), e: &[f64]) -> (usize, usize) {
-    let peak = (i0..=i1).map(|i| grade_at(e, i)).fold(0.0, f64::max);
-    let thr = (0.5 * peak).max(TRIM_GRADE_PCT);
-    while i0 < i1 && grade_at(e, i0) < thr {
+/// Drop ends flatter than `thr` (centred 100 m grade on the smoothed
+/// profile); [snap] then puts the bounds back on the true foot / summit.
+fn trim_at((mut i0, mut i1): (usize, usize), e: &[f64], thr: f64, win: usize) -> (usize, usize) {
+    while i0 < i1 && grade_win(e, i0, win) < thr {
         i0 += 1;
     }
-    while i1 > i0 && grade_at(e, i1) < thr {
+    while i1 > i0 && grade_win(e, i1, win) < thr {
         i1 -= 1;
     }
     (i0, i1)
@@ -215,6 +224,52 @@ fn round10(m: f64) -> i64 {
     ((m / 10.0).round() * 10.0) as i64
 }
 
+/// Accept + describe one trimmed run (`wall`: the Wall test).
+fn measure(
+    (i0, i1): (usize, usize),
+    raw: &[f64],
+    _e: &[f64],
+    e2: &[f64],
+    route_key: &str,
+    wall: bool,
+) -> Option<Climb> {
+    if i1 <= i0 {
+        return None;
+    }
+    let len = (i1 - i0) as f64 * STEP_M;
+    // Bounds from the smoothed profile, numbers from the spike-free one.
+    let gain = raw[i1] - raw[i0];
+    let g = gain / len * 100.0;
+    let score = len * g;
+    let ok = if wall {
+        (WALL_MIN_LEN_M..MIN_LEN_M).contains(&len)
+            && g >= WALL_MIN_GRADE_PCT
+            && gain >= WALL_MIN_GAIN_M
+    } else {
+        len >= MIN_LEN_M && g >= MIN_GRADE_PCT && score >= MIN_SCORE
+    };
+    if !ok {
+        return None;
+    }
+    // Max 100 m grade on the twice-smoothed profile: GPS jitter on the
+    // median-only one inflated it (QA c7 P2-c).
+    let max_g = (i0..=i1.saturating_sub(WIN_100))
+        .filter(|&i| i + WIN_100 <= i1)
+        .map(|i| grade_pct(e2, i, i + WIN_100))
+        .fold(g, f64::max);
+    let (start_m, end_m) = (i0 as f64 * STEP_M, i1 as f64 * STEP_M);
+    Some(Climb {
+        id: format!("{route_key}:{}-{}", round10(start_m), round10(end_m)),
+        start_m,
+        end_m,
+        gain_m: gain,
+        avg_grade: g,
+        max_grade_100m: max_g,
+        score,
+        category: if wall { ClimbCat::Wall } else { category(score) },
+    })
+}
+
 /// Detect climbs on `samples` (at most [`MAX_CLIMBS`], ordered by start).
 pub fn detect_climbs(samples: &[ElevSample], route_key: &str) -> Vec<Climb> {
     if samples.len() < 2 {
@@ -229,40 +284,19 @@ pub fn detect_climbs(samples: &[ElevSample], route_key: &str) -> Vec<Climb> {
     while merge_pass(&mut runs, &e) {}
     let mut out: Vec<Climb> = runs
         .into_iter()
-        .map(|r| snap(trim_flat(r, &e), &raw))
-        .filter(|(i0, i1)| i1 > i0)
-        .filter_map(|(i0, i1)| {
-            let len = (i1 - i0) as f64 * STEP_M;
-            // Bounds from the smoothed profile, numbers from the spike-free
-            // one (smoothing shaves a few metres off every summit).
-            let gain = raw[i1] - raw[i0];
-            let g = gain / len * 100.0;
-            let score = len * g;
-            let normal = len >= MIN_LEN_M && g >= MIN_GRADE_PCT && score >= MIN_SCORE;
-            let wall = !normal
-                && len >= WALL_MIN_LEN_M
-                && g >= WALL_MIN_GRADE_PCT
-                && gain >= WALL_MIN_GAIN_M;
-            if !(normal || wall) {
-                return None;
+        .filter_map(|r| {
+            // Normal pass first; only a run that isn't a normal climb is
+            // re-trimmed tightly (half its peak) and tested as a Wall.
+            let n = snap(
+                trim_at(trim_at(r, &e, TRIM_GRADE_PCT, TRIM_WIN_NORMAL), &e, TRIM_GRADE_PCT, WIN_100),
+                &raw,
+            );
+            if let Some(c) = measure(n, &raw, &e, &e2, route_key, false) {
+                return Some(c);
             }
-            // Max 100 m grade on the smoothed profile: GPS jitter on the
-            // median-only one inflated it (QA c7 P2-c).
-            let max_g = (i0..=i1.saturating_sub(WIN_100))
-                .filter(|&i| i + WIN_100 <= i1)
-                .map(|i| grade_pct(&e2, i, i + WIN_100))
-                .fold(g, f64::max);
-            let (start_m, end_m) = (i0 as f64 * STEP_M, i1 as f64 * STEP_M);
-            Some(Climb {
-                id: format!("{route_key}:{}-{}", round10(start_m), round10(end_m)),
-                start_m,
-                end_m,
-                gain_m: gain,
-                avg_grade: g,
-                max_grade_100m: max_g,
-                score,
-                category: if wall { ClimbCat::Wall } else { category(score) },
-            })
+            let peak = (r.0..=r.1).map(|i| grade_at(&e, i)).fold(0.0, f64::max);
+            let w = snap(trim_at(r, &e, (0.5 * peak).max(WALL_TRIM_MIN_PCT), WIN_100), &raw);
+            measure(w, &raw, &e, &e2, route_key, true)
         })
         .collect();
     out.sort_by(|a, b| b.score.total_cmp(&a.score));
@@ -328,6 +362,25 @@ mod tests {
             x ^= x >> 7;
             x ^= x << 17;
             s.elev_m += ((x % 10_001) as f64 / 10_000.0 * 2.0 - 1.0) * amp;
+        }
+    }
+
+    #[test]
+    fn c8_long_climbs_with_a_steep_pitch_keep_their_length() {
+        // Oude Kwaremont-like: 2.2 km, 2.5 → 4 → 11 → 5 → 3.5 %, +108 m.
+        let kw = [(300.0, 2.5), (500.0, 4.0), (300.0, 11.0), (600.0, 5.0), (500.0, 3.5)];
+        // Muur-like: 980 m, 6 → 9 → 19 → 8 %, +94.2 m.
+        let mu = [(200.0, 6.0), (300.0, 9.0), (180.0, 19.0), (300.0, 8.0)];
+        for (segs, len, gain) in [(&kw[..], 2200.0, 108.0), (&mu[..], 980.0, 94.2)] {
+            let mut p = vec![(1000.0, 0.0)];
+            p.extend_from_slice(segs);
+            p.push((1000.0, 0.0));
+            let c = detect_climbs(&profile(&p, 20.0), "k");
+            assert_eq!(c.len(), 1, "{c:?}");
+            let l = c[0].end_m - c[0].start_m;
+            assert!(near(l, len, 60.0), "len {l} vs {len}: {c:?}");
+            assert!(near(c[0].gain_m, gain, 3.0), "gain {}: {c:?}", c[0].gain_m);
+            assert_ne!(c[0].category, ClimbCat::Wall);
         }
     }
 

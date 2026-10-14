@@ -7,7 +7,7 @@ import 'package:tacx_desktop/src/workout/route_ghost.dart';
 /// Must match `climbs::DETECTOR_VERSION` in Rust. Climb ids depend on the
 /// detector, so a stored file from another version is re-keyed (stale ids
 /// dropped) on the next write.
-const kClimbDetector = 2;
+const kClimbDetector = 3;
 
 /// One personal record.
 class ClimbPr {

@@ -96,7 +96,20 @@ class RouteGeo {
   void fit(Size s) {
     if (s == _size || !isDrawable) return;
     _size = s;
-    final raw = [for (final e in samples) Offset(e.lon * _cosLat, -e.lat)];
+    // Unwrap longitudes so a route across ±180° stays continuous (QA C3.4:
+    // it drew as two clusters with a 360° jump).
+    final raw = <Offset>[];
+    double? prevLon;
+    var shift = 0.0;
+    for (final e in samples) {
+      if (prevLon != null) {
+        final d = e.lon - prevLon;
+        if (d > 180) shift -= 360;
+        if (d < -180) shift += 360;
+      }
+      prevLon = e.lon;
+      raw.add(Offset((e.lon + shift) * _cosLat, -e.lat));
+    }
     var r = Rect.fromPoints(raw.first, raw.first);
     for (final o in raw) {
       r = r.expandToInclude(Rect.fromPoints(o, o));

@@ -300,4 +300,33 @@ void main() {
     expect(reported.last, isNull);
     expect(tester.takeException(), isNull);
   });
+
+  test('antimeridian: a route across 180° stays one continuous line', () {
+    // ~2.1 km eastward from 179.99° to -179.99°.
+    final pts = <ElevSample>[
+      for (var i = 0; i <= 20; i++)
+        () {
+          var lon = 179.99 + i * 0.001;
+          if (lon > 180) lon -= 360;
+          return ElevSample(
+            distanceM: i * 106.0,
+            elevM: 0,
+            gradePct: 0,
+            lat: -16.5,
+            lon: lon,
+          );
+        }(),
+    ];
+    final g = RouteGeo(pts)..fit(const Size(400, 200));
+    for (var i = 1; i < g.points.length; i++) {
+      expect(
+        (g.points[i] - g.points[i - 1]).distance,
+        lessThan(40),
+        reason: 'jump at $i',
+      );
+    }
+    expect(g.points.last.dx, greaterThan(g.points.first.dx)); // still eastward
+    final mid = g.at(pts.last.distanceM / 2);
+    expect(mid.dx, closeTo(200, 2));
+  });
 }

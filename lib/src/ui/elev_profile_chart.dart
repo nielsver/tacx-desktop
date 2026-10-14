@@ -160,18 +160,81 @@ class ElevPainter extends CustomPainter {
   @visibleForTesting
   static int debugPaints = 0;
 
+  /// Points in the last built path (for tests: ~2 per pixel column).
+  @visibleForTesting
+  static int debugLastPathPoints = 0;
+
+  /// Paths reused from the per-route cache.
+  @visibleForTesting
+  static int debugCacheHits = 0;
+
+  static final Expando<_ElevPathCache> _cache = Expando('elev-path');
+
+  /// Profile line decimated to min/max per pixel column (QA C3.4: a 125k
+  /// sample route cost ~10 ms per paint). Cached per route + size.
+  static Path buildPath(List<ElevSample> samples, Size size) {
+    final (minE, spanE) = profileElevRange(samples);
+    final maxD = math.max(samples.last.distanceM, 1.0);
+    double y(double e) => size.height * (1 - ((e - minE) / spanE));
+    final cols = math.max(1, size.width.ceil());
+    final path = Path();
+    var n = 0;
+    void add(double x, double e) {
+      n == 0 ? path.moveTo(x, y(e)) : path.lineTo(x, y(e));
+      n++;
+    }
+
+    if (samples.length <= cols * 2) {
+      for (final s in samples) {
+        add(s.distanceM / maxD * size.width, s.elevM);
+      }
+    } else {
+      var i = 0;
+      for (var c = 0; c < cols && i < samples.length; c++) {
+        final edge = (c + 1) / cols * maxD;
+        var lo = samples[i], hi = samples[i];
+        var loI = i, hiI = i;
+        while (i < samples.length &&
+            (samples[i].distanceM <= edge || c == cols - 1)) {
+          final s = samples[i];
+          if (s.elevM < lo.elevM) {
+            lo = s;
+            loI = i;
+          }
+          if (s.elevM > hi.elevM) {
+            hi = s;
+            hiI = i;
+          }
+          i++;
+        }
+        final x = (c + 0.5) / cols * size.width;
+        if (c == 0) add(0, samples.first.elevM);
+        if (loI <= hiI) {
+          add(x, lo.elevM);
+          if (hiI != loI) add(x, hi.elevM);
+        } else {
+          add(x, hi.elevM);
+          add(x, lo.elevM);
+        }
+      }
+      add(size.width, samples.last.elevM);
+    }
+    debugLastPathPoints = n;
+    return path;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     debugPaints++;
     if (samples.length < 2 || size.width <= 0 || size.height <= 0) return;
-    final (minE, spanE) = profileElevRange(samples);
-    final maxD = math.max(samples.last.distanceM, 1.0);
-
-    final path = Path();
-    for (var i = 0; i < samples.length; i++) {
-      final x = (samples[i].distanceM / maxD) * size.width;
-      final y = size.height * (1 - ((samples[i].elevM - minE) / spanE));
-      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
+    final cached = _cache[samples];
+    final Path path;
+    if (cached != null && cached.size == size) {
+      debugCacheHits++;
+      path = cached.path;
+    } else {
+      path = buildPath(samples, size);
+      _cache[samples] = _ElevPathCache(size, path);
     }
     final fill = Path.from(path)
       ..lineTo(size.width, size.height)
@@ -369,4 +432,10 @@ class GhostDeltaChip extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ElevPathCache {
+  _ElevPathCache(this.size, this.path);
+  final Size size;
+  final Path path;
 }

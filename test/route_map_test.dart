@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'dart:math' as math;
+import 'dart:ui' show PictureRecorder;
 
 import 'package:flutter/gestures.dart';
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
@@ -329,4 +330,41 @@ void main() {
     final mid = g.at(pts.last.distanceM / 2);
     expect(mid.dx, closeTo(200, 2));
   });
+
+  test(
+    'ElevPainter decimates a 125k-sample route to ~pixel width and caches it',
+    () {
+      final big = <ElevSample>[
+        for (var i = 0; i < 125000; i++)
+          ElevSample(
+            distanceM: i * 2.0,
+            elevM: 100 + 50 * math.sin(i / 3000) + (i % 7 == 0 ? 3 : 0),
+            gradePct: 0,
+            lat: 50,
+            lon: 4,
+          ),
+      ];
+      const size = Size(400, 60);
+      final sw = Stopwatch()..start();
+      ElevPainter.buildPath(big, size);
+      final buildMs = sw.elapsedMilliseconds;
+      expect(ElevPainter.debugLastPathPoints, lessThanOrEqualTo(2 * 400 + 2));
+      expect(ElevPainter.debugLastPathPoints, greaterThan(400));
+      expect(buildMs, lessThan(200));
+      final recorder = PictureRecorder();
+      final canvas = Canvas(recorder);
+      final p = ElevPainter(big);
+      final hits0 = ElevPainter.debugCacheHits;
+      p.paint(canvas, size);
+      p.paint(canvas, size);
+      ElevPainter(big).paint(canvas, size); // new painter, same route
+      expect(ElevPainter.debugCacheHits - hits0, 2);
+      p.paint(canvas, const Size(300, 60)); // resize rebuilds
+      expect(ElevPainter.debugCacheHits - hits0, 2);
+      recorder.endRecording();
+      // Short routes keep every sample.
+      ElevPainter.buildPath(_route(), size);
+      expect(ElevPainter.debugLastPathPoints, _route().length);
+    },
+  );
 }

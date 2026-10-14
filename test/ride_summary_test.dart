@@ -139,7 +139,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(const TacxDesktopApp(skipOnboarding: true));
     await tester.pump(const Duration(milliseconds: 100));
-    final ride = find.byKey(const ValueKey('ride-summary'));
+    final ride = find.byKey(const ValueKey('ride-totals'));
     expect(ride, findsOneWidget);
     final metrics = tester.getRect(find.byKey(const ValueKey('metric-power')));
     final controls = tester.getRect(find.byKey(const ValueKey('controls-row')));

@@ -130,7 +130,7 @@ class RouteGeo {
   /// Requires [isDrawable].
   ({int i, double t}) locate(double m) {
     final s = samples;
-    if (!(m > 0)) return (i: 0, t: 0.0);
+    if (s.length < 2 || !(m > 0)) return (i: 0, t: 0.0);
     if (m >= s.last.distanceM) return (i: s.length - 2, t: 1.0);
     var lo = 0, hi = s.length - 1;
     while (hi - lo > 1) {
@@ -149,8 +149,9 @@ class RouteGeo {
   ({double lat, double lon, double elev, double grade}) distanceToPoint(
     double m,
   ) {
+    if (samples.isEmpty) return (lat: 0.0, lon: 0.0, elev: 0.0, grade: 0.0);
     final (:i, :t) = locate(m);
-    final a = samples[i], b = samples[i + 1];
+    final a = samples[i], b = samples[math.min(i + 1, samples.length - 1)];
     double l(double x, double y) => x + (y - x) * t;
     return (
       lat: l(a.lat, b.lat),

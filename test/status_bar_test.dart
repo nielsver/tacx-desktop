@@ -10,6 +10,7 @@ ConnectionSnapshot _snap({
   ControlMode mode = ControlMode.erg,
   String name = 'KICKR CORE 1A2B',
   bool demo = false,
+  bool gaveUp = false,
 }) => ConnectionSnapshot(
   state: state,
   detail: '',
@@ -21,7 +22,7 @@ ConnectionSnapshot _snap({
   reconnectAttempt: 0,
   reconnectMaxAttempts: 0,
   reconnectInS: 0,
-  reconnectGaveUp: false,
+  reconnectGaveUp: gaveUp,
 );
 
 final _link = ValueNotifier(
@@ -447,5 +448,14 @@ void main() {
       ride.dispose();
       m.dispose();
     });
+  });
+
+  test('give-up (state Error) reads "Link lost · press Reconnect" (QA c4)', () {
+    expect(
+      RideStatusBar.trainerLabel(
+        _snap(state: ConnectionState.error, gaveUp: true),
+      ),
+      'Link lost · press Reconnect',
+    );
   });
 }

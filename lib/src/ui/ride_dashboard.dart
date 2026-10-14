@@ -800,14 +800,28 @@ class _RideDashboardState extends State<RideDashboard> {
   );
 
   /// Writes the ride to `~/Documents/Tacx Desktop/tacx-ride-<UTC>.tcx`.
+  /// Effort id → saved path: a second tap never writes a second file.
+  final Map<int, String> _savedTcx = {};
+  bool _savingTcx = false;
+
   Future<void> _exportRide({int? effortId}) async {
+    if (_savingTcx) return; // double tap while writing
+    final done = effortId == null ? null : _savedTcx[effortId];
+    if (done != null) {
+      _toast('Already saved: $done', Icons.check);
+      return;
+    }
+    _savingTcx = true;
     try {
       final path = effortId == null
           ? await api.exportRideTcx()
           : await api.exportEffortTcx(id: effortId);
+      if (effortId != null) _savedTcx[effortId] = path;
       if (mounted) _toast('Ride saved: $path', Icons.save_alt);
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
+    } finally {
+      _savingTcx = false;
     }
   }
 
@@ -1307,7 +1321,7 @@ class _RideDashboardState extends State<RideDashboard> {
                           child: ValueListenableBuilder<RideStats>(
                             valueListenable: _rideN,
                             builder: (context, r, _) => RideSummaryStrip(
-                              key: const ValueKey('ride-summary'),
+                              key: const ValueKey('ride-totals'),
                               stats: r,
                               // Disabled mid route / workout (G7).
                               onReset: _route.running || _workout.running

@@ -367,4 +367,13 @@ void main() {
       expect(ElevPainter.debugLastPathPoints, _route().length);
     },
   );
+
+  test('1-sample route: locate / distanceToPoint never throw (QA c4)', () {
+    final g = RouteGeo(const [
+      ElevSample(distanceM: 0, elevM: 5, gradePct: 0, lat: 50, lon: 4),
+    ]);
+    expect(g.locate(10), (i: 0, t: 0.0));
+    expect(g.distanceToPoint(10).elev, 5);
+    expect(RouteGeo(const []).distanceToPoint(3).lat, 0);
+  });
 }

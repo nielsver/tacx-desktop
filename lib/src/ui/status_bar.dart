@@ -47,6 +47,8 @@ class RideStatusBar extends StatelessWidget {
   /// "KICKR CORE 1A2B · FTMS", "Demo trainer", "Reconnecting…", "No trainer".
   static String trainerLabel(ConnectionSnapshot s) {
     if (s.isDemo) return 'Demo trainer';
+    // Give-up is reported as state Error (reconnect.rs): say what to do.
+    if (s.reconnectGaveUp) return 'Link lost · press Reconnect';
     final name = s.deviceName.trim();
     switch (s.state) {
       case ConnectionState.disconnected:

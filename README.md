@@ -28,6 +28,7 @@ Not a Connect IQ / watch app. Not private Tacx Road Feel. Not ANT+ radio (FE-C h
 | Fitness Machine Status | — | Subscribe `0x2ADA`; stop/pause banner; control-lost → Error |
 | Heart rate (relayed) | Simulated strap | FTMS Indoor Bike Data HR field (flag bit 9) or FE-C page 16 byte 6 — shown as a card when present, averaged in ride totals, written to TCX (`HeartRateBpm`) |
 | Heart-rate strap (BLE) | Real BLE only | Separate chest strap over the standard Heart Rate Service (0x180D / 0x2A37: Garmin HRM-Dual/Pro, Polar H9/H10, Wahoo TICKR…) — **Find HR strap → Connect strap** in the bar under the ride totals; runs beside the trainer link, overrides trainer-relayed HR while fresh (< 5 s), so the card, ride avg/max and TCX use the strap |
+| Guided FTP challenge | Demo-labelled simulated result | Timed 10-minute warm-up + 20-minute free effort; pauses and trainer dropouts preserve timing, uses fresh trainer power for a 95% FTP estimate, and asks before saving the result to training zones |
 | Ride totals | Yes | 1 Hz sampler while connected: ride time, avg/max power, avg cadence, kJ, distance; reconnect gaps paused; Reset |
 | Ride export (TCX) | Yes | **Save TCX** writes `~/Documents/Tacx Desktop/tacx-ride-<UTC>.tcx` (1 s trackpoints: power, cadence, speed, distance, heart rate when relayed; validated against Garmin's TCX v2 + ActivityExtension v2 XSDs) — upload to Garmin Connect, Strava, intervals.icu |
 | DEMO badge | Always when demo on | — |

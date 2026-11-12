@@ -8,10 +8,12 @@ import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
 import 'package:flutter/services.dart';
+import 'package:tacx_desktop/src/challenge/ftp_challenge.dart';
 import 'package:tacx_desktop/src/ride_prefs.dart';
 import 'package:tacx_desktop/src/rust/trainer/ftp.dart';
 import 'package:tacx_desktop/src/ui/focus_ride_view.dart';
 import 'package:tacx_desktop/src/ui/ftp_accept_dialog.dart';
+import 'package:tacx_desktop/src/ui/ftp_challenge_screen.dart';
 import 'package:tacx_desktop/src/ui/hr_strap_bar.dart';
 import 'package:tacx_desktop/src/ui/live_trend_chart.dart';
 import 'package:tacx_desktop/src/ui/workout_panel.dart';
@@ -118,6 +120,7 @@ class RideDashboard extends StatefulWidget {
 }
 
 class _RideDashboardState extends State<RideDashboard> {
+  final _ftpChallenge = FtpChallenge();
   Timer? _poll;
 
   /// Shared by the compact-mode Scrollbar and scroll view so switching
@@ -1014,6 +1017,41 @@ class _RideDashboardState extends State<RideDashboard> {
     _toast('FTP set to ${est.watts} W', Icons.check);
   }
 
+  Future<void> _openFtpChallenge() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => FtpChallengeScreen(
+          challenge: _ftpChallenge,
+          onAcceptFtp: _acceptChallengeFtp,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<bool> _acceptChallengeFtp(int ftpW) async {
+    final accepted = await confirmNewFtp(
+      context,
+      newW: ftpW,
+      oldW: _ftp,
+      method: 'guided 20-minute challenge',
+    );
+    if (!accepted || !mounted) return false;
+    final watts = ftpW.clamp(50, 600);
+    _setPref(() => _ftp = watts);
+    try {
+      api.recordAcceptedFtp(
+        watts: watts,
+        method: FtpMethod.twentyMin.name,
+        source: 'guided-ftp-challenge',
+      );
+    } catch (_) {
+      // FTP settings are already persisted; this history log is best-effort.
+    }
+    _toast('FTP set to $watts W', Icons.check);
+    return true;
+  }
+
   /// "Reset best" for the shown route.
   void _resetBest() {
     final key = _routeKey;
@@ -1529,6 +1567,7 @@ class _RideDashboardState extends State<RideDashboard> {
     final theme = Theme.of(context);
     final simSupported = _snap.supportsSimulation || _snap.isDemo;
     final activeMode = _snap.mode;
+    final ftpChallengeResult = _ftpChallenge.snapshot.estimatedFtpW;
 
     final intervalRunning =
         _interval.running || _workout.running || _route.running;
@@ -1831,7 +1870,20 @@ class _RideDashboardState extends State<RideDashboard> {
                           onConnect: _connectStrap,
                           onDisconnect: _disconnectStrap,
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: FilledButton.tonalIcon(
+                            onPressed: _openFtpChallenge,
+                            icon: const Icon(Icons.bolt),
+                            label: Text(
+                              ftpChallengeResult != null
+                                  ? 'Review FTP challenge · $ftpChallengeResult W'
+                                  : 'FTP challenge',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
                         _FlexOrFixed(
                           key: const ValueKey('controls-row'),
                           fixed: compact,

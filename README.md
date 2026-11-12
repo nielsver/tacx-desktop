@@ -423,6 +423,38 @@ flutter analyze
 flutter test
 ```
 
+## Contributing
+
+Add a change on a **branch**, then open a pull request into `main`. Do not commit or push on `main`.
+
+1. Clone and update `main`:
+
+   ```bash
+   git clone https://github.com/nielsver/tacx-desktop.git
+   cd tacx-desktop
+   git checkout main
+   git pull
+   ```
+
+2. Create one branch for that change. Name it after the work, for example `feat/route-map` or `fix/reconnect-banner`:
+
+   ```bash
+   git checkout -b feat/short-name
+   ```
+
+3. Commit only on that branch. Setup and checks are under [Install (developers)](#install-developers) and [Tests](#tests).
+
+4. Push the branch and open a pull request into `main`:
+
+   ```bash
+   git push -u origin feat/short-name
+   gh pr create --base main
+   ```
+
+Without write access, fork the repo and open the pull request from a branch on your fork. The same rule applies there: the work lives on a branch, not on `main`.
+
+One change per branch. CI on the pull request runs `cargo test`, `flutter analyze`, and `flutter test`.
+
 ## License
 
 MIT

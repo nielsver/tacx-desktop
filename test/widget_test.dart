@@ -94,8 +94,11 @@ void main() {
     });
     await tester.pump(const Duration(milliseconds: 300));
 
+    final preset = find.byKey(const ValueKey('erg-preset-200'));
+    await tester.ensureVisible(preset);
+    await tester.pump();
     await tester.runAsync(() async {
-      await tester.tap(find.byKey(const ValueKey('erg-preset-200')));
+      await tester.tap(preset);
       await Future<void>.delayed(const Duration(milliseconds: 300));
     });
     await tester.pump(const Duration(milliseconds: 300));

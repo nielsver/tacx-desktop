@@ -12,9 +12,17 @@ void main() {
     await RustLib.init();
   });
 
+  /// The default 800×600 surface clips the challenge column, so buttons
+  /// below the clock are never built.
+  Future<void> _tall(WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 2400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+  }
+
   testWidgets('challenge is available without a heart-rate sensor', (
     tester,
   ) async {
+    await _tall(tester);
     api.setDemoMode(enabled: true);
     await tester.runAsync(api.connectTrainer);
     await tester.runAsync(api.disconnectHeartRateStrap);
@@ -34,6 +42,7 @@ void main() {
   testWidgets('paused challenge can reconnect after trainer disconnects', (
     tester,
   ) async {
+    await _tall(tester);
     api.setDemoMode(enabled: true);
     await tester.runAsync(api.connectTrainer);
     await tester.pumpWidget(
@@ -64,6 +73,7 @@ void main() {
   });
 
   testWidgets('ending early does not show an FTP result', (tester) async {
+    await _tall(tester);
     api.setDemoMode(enabled: true);
     await tester.runAsync(api.connectTrainer);
     await tester.pumpWidget(
@@ -89,6 +99,7 @@ void main() {
   testWidgets('trainer loss interrupts the challenge until explicit resume', (
     tester,
   ) async {
+    await _tall(tester);
     api.setDemoMode(enabled: true);
     await tester.runAsync(api.connectTrainer);
     await tester.pumpWidget(

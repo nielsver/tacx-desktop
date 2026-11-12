@@ -323,7 +323,7 @@ class _FtpChallengeScreenState extends State<FtpChallengeScreen> {
                       ),
                     ],
                   ),
-                  if (!hasFreshHeartRate && !complete) ...[
+                  if (!strapConnected && !complete) ...[
                     const SizedBox(height: 10),
                     Text(
                       'Heart rate is optional${_heartRate.detail.isEmpty ? '' : ' · ${_heartRate.detail}'}',

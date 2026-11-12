@@ -129,6 +129,9 @@ void main() {
       effortDuration: const Duration(seconds: 1),
     );
     c.start(t0);
+    // Power is applied on the following tick, so a one-second effort
+    // needs a sample before the tick that completes it.
+    c.tick(t0.add(const Duration(milliseconds: 500)), powerW: 200);
     c.tick(t0.add(const Duration(seconds: 1)), powerW: 200);
     expect(c.snapshot.phase, FtpChallengePhase.completed);
     expect(c.snapshot.estimatedFtpW, 190);

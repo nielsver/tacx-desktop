@@ -131,6 +131,12 @@ pub fn get_metrics() -> TrainerMetrics {
     crate::trainer::controller::try_metrics()
 }
 
+/// Steady-state speed for the virtual world. Does not change trainer control or recorded wheel speed.
+#[flutter_rust_bridge::frb(sync)]
+pub fn power_to_speed_mps(power_w: f64, grade_pct: f64, mass_kg: f64) -> f64 {
+    crate::trainer::physics::power_to_speed_mps(power_w, grade_pct, mass_kg)
+}
+
 #[flutter_rust_bridge::frb(sync)]
 pub fn get_connection_snapshot() -> ConnectionSnapshot {
     crate::trainer::controller::try_snapshot()

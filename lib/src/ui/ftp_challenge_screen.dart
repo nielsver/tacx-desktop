@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:tacx_desktop/src/challenge/ftp_challenge.dart';
+import 'package:tacx_desktop/src/ride/virtual_speed.dart';
 import 'package:tacx_desktop/src/rust/api/trainer.dart' as api;
 import 'package:tacx_desktop/src/rust/trainer/types.dart';
+import 'package:tacx_desktop/src/ui/ride_world.dart';
 
 class FtpChallengeScreen extends StatefulWidget {
   const FtpChallengeScreen({
@@ -283,7 +285,21 @@ class _FtpChallengeScreenState extends State<FtpChallengeScreen> {
                       color: Colors.white70,
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 200,
+                    child: RideWorld(
+                      key: const ValueKey('ftp-ride-world'),
+                      speedMps: virtualSpeedMps(
+                        powerW: _metrics.powerW,
+                        gradePct: 0,
+                        massKg: defaultRiderMassKg,
+                      ),
+                      cadenceRpm: _metrics.cadenceRpm,
+                      gradePct: 0,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   _ChallengeClock(
                     phase: phase,
                     elapsed: challenge.phaseElapsed,

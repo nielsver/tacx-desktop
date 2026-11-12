@@ -8,6 +8,7 @@ pub mod gatt;
 mod scan;
 pub mod hr_strap;
 pub mod link_health;
+pub mod physics;
 pub mod ftms;
 pub mod intervals;
 pub mod workouts;
